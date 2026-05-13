@@ -1,0 +1,100 @@
+# system-test-sandbox - Release 发布工作流
+# 当创建 GitHub Release 时自动构建并上传产物
+#
+# 触发方式:
+#   1. 在 GitHub 上创建 Release (自动)
+#   2. 手动触发: Actions → Release → Run workflow → 输入 tag (如 v0.1.0)
+#
+# 产物:
+#   - sandbox-cli                     CLI 二进制 (macOS aarch64)
+#   - System Test Sandbox.app.zip     macOS 桌面应用 (压缩)
+#   - System Test Sandbox_*_aarch64.dmg  macOS 安装包
+
+name: Release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (e.g. v0.1.0)'
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  NODE_VERSION: '22'
+  PNPM_VERSION: '9'
+  RUST_VERSION: '1.88'
+
+jobs:
+  build-and-release:
+    name: 构建并发布
+    runs-on: macos-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', github.event.inputs.tag) || github.ref }}
+
+      - name: 设置 Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: 安装 pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: 安装 Rust ${{ env.RUST_VERSION }}
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+
+      - name: 设置 Rust 缓存
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+
+      - name: 设置前端依赖缓存
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.pnpm-store
+            node_modules
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-
+
+      - name: 安装前端依赖
+        run: pnpm install --frozen-lockfile
+
+      - name: 构建 CLI 二进制 (release)
+        run: cargo build -p sandbox-cli --release
+
+      - name: 构建前端 + Tauri 桌面应用
+        run: pnpm tauri build
+
+      - name: 整理发布产物
+        run: |
+          mkdir -p release
+          cp target/release/sandbox-cli release/
+          find target/release/bundle/dmg -name "*.dmg" -maxdepth 1 -exec cp {} release/ \; 2>/dev/null || true
+          cd release
+          find ../target/release/bundle/macos -name "*.app" -maxdepth 1 -exec zip -r "System Test Sandbox.app.zip" {} \; 2>/dev/null || true
+          echo "## 发布产物" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          ls -lh | tail -n +2 | awk '{printf "| %s | %s |\n", $NF, $5}' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 上传到 GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref_name }}
+          files: release/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

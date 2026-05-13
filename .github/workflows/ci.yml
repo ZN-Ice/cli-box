@@ -1,0 +1,602 @@
+# system-test-sandbox - CI门禁
+# 在PR创建/更新及push到main时触发
+#
+# 门禁检查项 (Rust + TypeScript):
+# 1. Rust 格式化检查 - cargo fmt
+# 2. Rust Clippy - 代码规范 + 编译检查 (macOS, 需要系统框架)
+# 3. Rust 单元测试 - cargo test (macOS)
+# 4. 前端构建 - pnpm build
+# 5. 前端 Lint - prettier
+# 6. 前端类型检查 - pnpm typecheck
+# 7. 前端单元测试 - vitest
+# 8. 安全检查 - 硬编码密钥检测 + 依赖漏洞扫描
+#
+# @see CLAUDE.md 七、核心工作流程
+
+name: CI Gate
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+  checks: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '22'
+  PNPM_VERSION: '9'
+  RUST_VERSION: '1.88'
+
+jobs:
+  # ==================== Rust 格式化检查 ====================
+  rust-fmt:
+    name: Rust 格式化检查
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Rust ${{ env.RUST_VERSION }}
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          components: rustfmt
+
+      - name: 运行 cargo fmt
+        run: cargo fmt --all -- --check
+
+  # ==================== Rust Clippy (macOS) ====================
+  rust-clippy:
+    name: Rust Clippy
+    runs-on: macos-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Rust ${{ env.RUST_VERSION }}
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          components: clippy
+
+      - name: 设置 Rust 缓存
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+
+      - name: 运行 cargo clippy
+        run: cargo clippy -p sandbox-core -p sandbox-cli --all-targets -- -D warnings
+
+  # ==================== Rust 单元测试 (macOS) ====================
+  rust-test:
+    name: Rust 单元测试
+    runs-on: macos-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Rust ${{ env.RUST_VERSION }}
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+
+      - name: 设置 Rust 缓存
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+
+      - name: 运行 cargo test
+        run: cargo test -p sandbox-core -p sandbox-cli
+
+      - name: 安装 cargo-tarpaulin
+        run: |
+          if ! command -v cargo-tarpaulin &> /dev/null; then
+            cargo install cargo-tarpaulin --locked
+          fi
+
+      - name: 运行测试覆盖率
+        if: success()
+        run: |
+          cargo tarpaulin -p sandbox-core -p sandbox-cli --out Xml --out Html --output-dir coverage --skip-clean
+
+      - name: 生成覆盖率摘要
+        if: always()
+        run: |
+          SUMMARY_FILE="rust-coverage-summary.md"
+          echo "## Rust 测试覆盖率" > "$SUMMARY_FILE"
+          echo "" >> "$SUMMARY_FILE"
+          if [ -f coverage/cobertura.xml ]; then
+            python3 -c "
+          import xml.etree.ElementTree as ET
+          tree = ET.parse('coverage/cobertura.xml')
+          root = tree.getroot()
+          rate = float(root.attrib.get('line-rate', 0)) * 100
+          branch_rate = float(root.attrib.get('branch-rate', 0)) * 100
+          print(f'| 指标 | 覆盖率 |')
+          print(f'|------|--------|')
+          print(f'| 行覆盖率 | {rate:.1f}% |')
+          print(f'| 分支覆盖率 | {branch_rate:.1f}% |')
+          print()
+          print('| 模块 | 行覆盖率 |')
+          print('|------|----------|')
+          for pkg in root.findall('.//package'):
+              name = pkg.attrib.get('name', 'unknown')
+              pkg_rate = float(pkg.attrib.get('line-rate', 0)) * 100
+              bar_len = int(pkg_rate / 5)
+              bar = '█' * bar_len + '░' * (20 - bar_len)
+              print(f'| {name} | {bar} {pkg_rate:.1f}% |')
+          " >> "$SUMMARY_FILE"
+            echo "" >> "$SUMMARY_FILE"
+            echo "> 详细报告见 Rust 覆盖率 artifact" >> "$SUMMARY_FILE"
+          else
+            echo "> ⚠️ 未生成覆盖率报告" >> "$SUMMARY_FILE"
+          fi
+          echo "" >> "$SUMMARY_FILE"
+          cat "$SUMMARY_FILE" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 上传覆盖率摘要
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rust-coverage-summary
+          path: rust-coverage-summary.md
+          retention-days: 1
+
+      - name: 上传覆盖率报告
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rust-coverage
+          path: coverage/
+          retention-days: 14
+
+  # ==================== 前端构建 ====================
+  frontend-build:
+    name: 前端构建
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: 安装 pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: 设置依赖缓存
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.pnpm-store
+            node_modules
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-
+
+      - name: 安装依赖
+        run: pnpm install --frozen-lockfile
+
+      - name: 构建
+        run: pnpm build
+
+  # ==================== 前端 Lint 检查 ====================
+  frontend-lint:
+    name: 前端 Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: 安装 pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: 设置依赖缓存
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.pnpm-store
+            node_modules
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-
+
+      - name: 安装依赖
+        run: pnpm install --frozen-lockfile
+
+      - name: 运行格式检查
+        run: pnpm format:check
+
+  # ==================== 前端类型检查 ====================
+  frontend-typecheck:
+    name: 前端类型检查
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: 安装 pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: 设置依赖缓存
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.pnpm-store
+            node_modules
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-
+
+      - name: 安装依赖
+        run: pnpm install --frozen-lockfile
+
+      - name: TypeScript 类型检查
+        run: pnpm typecheck
+
+  # ==================== 前端单元测试 ====================
+  frontend-test:
+    name: 前端单元测试
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: 安装 pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: 设置依赖缓存
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.pnpm-store
+            node_modules
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-
+
+      - name: 安装依赖
+        run: pnpm install --frozen-lockfile
+
+      - name: 运行单元测试
+        run: pnpm test:unit
+
+  # ==================== 安全检查 ====================
+  security:
+    name: 安全检查
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Rust 工具链
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+
+      - name: 安装系统依赖
+        run: sudo apt-get update && sudo apt-get install -y cmake clang
+
+      - name: Rust 依赖审计
+        if: always()
+        continue-on-error: false
+        run: |
+          if [ -f Cargo.lock ]; then
+            cargo install cargo-audit --locked
+            cargo audit || echo "::warning::Rust 依赖存在漏洞"
+          else
+            echo "::notice::未找到 Cargo.lock，跳过 Rust 依赖审计"
+          fi
+
+      - name: 前端依赖审计
+        run: |
+          npm install -g pnpm@${{ env.PNPM_VERSION }}
+          if [ -f pnpm-lock.yaml ]; then
+            pnpm audit --audit-level=high || echo "::warning::前端依赖存在高危漏洞"
+          else
+            echo "::notice::未找到 pnpm-lock.yaml，跳过前端依赖审计"
+          fi
+
+      - name: 检查硬编码密钥
+        run: |
+          echo "检查硬编码密钥..."
+          if grep -rE "(api[_-]?key|apikey|secret|password|token)\s*[=:]\s*['\"][^'\"]{10,}['\"]" \
+            --include="*.rs" --include="*.ts" --include="*.tsx" --include="*.js" --include="*.json" \
+            --exclude-dir="node_modules" --exclude-dir="target" --exclude-dir="dist" \
+            --exclude-dir="coverage" --exclude-dir="tests" --exclude-dir="__tests__" \
+            --exclude="*.test.*" --exclude="*.spec.*" --exclude="*_test.*" --exclude="test_*" \
+            .; then
+            echo "::error::发现硬编码的密钥，请使用环境变量或配置文件加载"
+            exit 1
+          fi
+          echo "::notice::未发现硬编码密钥"
+
+      - name: 检查敏感文件
+        run: |
+          echo "检查敏感文件..."
+          SENSITIVE_FILES=(
+            ".env"
+            ".env.local"
+            ".env.production"
+            "*.pem"
+            "*.key"
+            "secrets.json"
+            "credentials.json"
+          )
+
+          for file in "${SENSITIVE_FILES[@]}"; do
+            if ls $file 2>/dev/null | grep -q .; then
+              echo "::error::发现敏感文件: $file，请添加到.gitignore"
+              exit 1
+            fi
+          done
+          echo "::notice::未发现敏感文件"
+
+  # ==================== 门禁结果汇总 ====================
+  gate-result:
+    name: 门禁结果
+    runs-on: ubuntu-latest
+    needs: [rust-fmt, rust-clippy, rust-test, frontend-build, frontend-lint, frontend-typecheck, frontend-test, security]
+    if: always()
+
+    steps:
+      - name: 下载 Rust 覆盖率摘要
+        uses: actions/download-artifact@v4
+        if: always()
+        with:
+          name: rust-coverage-summary
+          path: coverage-artifacts
+        continue-on-error: true
+
+      - name: 下载前端覆盖率摘要
+        uses: actions/download-artifact@v4
+        if: always()
+        with:
+          name: frontend-coverage-summary
+          path: coverage-artifacts
+        continue-on-error: true
+
+      - name: 检查门禁结果
+        run: |
+          echo "============================================"
+          echo "  system-test-sandbox CI 门禁结果"
+          echo "============================================"
+          echo ""
+
+          BUILD_RESULT="${{ needs.frontend-build.result }}"
+          RUST_FMT="${{ needs.rust-fmt.result }}"
+          RUST_CLIPPY="${{ needs.rust-clippy.result }}"
+          RUST_TEST="${{ needs.rust-test.result }}"
+          LINT_RESULT="${{ needs.frontend-lint.result }}"
+          TYPECHECK_RESULT="${{ needs.frontend-typecheck.result }}"
+          TEST_RESULT="${{ needs.frontend-test.result }}"
+          SECURITY_RESULT="${{ needs.security.result }}"
+
+          echo "| 检查项 | 状态 |"
+          echo "|-------|------|"
+          echo "| Rust 格式化 | $RUST_FMT |"
+          echo "| Rust Clippy | $RUST_CLIPPY |"
+          echo "| Rust 测试 | $RUST_TEST |"
+          echo "| 前端构建 | $BUILD_RESULT |"
+          echo "| 前端 Lint | $LINT_RESULT |"
+          echo "| 前端类型检查 | $TYPECHECK_RESULT |"
+          echo "| 前端测试 | $TEST_RESULT |"
+          echo "| 安全检查 | $SECURITY_RESULT |"
+          echo ""
+
+          if [ -f coverage-artifacts/rust-coverage-summary.md ]; then
+            echo "---"
+            cat coverage-artifacts/rust-coverage-summary.md
+            echo ""
+          fi
+          if [ -f coverage-artifacts/frontend-coverage-summary.md ]; then
+            cat coverage-artifacts/frontend-coverage-summary.md
+            echo ""
+          fi
+
+          if [[ "$BUILD_RESULT" == "success" && \
+                "$RUST_FMT" == "success" && \
+                "$RUST_CLIPPY" == "success" && \
+                "$RUST_TEST" == "success" && \
+                "$LINT_RESULT" == "success" && \
+                "$TYPECHECK_RESULT" == "success" && \
+                "$TEST_RESULT" == "success" && \
+                "$SECURITY_RESULT" == "success" ]]; then
+            echo "✅ 所有门禁检查通过！"
+            exit 0
+          else
+            echo "❌ 门禁检查未通过，请修复上述问题"
+            exit 1
+          fi
+
+      - name: PR 门禁状态评论
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+
+            const results = {
+              'Rust 格式化': '${{ needs.rust-fmt.result }}',
+              'Rust Clippy': '${{ needs.rust-clippy.result }}',
+              'Rust 测试': '${{ needs.rust-test.result }}',
+              '前端构建': '${{ needs.frontend-build.result }}',
+              '前端 Lint': '${{ needs.frontend-lint.result }}',
+              '前端类型检查': '${{ needs.frontend-typecheck.result }}',
+              '前端测试': '${{ needs.frontend-test.result }}',
+              '安全检查': '${{ needs.security.result }}',
+            };
+
+            const statusEmoji = (status) => status === 'success' ? '✅' : (status === 'skipped' ? '⏭️' : '❌');
+
+            let tableRows = Object.entries(results).map(([name, status]) =>
+              `| ${name} | ${statusEmoji(status)} ${status} |`
+            ).join('\n');
+
+            const allPassed = Object.values(results).every(r => r === 'success');
+
+            let coverageSection = '';
+            try {
+              const rustCov = fs.readFileSync('coverage-artifacts/rust-coverage-summary.md', 'utf8');
+              coverageSection += '\n' + rustCov + '\n';
+            } catch (e) {}
+            try {
+              const feCov = fs.readFileSync('coverage-artifacts/frontend-coverage-summary.md', 'utf8');
+              coverageSection += '\n' + feCov + '\n';
+            } catch (e) {}
+
+            const body = `## 🔒 门禁检查结果
+
+            | 检查项 | 状态 |
+            |-------|------|
+            ${tableRows}
+            ${coverageSection}
+            ${allPassed
+              ? '### ✅ 所有检查通过，可以合入\n\n> 点击 **Squash and merge** 合并此PR'
+              : '### ❌ 存在未通过的检查，请修复后重新提交'}
+            `;
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const botComment = comments.find(comment =>
+              comment.user.type === 'Bot' &&
+              comment.body.includes('🔒 门禁检查结果')
+            );
+
+            if (botComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: body
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: body
+              });
+            }
+
+  # ==================== 发布构建验证 ====================
+  release-build:
+    name: 发布构建验证
+    runs-on: macos-latest
+    needs: [gate-result]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.gate-result.result == 'success'
+    timeout-minutes: 30
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: 安装 pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: 安装 Rust ${{ env.RUST_VERSION }}
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+
+      - name: 设置 Rust 缓存
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+
+      - name: 设置前端依赖缓存
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.pnpm-store
+            node_modules
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-
+
+      - name: 安装前端依赖
+        run: pnpm install --frozen-lockfile
+
+      - name: 构建 CLI 二进制 (release)
+        run: cargo build -p sandbox-cli --release
+
+      - name: 构建前端 + Tauri 桌面应用
+        run: pnpm tauri build
+
+      - name: 整理构建产物
+        run: |
+          mkdir -p release
+          cp target/release/sandbox-cli release/
+          find target/release/bundle/macos -name "*.app" -maxdepth 1 -exec cp -R {} release/ \; 2>/dev/null || true
+          find target/release/bundle/dmg -name "*.dmg" -maxdepth 1 -exec cp {} release/ \; 2>/dev/null || true
+          echo "## 构建产物" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          ls -lh release/ | tail -n +2 | awk '{printf "| %s | %s |\n", $NF, $5}' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 上传构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-artifacts
+          path: release/
+          retention-days: 7
