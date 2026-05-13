@@ -1,0 +1,23 @@
+[package]
+name = "sandbox-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "macOS desktop automation sandbox core library"
+
+[dependencies]
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+async-trait.workspace = true
+tracing.workspace = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+# TODO: Add macOS-specific crates when implementing
+# core-graphics = "0.24"
+# core-foundation = "0.10"
+# screencapturekit = "2.1"
+# cocoa = "0.26"
+# objc = "0.2"
