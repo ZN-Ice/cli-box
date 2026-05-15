@@ -112,9 +112,7 @@ async fn main() -> anyhow::Result<()> {
             width,
             height,
         } => {
-            tracing::info!(
-                "Starting sandbox server on port {port} ({width}x{height})"
-            );
+            tracing::info!("Starting sandbox server on port {port} ({width}x{height})");
 
             let state = Arc::new(Mutex::new(server::AppState {
                 start_time: Instant::now(),
