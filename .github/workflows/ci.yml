@@ -76,6 +76,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           cache-on-failure: true
+          key: "v2-clippy"
 
       - name: 运行 cargo clippy
         run: cargo clippy -p sandbox-core -p sandbox-cli --all-targets -- -D warnings
@@ -104,6 +105,10 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           cache-on-failure: true
+          key: "v2-test"
+
+      - name: 清理 Rust 缓存
+        run: cargo clean 2>/dev/null || true
 
       - name: 运行 cargo test
         run: cargo test -p sandbox-core

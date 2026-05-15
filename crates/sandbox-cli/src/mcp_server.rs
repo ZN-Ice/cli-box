@@ -116,7 +116,7 @@ impl SandboxMcpServer {
             .map_err(|e| rmcp::ErrorData::internal_error(e.to_string(), None))?;
         let out: Vec<String> = windows
             .iter()
-            .map(|(id, title)| format!("ID={}: {}", id, title))
+            .map(|(id, title)| format!("ID={id}: {title}"))
             .collect();
         Ok(CallToolResult::success(vec![Content::text(out.join("\n"))]))
     }
@@ -165,8 +165,7 @@ impl SandboxMcpServer {
         let value = UiInspector::get_element_value(&params.element_id)
             .map_err(|e| rmcp::ErrorData::internal_error(e.to_string(), None))?;
         Ok(CallToolResult::success(vec![Content::text(format!(
-            "{:?}",
-            value
+            "{value:?}"
         ))]))
     }
 
@@ -209,8 +208,7 @@ impl SandboxMcpServer {
         let mut player = ActionPlayer::new(params.speed);
         let results = player.play(&params.actions).await;
         Ok(CallToolResult::success(vec![Content::text(format!(
-            "{:?}",
-            results
+            "{results:?}"
         ))]))
     }
 
@@ -678,14 +676,14 @@ pub async fn run_stdio_server() -> Result<(), anyhow::Error> {
     let service = SandboxMcpServer::new()
         .serve((stdin, stdout))
         .await
-        .inspect_err(|e| tracing::error!("MCP server init error: {:?}", e))
-        .map_err(|e| anyhow::anyhow!("MCP serve error: {}", e))?;
+        .inspect_err(|e| tracing::error!("MCP server init error: {e:?}"))
+        .map_err(|e| anyhow::anyhow!("MCP serve error: {e}"))?;
 
     tracing::info!("MCP server running, waiting for requests...");
     service
         .waiting()
         .await
-        .map_err(|e| anyhow::anyhow!("MCP runtime error: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("MCP runtime error: {e}"))?;
     Ok(())
 }
 
