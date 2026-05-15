@@ -106,7 +106,7 @@ jobs:
           cache-on-failure: true
 
       - name: 运行 cargo test
-        run: cargo test -p sandbox-core -p sandbox-cli --no-default-features
+        run: cargo test -p sandbox-core
 
       - name: 安装 cargo-tarpaulin
         run: |

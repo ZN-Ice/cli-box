@@ -10,7 +10,7 @@ description = "macOS desktop automation sandbox (Tauri app)"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-sandbox-core.workspace = true
+sandbox-core = { workspace = true, features = ["screencapturekit"] }
 tauri = { version = "2", features = [] }
 tauri-plugin-shell = "2"
 serde.workspace = true

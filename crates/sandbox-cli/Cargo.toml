@@ -11,7 +11,7 @@ name = "sandbox"
 path = "src/main.rs"
 
 [dependencies]
-sandbox-core.workspace = true
+sandbox-core = { workspace = true, features = ["screencapturekit"] }
 tokio.workspace = true
 clap = { version = "4", features = ["derive"] }
 anyhow = "1"

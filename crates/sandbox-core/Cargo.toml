@@ -7,7 +7,7 @@ license.workspace = true
 description = "macOS desktop automation sandbox core library"
 
 [features]
-default = ["screencapturekit"]
+default = []
 screencapturekit = ["dep:screencapturekit"]
 
 [dependencies]
