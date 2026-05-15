@@ -126,7 +126,7 @@ async fn main() -> anyhow::Result<()> {
             }));
 
             let app = server::build_router(state);
-            let addr = format!("127.0.0.1:{}", port);
+            let addr = format!("127.0.0.1:{port}");
             let listener = tokio::net::TcpListener::bind(&addr).await?;
 
             tracing::info!("HTTP API server listening on http://{}", addr);

@@ -113,7 +113,7 @@ impl TestReport {
             let details = if let Some(ref err) = step.error {
                 err.clone()
             } else if let Some(diff) = step.diff_percentage {
-                format!("diff: {:.2}%", diff)
+                format!("diff: {diff:.2}%")
             } else {
                 String::new()
             };
@@ -185,7 +185,7 @@ impl TestReport {
                 StepStatus::Fail => "FAIL",
                 StepStatus::Skip => "SKIP",
             };
-            let diff_str = step.diff_percentage.map(|d| format!("diff: {:.2}%", d));
+            let diff_str = step.diff_percentage.map(|d| format!("diff: {d:.2}%"));
             let details: &str = step.error.as_deref().or(diff_str.as_deref()).unwrap_or("");
             html.push_str(&format!(
                 "<tr><td>{}</td><td>{}</td><td class=\"{}\">{}</td><td>{}ms</td><td>{}</td></tr>",

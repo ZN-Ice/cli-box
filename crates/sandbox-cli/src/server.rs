@@ -202,7 +202,7 @@ async fn click_handler(Json(req): Json<ClickRequest>) -> Result<Json<serde_json:
         "left" => MouseButton::Left,
         "right" => MouseButton::Right,
         "middle" => MouseButton::Middle,
-        other => return Err(AppError::BadRequest(format!("Unknown button: {}", other))),
+        other => return Err(AppError::BadRequest(format!("Unknown button: {other}"))),
     };
     InputSimulator::click(req.x, req.y, button)?;
     Ok(Json(
@@ -334,7 +334,7 @@ async fn playback_actions_handler(
     let results = player.play(&req.actions).await;
     Ok(Json(serde_json::json!({
         "results_count": results.len(),
-        "results": format!("{:?}", results),
+        "results": format!("{results:?}"),
     })))
 }
 
@@ -377,10 +377,10 @@ async fn diff_handler(Json(req): Json<DiffRequest>) -> Result<Json<DiffResult>, 
     use base64::Engine;
     let expected = base64::engine::general_purpose::STANDARD
         .decode(&req.expected)
-        .map_err(|e| AppError::BadRequest(format!("Invalid base64 (expected): {}", e)))?;
+        .map_err(|e| AppError::BadRequest(format!("Invalid base64 (expected): {e}")))?;
     let actual = base64::engine::general_purpose::STANDARD
         .decode(&req.actual)
-        .map_err(|e| AppError::BadRequest(format!("Invalid base64 (actual): {}", e)))?;
+        .map_err(|e| AppError::BadRequest(format!("Invalid base64 (actual): {e}")))?;
 
     let mut options = DiffOptions::default();
     if let Some(t) = req.threshold {

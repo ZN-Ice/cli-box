@@ -171,7 +171,7 @@ impl ActionRecorder {
             let file = File::options().create(true).append(true).open(path)?;
             let mut writer = BufWriter::new(file);
             let line = serde_json::to_string(&action)?;
-            writeln!(writer, "{}", line)?;
+            writeln!(writer, "{line}")?;
             writer.flush()?;
         }
 

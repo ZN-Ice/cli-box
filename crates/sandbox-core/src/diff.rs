@@ -40,9 +40,9 @@ impl Default for DiffOptions {
 /// Compare two PNG images and return a diff result
 pub fn diff_images(expected: &[u8], actual: &[u8], options: &DiffOptions) -> Result<DiffResult> {
     let expected_img = image::load_from_memory(expected)
-        .map_err(|e| AppError::Screenshot(format!("Failed to load expected image: {}", e)))?;
+        .map_err(|e| AppError::Screenshot(format!("Failed to load expected image: {e}")))?;
     let actual_img = image::load_from_memory(actual)
-        .map_err(|e| AppError::Screenshot(format!("Failed to load actual image: {}", e)))?;
+        .map_err(|e| AppError::Screenshot(format!("Failed to load actual image: {e}")))?;
 
     let (ew, eh) = expected_img.dimensions();
     let (aw, ah) = actual_img.dimensions();
@@ -99,9 +99,9 @@ pub fn diff_images(expected: &[u8], actual: &[u8], options: &DiffOptions) -> Res
 /// Generate a diff image highlighting changed pixels in red
 pub fn diff_image(expected: &[u8], actual: &[u8], options: &DiffOptions) -> Result<Vec<u8>> {
     let expected_img = image::load_from_memory(expected)
-        .map_err(|e| AppError::Screenshot(format!("Failed to load expected image: {}", e)))?;
+        .map_err(|e| AppError::Screenshot(format!("Failed to load expected image: {e}")))?;
     let actual_img = image::load_from_memory(actual)
-        .map_err(|e| AppError::Screenshot(format!("Failed to load actual image: {}", e)))?;
+        .map_err(|e| AppError::Screenshot(format!("Failed to load actual image: {e}")))?;
 
     let (ew, eh) = expected_img.dimensions();
     let (aw, ah) = actual_img.dimensions();
@@ -152,7 +152,7 @@ pub fn diff_image(expected: &[u8], actual: &[u8], options: &DiffOptions) -> Resu
     let mut buf = std::io::Cursor::new(Vec::new());
     image::DynamicImage::ImageRgba8(result)
         .write_to(&mut buf, image::ImageFormat::Png)
-        .map_err(|e| AppError::Screenshot(format!("Failed to encode diff image: {}", e)))?;
+        .map_err(|e| AppError::Screenshot(format!("Failed to encode diff image: {e}")))?;
     Ok(buf.into_inner())
 }
 

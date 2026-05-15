@@ -59,8 +59,7 @@ impl ProcessManager {
 
             if !success {
                 return Err(AppError::Process(format!(
-                    "Failed to launch app: {}",
-                    app_path
+                    "Failed to launch app: {app_path}"
                 )));
             }
 
@@ -97,14 +96,14 @@ impl ProcessManager {
                 pixel_width: 0,
                 pixel_height: 0,
             })
-            .map_err(|e| AppError::Process(format!("Failed to open PTY: {}", e)))?;
+            .map_err(|e| AppError::Process(format!("Failed to open PTY: {e}")))?;
 
         let mut cmd = CommandBuilder::new(command);
         cmd.args(args);
         let child = pty_pair
             .slave
             .spawn_command(cmd)
-            .map_err(|e| AppError::Process(format!("Failed to spawn command: {}", e)))?;
+            .map_err(|e| AppError::Process(format!("Failed to spawn command: {e}")))?;
 
         let child_pid = child.process_id();
         // Drop slave - the child process owns it now
@@ -113,11 +112,11 @@ impl ProcessManager {
         let reader = pty_pair
             .master
             .try_clone_reader()
-            .map_err(|e| AppError::Process(format!("Failed to clone PTY reader: {}", e)))?;
+            .map_err(|e| AppError::Process(format!("Failed to clone PTY reader: {e}")))?;
         let writer = pty_pair
             .master
             .take_writer()
-            .map_err(|e| AppError::Process(format!("Failed to take PTY writer: {}", e)))?;
+            .map_err(|e| AppError::Process(format!("Failed to take PTY writer: {e}")))?;
 
         let tracked_id = NEXT_ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
@@ -185,7 +184,7 @@ impl ProcessManager {
             let os_pid = session.child_pid;
             if os_pid > 0 {
                 kill(Pid::from_raw(os_pid as i32), Signal::SIGTERM).map_err(|e| {
-                    AppError::Process(format!("Failed to kill process {}: {}", os_pid, e))
+                    AppError::Process(format!("Failed to kill process {os_pid}: {e}"))
                 })?;
             }
             // Dropping the master closes the PTY
@@ -193,8 +192,7 @@ impl ProcessManager {
             tracing::info!("Killed process: tracked_id={}, os_pid={}", pid, os_pid);
         } else {
             return Err(AppError::Process(format!(
-                "Process {} not found in sandbox",
-                pid
+                "Process {pid} not found in sandbox"
             )));
         }
 
@@ -219,14 +217,14 @@ impl ProcessManager {
             session
                 .writer
                 .write_all(data)
-                .map_err(|e| AppError::Process(format!("Failed to write to PTY: {}", e)))?;
+                .map_err(|e| AppError::Process(format!("Failed to write to PTY: {e}")))?;
             session
                 .writer
                 .flush()
-                .map_err(|e| AppError::Process(format!("Failed to flush PTY: {}", e)))?;
+                .map_err(|e| AppError::Process(format!("Failed to flush PTY: {e}")))?;
             Ok(())
         } else {
-            Err(AppError::Process(format!("Process {} not found", pid)))
+            Err(AppError::Process(format!("Process {pid} not found")))
         }
     }
 
@@ -250,10 +248,10 @@ impl ProcessManager {
                 Ok(0) => Ok(None),
                 Ok(n) => Ok(Some(String::from_utf8_lossy(&buf[..n]).to_string())),
                 Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => Ok(None),
-                Err(e) => Err(AppError::Process(format!("Failed to read PTY: {}", e))),
+                Err(e) => Err(AppError::Process(format!("Failed to read PTY: {e}"))),
             }
         } else {
-            Err(AppError::Process(format!("Process {} not found", pid)))
+            Err(AppError::Process(format!("Process {pid} not found")))
         }
     }
 

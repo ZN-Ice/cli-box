@@ -233,10 +233,10 @@ impl SandboxMcpServer {
         use base64::Engine;
         let expected = base64::engine::general_purpose::STANDARD
             .decode(&params.expected)
-            .map_err(|e| rmcp::ErrorData::invalid_params(format!("Invalid base64: {}", e), None))?;
+            .map_err(|e| rmcp::ErrorData::invalid_params(format!("Invalid base64: {e}"), None))?;
         let actual = base64::engine::general_purpose::STANDARD
             .decode(&params.actual)
-            .map_err(|e| rmcp::ErrorData::invalid_params(format!("Invalid base64: {}", e), None))?;
+            .map_err(|e| rmcp::ErrorData::invalid_params(format!("Invalid base64: {e}"), None))?;
 
         let mut options = DiffOptions::default();
         if let Some(t) = params.threshold {
@@ -344,7 +344,7 @@ impl SandboxMcpServer {
             }
             _ => Err(rmcp::ErrorData::new(
                 ErrorCode::METHOD_NOT_FOUND,
-                format!("Tool not found: {}", name),
+                format!("Tool not found: {name}"),
                 None,
             )),
         }

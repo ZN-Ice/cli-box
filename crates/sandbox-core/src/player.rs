@@ -51,7 +51,7 @@ impl ActionPlayer {
                 continue;
             }
             let action: Action = serde_json::from_str(line).map_err(|e| {
-                AppError::Screenshot(format!("Failed to parse action: {} — {}", e, line))
+                AppError::Screenshot(format!("Failed to parse action: {e} — {line}"))
             })?;
             actions.push(action);
         }
@@ -224,8 +224,7 @@ impl ActionPlayer {
                             } else {
                                 ActionResult::Error {
                                     message: format!(
-                                        "No reference screenshot found for label: {}",
-                                        lbl
+                                        "No reference screenshot found for label: {lbl}"
                                     ),
                                 }
                             }

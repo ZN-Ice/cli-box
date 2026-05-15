@@ -161,37 +161,37 @@ impl ScenarioStep {
     fn describe(&self) -> String {
         match self {
             ScenarioStep::Click { x, y, button } => {
-                format!("Click ({}, {}) button={}", x, y, button)
+                format!("Click ({x}, {y}) button={button}")
             }
-            ScenarioStep::DoubleClick { x, y } => format!("Double-click ({}, {})", x, y),
-            ScenarioStep::TypeText { text } => format!("Type: {}", text),
+            ScenarioStep::DoubleClick { x, y } => format!("Double-click ({x}, {y})"),
+            ScenarioStep::TypeText { text } => format!("Type: {text}"),
             ScenarioStep::PressKey { key, modifiers } => {
-                format!("Press key: {} {:?}", key, modifiers)
+                format!("Press key: {key} {modifiers:?}")
             }
             ScenarioStep::Scroll {
                 x,
                 y,
                 direction,
                 amount,
-            } => format!("Scroll ({}, {}) {} {}", x, y, direction, amount),
+            } => format!("Scroll ({x}, {y}) {direction} {amount}"),
             ScenarioStep::Drag {
                 from_x,
                 from_y,
                 to_x,
                 to_y,
-            } => format!("Drag ({}, {}) -> ({}, {})", from_x, from_y, to_x, to_y),
-            ScenarioStep::Wait { duration_ms } => format!("Wait {}ms", duration_ms),
+            } => format!("Drag ({from_x}, {from_y}) -> ({to_x}, {to_y})"),
+            ScenarioStep::Wait { duration_ms } => format!("Wait {duration_ms}ms"),
             ScenarioStep::Screenshot { label } => {
                 format!(
                     "Screenshot{}",
                     label
                         .as_deref()
-                        .map_or(String::new(), |l| format!(" ({})", l))
+                        .map_or(String::new(), |l| format!(" ({l})"))
                 )
             }
-            ScenarioStep::SpawnApp { path } => format!("Spawn app: {}", path),
+            ScenarioStep::SpawnApp { path } => format!("Spawn app: {path}"),
             ScenarioStep::SpawnCli { command, args } => {
-                format!("Spawn CLI: {} {:?}", command, args)
+                format!("Spawn CLI: {command} {args:?}")
             }
             ScenarioStep::AssertScreenshotDiff {
                 label,
@@ -201,7 +201,7 @@ impl ScenarioStep {
                 max_diff_percentage * 100.0,
                 label
                     .as_deref()
-                    .map_or(String::new(), |l| format!(", label: {}", l))
+                    .map_or(String::new(), |l| format!(", label: {l}"))
             ),
         }
     }
@@ -215,7 +215,7 @@ impl ScenarioRunner {
     pub fn load_from_file(path: &Path) -> Result<Scenario> {
         let content = std::fs::read_to_string(path)?;
         let scenario: Scenario = serde_yaml::from_str(&content).map_err(|e| {
-            crate::error::AppError::Screenshot(format!("Failed to parse scenario: {}", e))
+            crate::error::AppError::Screenshot(format!("Failed to parse scenario: {e}"))
         })?;
         Ok(scenario)
     }
@@ -223,7 +223,7 @@ impl ScenarioRunner {
     /// Load a scenario from a YAML string
     pub fn load_from_str(yaml: &str) -> Result<Scenario> {
         let scenario: Scenario = serde_yaml::from_str(yaml).map_err(|e| {
-            crate::error::AppError::Screenshot(format!("Failed to parse scenario: {}", e))
+            crate::error::AppError::Screenshot(format!("Failed to parse scenario: {e}"))
         })?;
         Ok(scenario)
     }
