@@ -13,11 +13,14 @@ serde_json.workspace = true
 thiserror.workspace = true
 async-trait.workspace = true
 tracing.workspace = true
+base64.workspace = true
+image.workspace = true
+nix.workspace = true
+portable-pty.workspace = true
+serde_yaml.workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
-# TODO: Add macOS-specific crates when implementing
-# core-graphics = "0.24"
-# core-foundation = "0.10"
-# screencapturekit = "2.1"
-# cocoa = "0.26"
-# objc = "0.2"
+core-graphics = { version = "0.25", features = ["highsierra"] }
+core-foundation = "0.10"
+objc = "0.2"
+screencapturekit = { version = "2.1", features = ["macos_14_0"] }

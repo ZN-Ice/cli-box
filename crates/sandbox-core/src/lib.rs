@@ -1,7 +1,14 @@
+#![allow(unexpected_cfgs)]
+
 pub mod automation;
 pub mod capture;
+pub mod diff;
+pub mod player;
 pub mod process;
+pub mod recorder;
+pub mod report;
 pub mod sandbox;
+pub mod scenario;
 
 pub use error::{AppError, Result};
 

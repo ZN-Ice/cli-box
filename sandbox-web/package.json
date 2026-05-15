@@ -9,16 +9,16 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test:unit": "vitest run",
-    "format:check": "prettier --check src/**/*.{ts,tsx}",
-    "format": "prettier --write src/**/*.{ts,tsx}"
+    "format:check": "prettier --check 'src/**/*.{ts,tsx}'",
+    "format": "prettier --write 'src/**/*.{ts,tsx}'"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-shell": "^2",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "xterm": "^5.5.0",
-    "xterm-addon-fit": "^0.10.0"
+    "xterm": "^5.3.0",
+    "xterm-addon-fit": "^0.8.0"
   },
   "devDependencies": {
     "@types/react": "^18.3.1",
