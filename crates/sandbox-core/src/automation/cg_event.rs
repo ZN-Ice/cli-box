@@ -22,7 +22,7 @@ impl InputSimulator {
         let source = CGEventSource::new(
             core_graphics::event_source::CGEventSourceStateID::CombinedSessionState,
         )
-        .map_err(|e| AppError::Input(format!("Failed to create event source: {:?}", e)))?;
+        .map_err(|e| AppError::Input(format!("Failed to create event source: {e:?}")))?;
 
         let position = core_graphics::geometry::CGPoint::new(x, y);
         let (down_type, up_type) = match button {
@@ -85,12 +85,12 @@ impl InputSimulator {
         use core_graphics::event_source::CGEventSource;
 
         let key_code = keycodes::key_name_to_code(key)
-            .ok_or_else(|| AppError::Input(format!("Unknown key: {}", key)))?;
+            .ok_or_else(|| AppError::Input(format!("Unknown key: {key}")))?;
 
         let source = CGEventSource::new(
             core_graphics::event_source::CGEventSourceStateID::CombinedSessionState,
         )
-        .map_err(|e| AppError::Input(format!("Failed to create event source: {:?}", e)))?;
+        .map_err(|e| AppError::Input(format!("Failed to create event source: {e:?}")))?;
 
         // Build modifier flags
         let mut flags = 0u64;
@@ -101,14 +101,14 @@ impl InputSimulator {
         }
 
         let key_down = CGEvent::new_keyboard_event(source.clone(), key_code, true)
-            .map_err(|e| AppError::Input(format!("Failed to create key-down event: {:?}", e)))?;
+            .map_err(|e| AppError::Input(format!("Failed to create key-down event: {e:?}")))?;
         if flags > 0 {
             key_down.set_flags(CGEventFlags::from_bits_truncate(flags));
         }
         key_down.post(CGEventTapLocation::HID);
 
         let key_up = CGEvent::new_keyboard_event(source, key_code, false)
-            .map_err(|e| AppError::Input(format!("Failed to create key-up event: {:?}", e)))?;
+            .map_err(|e| AppError::Input(format!("Failed to create key-up event: {e:?}")))?;
         if flags > 0 {
             key_up.set_flags(CGEventFlags::from_bits_truncate(flags));
         }
@@ -133,7 +133,7 @@ impl InputSimulator {
         let source = CGEventSource::new(
             core_graphics::event_source::CGEventSourceStateID::CombinedSessionState,
         )
-        .map_err(|e| AppError::Input(format!("Failed to create event source: {:?}", e)))?;
+        .map_err(|e| AppError::Input(format!("Failed to create event source: {e:?}")))?;
 
         let (delta_y, delta_x): (i32, i32) = match direction.to_lowercase().as_str() {
             "up" => (-amount, 0),
@@ -142,15 +142,14 @@ impl InputSimulator {
             "right" => (0, amount),
             _ => {
                 return Err(AppError::Input(format!(
-                    "Unknown scroll direction: {}",
-                    direction
+                    "Unknown scroll direction: {direction}"
                 )))
             }
         };
 
         let scroll =
             CGEvent::new_scroll_event(source, ScrollEventUnit::LINE, 2, delta_y, delta_x, 0)
-                .map_err(|e| AppError::Input(format!("Failed to create scroll event: {:?}", e)))?;
+                .map_err(|e| AppError::Input(format!("Failed to create scroll event: {e:?}")))?;
 
         scroll.post(CGEventTapLocation::HID);
         tracing::debug!("Scroll dir={}, amount={}", direction, amount);
@@ -172,7 +171,7 @@ impl InputSimulator {
         let source = CGEventSource::new(
             core_graphics::event_source::CGEventSourceStateID::CombinedSessionState,
         )
-        .map_err(|e| AppError::Input(format!("Failed to create event source: {:?}", e)))?;
+        .map_err(|e| AppError::Input(format!("Failed to create event source: {e:?}")))?;
 
         let start = CGPoint::new(from_x, from_y);
         let end = CGPoint::new(to_x, to_y);
@@ -184,7 +183,7 @@ impl InputSimulator {
             start,
             core_graphics::event::CGMouseButton::Left,
         )
-        .map_err(|e| AppError::Input(format!("Failed to create mouse-down event: {:?}", e)))?;
+        .map_err(|e| AppError::Input(format!("Failed to create mouse-down event: {e:?}")))?;
         down.post(CGEventTapLocation::HID);
 
         // Drag to end (small steps for smoothness)
@@ -201,7 +200,7 @@ impl InputSimulator {
                 point,
                 core_graphics::event::CGMouseButton::Left,
             )
-            .map_err(|e| AppError::Input(format!("Failed to create drag event: {:?}", e)))?;
+            .map_err(|e| AppError::Input(format!("Failed to create drag event: {e:?}")))?;
             drag.post(CGEventTapLocation::HID);
             std::thread::sleep(std::time::Duration::from_millis(5));
         }
@@ -213,7 +212,7 @@ impl InputSimulator {
             end,
             core_graphics::event::CGMouseButton::Left,
         )
-        .map_err(|e| AppError::Input(format!("Failed to create mouse-up event: {:?}", e)))?;
+        .map_err(|e| AppError::Input(format!("Failed to create mouse-up event: {e:?}")))?;
         up.post(CGEventTapLocation::HID);
 
         tracing::debug!("Drag from ({},{}) to ({},{})", from_x, from_y, to_x, to_y);
@@ -243,7 +242,7 @@ fn mouse_event(
     };
 
     let event = CGEvent::new_mouse_event(source.clone(), event_type, position, cg_button)
-        .map_err(|e| AppError::Input(format!("Failed to create mouse event: {:?}", e)))?;
+        .map_err(|e| AppError::Input(format!("Failed to create mouse event: {e:?}")))?;
 
     event.post(CGEventTapLocation::HID);
     Ok(())
@@ -257,24 +256,24 @@ fn type_character(c: char) -> Result<()> {
 
     let needs_shift = keycodes::char_needs_shift(c);
     let key_name = keycodes::char_to_key_name(c)
-        .ok_or_else(|| AppError::Input(format!("Cannot type character: '{}'", c)))?;
+        .ok_or_else(|| AppError::Input(format!("Cannot type character: '{c}'")))?;
     let key_code = keycodes::key_name_to_code(key_name)
-        .ok_or_else(|| AppError::Input(format!("No keycode for: '{}'", key_name)))?;
+        .ok_or_else(|| AppError::Input(format!("No keycode for: '{key_name}'")))?;
 
     let source =
         CGEventSource::new(core_graphics::event_source::CGEventSourceStateID::CombinedSessionState)
-            .map_err(|e| AppError::Input(format!("Failed to create event source: {:?}", e)))?;
+            .map_err(|e| AppError::Input(format!("Failed to create event source: {e:?}")))?;
 
     // Press shift if needed
     if needs_shift {
         let shift_down = CGEvent::new_keyboard_event(source.clone(), 0x38, true)
-            .map_err(|e| AppError::Input(format!("Failed to create shift-down event: {:?}", e)))?;
+            .map_err(|e| AppError::Input(format!("Failed to create shift-down event: {e:?}")))?;
         shift_down.post(CGEventTapLocation::HID);
     }
 
     // Key down
     let key_down = CGEvent::new_keyboard_event(source.clone(), key_code, true)
-        .map_err(|e| AppError::Input(format!("Failed to create key-down for '{}': {:?}", c, e)))?;
+        .map_err(|e| AppError::Input(format!("Failed to create key-down for '{c}': {e:?}")))?;
     if needs_shift {
         use core_graphics::event::CGEventFlags;
         key_down.set_flags(CGEventFlags::CGEventFlagShift);
@@ -283,13 +282,13 @@ fn type_character(c: char) -> Result<()> {
 
     // Key up
     let key_up = CGEvent::new_keyboard_event(source.clone(), key_code, false)
-        .map_err(|e| AppError::Input(format!("Failed to create key-up for '{}': {:?}", c, e)))?;
+        .map_err(|e| AppError::Input(format!("Failed to create key-up for '{c}': {e:?}")))?;
     key_up.post(CGEventTapLocation::HID);
 
     // Release shift if needed
     if needs_shift {
         let shift_up = CGEvent::new_keyboard_event(source, 0x38, false)
-            .map_err(|e| AppError::Input(format!("Failed to create shift-up event: {:?}", e)))?;
+            .map_err(|e| AppError::Input(format!("Failed to create shift-up event: {e:?}")))?;
         shift_up.post(CGEventTapLocation::HID);
     }
 

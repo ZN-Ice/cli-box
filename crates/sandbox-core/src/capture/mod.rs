@@ -3,7 +3,7 @@ use crate::error::{AppError, Result};
 /// Screenshot engine using ScreenCaptureKit (macOS)
 pub struct ScreenCapture;
 
-#[cfg(target_os = "macos")]
+#[cfg(all(target_os = "macos", feature = "screencapturekit"))]
 mod macos_impl {
     use super::*;
     use screencapturekit::screenshot_manager::SCScreenshotManager;
@@ -17,7 +17,7 @@ mod macos_impl {
         /// Works even when the window is behind other windows.
         pub fn capture_window(window_id: u32) -> Result<Vec<u8>> {
             let content = SCShareableContent::get().map_err(|e| {
-                AppError::Screenshot(format!("Failed to get shareable content: {:?}", e))
+                AppError::Screenshot(format!("Failed to get shareable content: {e:?}"))
             })?;
 
             let windows = content.windows();
@@ -25,7 +25,7 @@ mod macos_impl {
                 .iter()
                 .find(|w| w.window_id() == window_id)
                 .ok_or_else(|| {
-                    AppError::WindowNotFound(format!("SCWindow ID {} not found", window_id))
+                    AppError::WindowNotFound(format!("SCWindow ID {window_id} not found"))
                 })?;
 
             let filter = SCContentFilter::create().with_window(window).build();
@@ -35,11 +35,11 @@ mod macos_impl {
                 .with_height(window.frame().height as u32);
 
             let image = SCScreenshotManager::capture_image(&filter, &config)
-                .map_err(|e| AppError::Screenshot(format!("Failed to capture image: {:?}", e)))?;
+                .map_err(|e| AppError::Screenshot(format!("Failed to capture image: {e:?}")))?;
 
             let rgba = image
                 .rgba_data()
-                .map_err(|e| AppError::Screenshot(format!("Failed to get RGBA data: {:?}", e)))?;
+                .map_err(|e| AppError::Screenshot(format!("Failed to get RGBA data: {e:?}")))?;
 
             rgba_to_png(&rgba, image.width(), image.height())
         }
@@ -47,7 +47,7 @@ mod macos_impl {
         /// Capture a region of a display
         pub fn capture_region(_x: i32, _y: i32, width: u32, height: u32) -> Result<Vec<u8>> {
             let content = SCShareableContent::get().map_err(|e| {
-                AppError::Screenshot(format!("Failed to get shareable content: {:?}", e))
+                AppError::Screenshot(format!("Failed to get shareable content: {e:?}"))
             })?;
 
             let displays = content.displays();
@@ -65,11 +65,11 @@ mod macos_impl {
                 .with_height(height);
 
             let image = SCScreenshotManager::capture_image(&filter, &config)
-                .map_err(|e| AppError::Screenshot(format!("Failed to capture region: {:?}", e)))?;
+                .map_err(|e| AppError::Screenshot(format!("Failed to capture region: {e:?}")))?;
 
             let rgba = image
                 .rgba_data()
-                .map_err(|e| AppError::Screenshot(format!("Failed to get RGBA data: {:?}", e)))?;
+                .map_err(|e| AppError::Screenshot(format!("Failed to get RGBA data: {e:?}")))?;
 
             rgba_to_png(&rgba, image.width(), image.height())
         }
@@ -77,7 +77,7 @@ mod macos_impl {
         /// Capture the sandbox window by searching for it by title
         pub fn capture_sandbox() -> Result<Vec<u8>> {
             let content = SCShareableContent::get().map_err(|e| {
-                AppError::Screenshot(format!("Failed to get shareable content: {:?}", e))
+                AppError::Screenshot(format!("Failed to get shareable content: {e:?}"))
             })?;
 
             let window_list = content.windows();
@@ -97,11 +97,11 @@ mod macos_impl {
                 .with_height(800);
 
             let image = SCScreenshotManager::capture_image(&filter, &config)
-                .map_err(|e| AppError::Screenshot(format!("Failed to capture sandbox: {:?}", e)))?;
+                .map_err(|e| AppError::Screenshot(format!("Failed to capture sandbox: {e:?}")))?;
 
             let rgba = image
                 .rgba_data()
-                .map_err(|e| AppError::Screenshot(format!("Failed to get RGBA data: {:?}", e)))?;
+                .map_err(|e| AppError::Screenshot(format!("Failed to get RGBA data: {e:?}")))?;
 
             rgba_to_png(&rgba, image.width(), image.height())
         }
@@ -109,7 +109,7 @@ mod macos_impl {
         /// Find a window by title substring
         pub fn find_window_by_title(title: &str) -> Result<u32> {
             let content = SCShareableContent::get().map_err(|e| {
-                AppError::Screenshot(format!("Failed to get shareable content: {:?}", e))
+                AppError::Screenshot(format!("Failed to get shareable content: {e:?}"))
             })?;
 
             let window_list = content.windows();
@@ -117,13 +117,13 @@ mod macos_impl {
                 .iter()
                 .find(|w| w.title().map(|t| t.contains(title)).unwrap_or(false))
                 .map(|w| w.window_id())
-                .ok_or_else(|| AppError::WindowNotFound(format!("Window '{}' not found", title)))
+                .ok_or_else(|| AppError::WindowNotFound(format!("Window '{title}' not found")))
         }
 
         /// List all available windows with their IDs and titles
         pub fn list_windows() -> Result<Vec<(u32, String)>> {
             let content = SCShareableContent::get().map_err(|e| {
-                AppError::Screenshot(format!("Failed to get shareable content: {:?}", e))
+                AppError::Screenshot(format!("Failed to get shareable content: {e:?}"))
             })?;
 
             let window_list = content.windows();
@@ -147,13 +147,13 @@ mod macos_impl {
 
         let mut cursor = Cursor::new(Vec::new());
         img.write_to(&mut cursor, image::ImageFormat::Png)
-            .map_err(|e| AppError::Screenshot(format!("Failed to encode PNG: {}", e)))?;
+            .map_err(|e| AppError::Screenshot(format!("Failed to encode PNG: {e}")))?;
 
         Ok(cursor.into_inner())
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(any(not(target_os = "macos"), not(feature = "screencapturekit")))]
 mod non_macos_impl {
     use super::*;
 

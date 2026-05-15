@@ -261,9 +261,8 @@ mod macos_impl {
 
     impl UiInspector {
         pub fn inspect_window(window_id: u32) -> Result<UiElement> {
-            let pid = get_pid_for_window(window_id).ok_or_else(|| {
-                AppError::WindowNotFound(format!("Window {} not found", window_id))
-            })?;
+            let pid = get_pid_for_window(window_id)
+                .ok_or_else(|| AppError::WindowNotFound(format!("Window {window_id} not found")))?;
 
             unsafe {
                 let app = AXUIElementCreateApplication(pid);
@@ -277,8 +276,7 @@ mod macos_impl {
                 if windows.is_empty() {
                     ax_release_one(app);
                     return Err(AppError::WindowNotFound(format!(
-                        "No AXWindows for PID {}",
-                        pid
+                        "No AXWindows for PID {pid}"
                     )));
                 }
 
@@ -294,9 +292,8 @@ mod macos_impl {
             role: Option<&str>,
             title: Option<&str>,
         ) -> Result<Vec<UiElement>> {
-            let pid = get_pid_for_window(window_id).ok_or_else(|| {
-                AppError::WindowNotFound(format!("Window {} not found", window_id))
-            })?;
+            let pid = get_pid_for_window(window_id)
+                .ok_or_else(|| AppError::WindowNotFound(format!("Window {window_id} not found")))?;
 
             unsafe {
                 let app = AXUIElementCreateApplication(pid);

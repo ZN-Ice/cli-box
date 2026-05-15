@@ -6,6 +6,10 @@ rust-version.workspace = true
 license.workspace = true
 description = "macOS desktop automation sandbox core library"
 
+[features]
+default = ["screencapturekit"]
+screencapturekit = ["dep:screencapturekit"]
+
 [dependencies]
 tokio.workspace = true
 serde.workspace = true
@@ -23,4 +27,4 @@ serde_yaml.workspace = true
 core-graphics = { version = "0.25", features = ["highsierra"] }
 core-foundation = "0.10"
 objc = "0.2"
-screencapturekit = { version = "2.1", features = ["macos_14_0"] }
+screencapturekit = { version = "2.1", features = ["macos_14_0"], optional = true }
