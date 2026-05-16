@@ -33,3 +33,6 @@ Thumbs.db
 *.profraw
 *.profdata
 coverage/
+
+# Release test artifacts
+release_test/
