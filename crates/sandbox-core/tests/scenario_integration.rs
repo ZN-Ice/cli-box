@@ -47,7 +47,10 @@ steps:
 fn load_scenario_from_yaml() {
     let scenario = ScenarioRunner::load_from_str(FULL_SCENARIO).unwrap();
     assert_eq!(scenario.name, "Full feature test");
-    assert_eq!(scenario.description.as_deref(), Some("Tests all 12 action types"));
+    assert_eq!(
+        scenario.description.as_deref(),
+        Some("Tests all 12 action types")
+    );
     assert_eq!(scenario.steps.len(), 11);
 }
 
@@ -87,7 +90,12 @@ fn parse_all_step_types() {
     }
 
     match &scenario.steps[4] {
-        ScenarioStep::Scroll { x, y, direction, amount } => {
+        ScenarioStep::Scroll {
+            x,
+            y,
+            direction,
+            amount,
+        } => {
             assert_eq!(*x, 100.0);
             assert_eq!(*y, 200.0);
             assert_eq!(direction, "down");
@@ -97,7 +105,12 @@ fn parse_all_step_types() {
     }
 
     match &scenario.steps[5] {
-        ScenarioStep::Drag { from_x, from_y, to_x, to_y } => {
+        ScenarioStep::Drag {
+            from_x,
+            from_y,
+            to_x,
+            to_y,
+        } => {
             assert_eq!(*from_x, 100.0);
             assert_eq!(*from_y, 100.0);
             assert_eq!(*to_x, 200.0);
@@ -130,7 +143,10 @@ fn parse_all_step_types() {
     }
 
     match &scenario.steps[10] {
-        ScenarioStep::AssertScreenshotDiff { label, max_diff_percentage } => {
+        ScenarioStep::AssertScreenshotDiff {
+            label,
+            max_diff_percentage,
+        } => {
             assert_eq!(label.as_deref(), Some("before_action"));
             assert!((*max_diff_percentage - 0.05).abs() < 0.001);
         }
@@ -334,7 +350,10 @@ steps:
     }
     // AssertScreenshotDiff defaults to threshold=0.05
     match &scenario.steps[1] {
-        ScenarioStep::AssertScreenshotDiff { max_diff_percentage, .. } => {
+        ScenarioStep::AssertScreenshotDiff {
+            max_diff_percentage,
+            ..
+        } => {
             assert!((*max_diff_percentage - 0.05).abs() < 0.001);
         }
         _ => panic!(),

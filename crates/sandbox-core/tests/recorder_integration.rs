@@ -18,7 +18,12 @@ fn start_enables_and_clears() {
 #[test]
 fn record_while_disabled_is_ignored() {
     let recorder = ActionRecorder::new();
-    recorder.record(Action::Wait { duration_ms: 100, timestamp_ms: None }).unwrap();
+    recorder
+        .record(Action::Wait {
+            duration_ms: 100,
+            timestamp_ms: None,
+        })
+        .unwrap();
     assert!(recorder.actions().is_empty());
 }
 
@@ -26,17 +31,24 @@ fn record_while_disabled_is_ignored() {
 fn record_while_enabled_captures() {
     let recorder = ActionRecorder::new();
     recorder.start(None).unwrap();
-    recorder.record(Action::Click {
-        x: 10.0,
-        y: 20.0,
-        button: "left".into(),
-        timestamp_ms: None,
-    }).unwrap();
+    recorder
+        .record(Action::Click {
+            x: 10.0,
+            y: 20.0,
+            button: "left".into(),
+            timestamp_ms: None,
+        })
+        .unwrap();
 
     let actions = recorder.actions();
     assert_eq!(actions.len(), 1);
     match &actions[0] {
-        Action::Click { x, y, button, timestamp_ms } => {
+        Action::Click {
+            x,
+            y,
+            button,
+            timestamp_ms,
+        } => {
             assert_eq!(*x, 10.0);
             assert_eq!(*y, 20.0);
             assert_eq!(button, "left");
@@ -50,8 +62,18 @@ fn record_while_enabled_captures() {
 fn stop_disables_and_returns_actions() {
     let recorder = ActionRecorder::new();
     recorder.start(None).unwrap();
-    recorder.record(Action::Wait { duration_ms: 100, timestamp_ms: None }).unwrap();
-    recorder.record(Action::Wait { duration_ms: 200, timestamp_ms: None }).unwrap();
+    recorder
+        .record(Action::Wait {
+            duration_ms: 100,
+            timestamp_ms: None,
+        })
+        .unwrap();
+    recorder
+        .record(Action::Wait {
+            duration_ms: 200,
+            timestamp_ms: None,
+        })
+        .unwrap();
 
     let actions = recorder.stop().unwrap();
     assert_eq!(actions.len(), 2);
@@ -62,9 +84,19 @@ fn stop_disables_and_returns_actions() {
 fn timestamps_are_monotonic() {
     let recorder = ActionRecorder::new();
     recorder.start(None).unwrap();
-    recorder.record(Action::Wait { duration_ms: 10, timestamp_ms: None }).unwrap();
+    recorder
+        .record(Action::Wait {
+            duration_ms: 10,
+            timestamp_ms: None,
+        })
+        .unwrap();
     std::thread::sleep(std::time::Duration::from_millis(10));
-    recorder.record(Action::Wait { duration_ms: 10, timestamp_ms: None }).unwrap();
+    recorder
+        .record(Action::Wait {
+            duration_ms: 10,
+            timestamp_ms: None,
+        })
+        .unwrap();
 
     let actions = recorder.actions();
     let t0 = match &actions[0] {
@@ -84,17 +116,62 @@ fn all_action_types_record_timestamps() {
     recorder.start(None).unwrap();
 
     let actions = vec![
-        Action::Click { x: 0.0, y: 0.0, button: "left".into(), timestamp_ms: None },
-        Action::DoubleClick { x: 0.0, y: 0.0, timestamp_ms: None },
-        Action::TypeText { text: "hi".into(), timestamp_ms: None },
-        Action::PressKey { key: "return".into(), modifiers: vec![], timestamp_ms: None },
-        Action::Scroll { x: 0.0, y: 0.0, direction: "down".into(), amount: 1, timestamp_ms: None },
-        Action::Drag { from_x: 0.0, from_y: 0.0, to_x: 1.0, to_y: 1.0, timestamp_ms: None },
-        Action::Screenshot { label: Some("s".into()), timestamp_ms: None },
-        Action::SpawnApp { path: "/a.app".into(), timestamp_ms: None },
-        Action::SpawnCli { command: "ls".into(), args: vec![], timestamp_ms: None },
-        Action::Wait { duration_ms: 100, timestamp_ms: None },
-        Action::AssertScreenshot { label: Some("s".into()), max_diff_percentage: 0.05, timestamp_ms: None },
+        Action::Click {
+            x: 0.0,
+            y: 0.0,
+            button: "left".into(),
+            timestamp_ms: None,
+        },
+        Action::DoubleClick {
+            x: 0.0,
+            y: 0.0,
+            timestamp_ms: None,
+        },
+        Action::TypeText {
+            text: "hi".into(),
+            timestamp_ms: None,
+        },
+        Action::PressKey {
+            key: "return".into(),
+            modifiers: vec![],
+            timestamp_ms: None,
+        },
+        Action::Scroll {
+            x: 0.0,
+            y: 0.0,
+            direction: "down".into(),
+            amount: 1,
+            timestamp_ms: None,
+        },
+        Action::Drag {
+            from_x: 0.0,
+            from_y: 0.0,
+            to_x: 1.0,
+            to_y: 1.0,
+            timestamp_ms: None,
+        },
+        Action::Screenshot {
+            label: Some("s".into()),
+            timestamp_ms: None,
+        },
+        Action::SpawnApp {
+            path: "/a.app".into(),
+            timestamp_ms: None,
+        },
+        Action::SpawnCli {
+            command: "ls".into(),
+            args: vec![],
+            timestamp_ms: None,
+        },
+        Action::Wait {
+            duration_ms: 100,
+            timestamp_ms: None,
+        },
+        Action::AssertScreenshot {
+            label: Some("s".into()),
+            max_diff_percentage: 0.05,
+            timestamp_ms: None,
+        },
     ];
 
     for a in &actions {
@@ -129,11 +206,21 @@ fn all_action_types_record_timestamps() {
 
 #[test]
 fn action_json_roundtrip() {
-    let orig = Action::Click { x: 1.5, y: 2.5, button: "right".into(), timestamp_ms: Some(42) };
+    let orig = Action::Click {
+        x: 1.5,
+        y: 2.5,
+        button: "right".into(),
+        timestamp_ms: Some(42),
+    };
     let json = serde_json::to_string(&orig).unwrap();
     let parsed: Action = serde_json::from_str(&json).unwrap();
     match parsed {
-        Action::Click { x, y, button, timestamp_ms } => {
+        Action::Click {
+            x,
+            y,
+            button,
+            timestamp_ms,
+        } => {
             assert_eq!(x, 1.5);
             assert_eq!(y, 2.5);
             assert_eq!(button, "right");
@@ -146,7 +233,10 @@ fn action_json_roundtrip() {
 #[test]
 fn action_serde_tagged_enum() {
     // Verify JSON uses "type" field
-    let action = Action::TypeText { text: "hello".into(), timestamp_ms: None };
+    let action = Action::TypeText {
+        text: "hello".into(),
+        timestamp_ms: None,
+    };
     let json = serde_json::to_string(&action).unwrap();
     assert!(json.contains(r#""type":"type_text""#));
     assert!(json.contains("hello"));

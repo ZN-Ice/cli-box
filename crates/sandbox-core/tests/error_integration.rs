@@ -29,17 +29,18 @@ fn io_error_conversion() {
 
 #[test]
 fn json_error_conversion() {
-    let json_err: Result<serde_json::Value, serde_json::Error> =
-        serde_json::from_str("{bad json}");
+    let json_err: Result<serde_json::Value, serde_json::Error> = serde_json::from_str("{bad json}");
     let err = json_err.unwrap_err();
     let app_err: AppError = err.into();
     assert!(app_err.to_string().contains("JSON error"));
 }
 
 #[test]
+#[allow(clippy::unnecessary_literal_unwrap)]
 fn result_type_alias() {
     let ok: sandbox_core::Result<i32> = Ok(42);
-    assert_eq!(ok.unwrap(), 42);
+    assert!(ok.is_ok());
+    assert_eq!(ok.expect("should be Ok"), 42);
 
     let err: sandbox_core::Result<i32> = Err(AppError::SandboxNotInitialized);
     assert!(err.is_err());

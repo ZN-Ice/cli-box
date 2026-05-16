@@ -63,13 +63,19 @@ fn tolerance_respects_threshold() {
     let png2 = cursor.into_inner();
 
     // threshold=1: difference of 5 is detected → all pixels differ
-    let opts = DiffOptions { threshold: 1, ..Default::default() };
+    let opts = DiffOptions {
+        threshold: 1,
+        ..Default::default()
+    };
     let result = diff_images(&png1, &png2, &opts).unwrap();
     assert!(!result.identical);
     assert_eq!(result.changed_pixels, 100);
 
     // threshold=10: difference of 5 is within tolerance → identical
-    let opts = DiffOptions { threshold: 10, ..Default::default() };
+    let opts = DiffOptions {
+        threshold: 10,
+        ..Default::default()
+    };
     let result = diff_images(&png1, &png2, &opts).unwrap();
     assert!(result.identical);
     assert_eq!(result.changed_pixels, 0);
@@ -81,12 +87,18 @@ fn max_diff_percentage_allows_minor_changes() {
     let green = make_solid_png(10, 10, 0, 255, 0, 255);
 
     // max_diff_percentage = 100 means even fully different is "identical"
-    let opts = DiffOptions { max_diff_percentage: 100.0, ..Default::default() };
+    let opts = DiffOptions {
+        max_diff_percentage: 100.0,
+        ..Default::default()
+    };
     let result = diff_images(&red, &green, &opts).unwrap();
     assert!(result.identical);
 
     // max_diff_percentage = 0 means any diff fails
-    let opts = DiffOptions { max_diff_percentage: 0.0, ..Default::default() };
+    let opts = DiffOptions {
+        max_diff_percentage: 0.0,
+        ..Default::default()
+    };
     let result = diff_images(&red, &green, &opts).unwrap();
     assert!(!result.identical);
 }
@@ -97,7 +109,10 @@ fn ignore_border_excludes_edge_pixels() {
     let red = make_solid_png(10, 10, 255, 0, 0, 255);
     let green = make_solid_png(10, 10, 0, 255, 0, 255);
 
-    let opts = DiffOptions { ignore_border: 2, ..Default::default() };
+    let opts = DiffOptions {
+        ignore_border: 2,
+        ..Default::default()
+    };
     let result = diff_images(&red, &green, &opts).unwrap();
     // Border of 2px on each side reduces from 10x10=100 to 6x6=36 pixels checked
     assert_eq!(result.total_pixels, 100);
