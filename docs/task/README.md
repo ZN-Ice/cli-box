@@ -59,3 +59,6 @@
 | Phase 2 | [phase-2-server.md](./phase-2-server.md) | HTTP API + MCP Server |
 | Phase 3 | [phase-3-ui-inspect.md](./phase-3-ui-inspect.md) | AXUIElement UI 检查 |
 | Phase 4 | [phase-4-advanced.md](./phase-4-advanced.md) | 高级特性：多窗口、录制回放、测试框架 |
+| Phase 5 | [phase-5-multi-instance.md](./phase-5-multi-instance.md) | 沙箱多实例管理：start/list/close + 注册中心 |
+| Phase 6 | [phase-6-gui-support.md](./phase-6-gui-support.md) | GUI 应用支持 + 前端 API 集成 |
+| Phase 7 | [phase-7-integration.md](./phase-7-integration.md) | 集成测试 + MCP 更新 + 文档 |
