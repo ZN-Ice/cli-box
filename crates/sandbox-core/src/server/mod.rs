@@ -897,6 +897,9 @@ mod tests {
 
     #[tokio::test]
     async fn ui_inspect_nonexistent() {
+        if !has_screen_recording() {
+            return;
+        }
         let app = test_router();
         let resp = app
             .oneshot(
@@ -913,6 +916,9 @@ mod tests {
 
     #[tokio::test]
     async fn ui_find() {
+        if !has_screen_recording() {
+            return;
+        }
         let app = test_router();
         let resp = app
             .oneshot(
@@ -931,6 +937,9 @@ mod tests {
 
     #[tokio::test]
     async fn ui_value() {
+        if !has_screen_recording() {
+            return;
+        }
         let app = test_router();
         let resp = app
             .oneshot(
