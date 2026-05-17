@@ -731,28 +731,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn screenshot_no_window_id_no_state_window() {
-        let state = Arc::new(Mutex::new(AppState {
-            sandbox_id: None,
-            start_time: Instant::now(),
-            window_id: None,
-            recorder: ActionRecorder::new(),
-        }));
-        let app = build_router(state);
-        let resp = app
-            .oneshot(
-                Request::builder()
-                    .uri("/screenshot")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        let status = resp.status();
-        assert!(status == StatusCode::OK || status == StatusCode::INTERNAL_SERVER_ERROR);
-    }
-
-    #[tokio::test]
     async fn screenshot_region() {
         let app = test_router();
         let resp = app

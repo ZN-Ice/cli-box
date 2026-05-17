@@ -157,6 +157,9 @@ jobs:
             echo "> 详细报告见 Rust 覆盖率 artifact" >> "$SUMMARY_FILE"
           else
             echo "> ⚠️ 未生成覆盖率报告" >> "$SUMMARY_FILE"
+            echo "❌ 覆盖率生成失败：cobertura.xml 未生成" >> "$SUMMARY_FILE"
+            echo "::error::覆盖率报告生成失败，检查 tarpaulin 输出的测试失败信息"
+            exit 1
           fi
           echo "" >> "$SUMMARY_FILE"
           cat "$SUMMARY_FILE" >> "$GITHUB_STEP_SUMMARY"
