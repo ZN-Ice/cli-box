@@ -468,10 +468,6 @@ mod tests {
     use tokio::sync::Mutex;
     use tower::ServiceExt;
 
-    fn has_screen_recording() -> bool {
-        std::env::var("HAS_SCREEN_RECORDING").as_deref() == Ok("1")
-    }
-
     fn test_state() -> Arc<Mutex<AppState>> {
         Arc::new(Mutex::new(AppState {
             sandbox_id: Some("test-sandbox-01".into()),
@@ -719,9 +715,6 @@ mod tests {
 
     #[tokio::test]
     async fn screenshot_uses_window_id_from_state() {
-        if !has_screen_recording() {
-            return;
-        }
         let app = test_router();
         let resp = app
             .oneshot(
@@ -741,9 +734,6 @@ mod tests {
 
     #[tokio::test]
     async fn screenshot_region() {
-        if !has_screen_recording() {
-            return;
-        }
         let app = test_router();
         let resp = app
             .oneshot(
@@ -897,9 +887,6 @@ mod tests {
 
     #[tokio::test]
     async fn ui_inspect_nonexistent() {
-        if !has_screen_recording() {
-            return;
-        }
         let app = test_router();
         let resp = app
             .oneshot(
@@ -916,9 +903,6 @@ mod tests {
 
     #[tokio::test]
     async fn ui_find() {
-        if !has_screen_recording() {
-            return;
-        }
         let app = test_router();
         let resp = app
             .oneshot(
@@ -937,9 +921,6 @@ mod tests {
 
     #[tokio::test]
     async fn ui_value() {
-        if !has_screen_recording() {
-            return;
-        }
         let app = test_router();
         let resp = app
             .oneshot(

@@ -110,36 +110,17 @@ jobs:
       - name: 清理 Rust 缓存
         run: cargo clean 2>/dev/null || true
 
-      - name: 检测屏幕录制权限
-        run: |
-          if screencapture -t jpg /tmp/test_permission.jpg 2>/dev/null; then
-            echo "HAS_SCREEN_RECORDING=1" >> $GITHUB_ENV
-            rm -f /tmp/test_permission.jpg
-            echo "✅ 屏幕录制权限已授予"
-          else
-            echo "HAS_SCREEN_RECORDING=0" >> $GITHUB_ENV
-            echo "⚠️ 未授予屏幕录制权限，部分截图测试将被跳过"
-          fi
-
       - name: 运行 cargo test
         run: cargo test -p sandbox-core
-        env:
-          HAS_SCREEN_RECORDING: ${{ env.HAS_SCREEN_RECORDING }}
 
-      - name: 安装 cargo-tarpaulin
-        continue-on-error: true
+      - name: 安装 cargo-llvm-cov
         run: |
-          if ! command -v cargo-tarpaulin &> /dev/null; then
-            cargo install cargo-tarpaulin --locked
-          fi
+          rustup component add llvm-tools-preview
+          cargo install cargo-llvm-cov --locked
 
       - name: 运行测试覆盖率
-        if: success()
-        continue-on-error: true
         run: |
-          cargo tarpaulin -p sandbox-core -p sandbox-cli --out Xml --out Html --output-dir coverage --skip-clean
-        env:
-          HAS_SCREEN_RECORDING: ${{ env.HAS_SCREEN_RECORDING }}
+          cargo llvm-cov -p sandbox-core --cobertura --output-path coverage/cobertura.xml
 
       - name: 生成覆盖率摘要
         if: always()
@@ -173,7 +154,7 @@ jobs:
           else
             echo "> ⚠️ 未生成覆盖率报告" >> "$SUMMARY_FILE"
             echo "❌ 覆盖率生成失败：cobertura.xml 未生成" >> "$SUMMARY_FILE"
-            echo "::error::覆盖率报告生成失败，检查 tarpaulin 输出的测试失败信息"
+            echo "::error::覆盖率报告生成失败，检查 llvm-cov 输出的测试失败信息"
             exit 1
           fi
           echo "" >> "$SUMMARY_FILE"
