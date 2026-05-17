@@ -421,7 +421,7 @@ jobs:
         working-directory: sandbox-web
         run: |
           if [ -f pnpm-lock.yaml ]; then
-            pnpm audit --audit-level=high || echo "::warning::前端依赖存在高危漏洞"
+            pnpm audit --audit-level=high || { echo "::error::前端依赖存在高危漏洞，请升级到已修复版本"; exit 1; }
           else
             echo "::notice::未找到 pnpm-lock.yaml，跳过前端依赖审计"
           fi
