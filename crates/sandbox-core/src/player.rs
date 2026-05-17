@@ -602,6 +602,69 @@ mod tests {
         }
     }
 
+    #[tokio::test]
+    async fn test_play_scroll_left_on_macos() {
+        #[cfg(target_os = "macos")]
+        {
+            let mut player = ActionPlayer::new(100.0);
+            let actions = vec![Action::Scroll {
+                x: 0.0,
+                y: 0.0,
+                direction: "left".into(),
+                amount: 1,
+                timestamp_ms: None,
+            }];
+            let results = player.play(&actions).await;
+            assert_eq!(results.len(), 1);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_play_scroll_right_on_macos() {
+        #[cfg(target_os = "macos")]
+        {
+            let mut player = ActionPlayer::new(100.0);
+            let actions = vec![Action::Scroll {
+                x: 0.0,
+                y: 0.0,
+                direction: "right".into(),
+                amount: 1,
+                timestamp_ms: None,
+            }];
+            let results = player.play(&actions).await;
+            assert_eq!(results.len(), 1);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_play_type_text_uppercase_on_macos() {
+        #[cfg(target_os = "macos")]
+        {
+            let mut player = ActionPlayer::new(100.0);
+            let actions = vec![Action::TypeText {
+                text: "ABC".into(),
+                timestamp_ms: None,
+            }];
+            let results = player.play(&actions).await;
+            assert_eq!(results.len(), 1);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_play_assert_screenshot_with_label_missing_on_macos() {
+        #[cfg(target_os = "macos")]
+        {
+            let mut player = ActionPlayer::new(100.0);
+            let actions = vec![Action::AssertScreenshot {
+                label: Some("no_such_ref".into()),
+                max_diff_percentage: 0.05,
+                timestamp_ms: None,
+            }];
+            let results = player.play(&actions).await;
+            assert_eq!(results.len(), 1);
+        }
+    }
+
     #[test]
     fn test_action_result_debug() {
         let ok = ActionResult::Ok;

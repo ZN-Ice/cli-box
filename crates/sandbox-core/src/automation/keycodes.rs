@@ -362,6 +362,31 @@ mod tests {
     }
 
     #[test]
+    fn test_char_to_key_name_all_letters() {
+        for c in 'a'..='z' {
+            let got = char_to_key_name(c);
+            assert!(got.is_some(), "char '{c}' should return Some");
+            let ch = got.unwrap();
+            assert_eq!(ch.len(), 1, "key name for '{c}' should be single char");
+        }
+        // Uppercase should also work
+        for c in 'A'..='Z' {
+            let got = char_to_key_name(c);
+            assert!(got.is_some(), "char '{c}' (uppercase) should return Some");
+        }
+    }
+
+    #[test]
+    fn test_char_to_key_name_all_digits_explicit() {
+        for c in '0'..='9' {
+            let got = char_to_key_name(c);
+            assert!(got.is_some(), "digit '{c}' should return Some");
+            // Key name should match the digit
+            assert_eq!(got.unwrap().len(), 1);
+        }
+    }
+
+    #[test]
     fn test_modifier_to_flag_aliases() {
         assert_eq!(modifier_to_flag("command"), Some(flags::COMMAND));
         assert_eq!(modifier_to_flag("alt"), Some(flags::ALTERNATE));

@@ -239,4 +239,24 @@ mod tests {
         let sandbox = Sandbox::new(SandboxConfig::default());
         assert!(sandbox.screenshot().is_err());
     }
+
+    #[test]
+    fn test_sandbox_app_kind() {
+        let config = SandboxConfig {
+            id: Some("app123".into()),
+            port: Some(15802),
+            mode: Some("app".into()),
+            command: Some("/Applications/Safari.app".into()),
+            ..SandboxConfig::default()
+        };
+        let sandbox = Sandbox::new(config);
+        let kind = sandbox.kind().unwrap();
+        assert!(matches!(kind, InstanceKind::App { .. }));
+    }
+
+    #[test]
+    fn test_sandbox_uptime_before_init() {
+        let sandbox = Sandbox::new(SandboxConfig::default());
+        assert_eq!(sandbox.uptime_secs(), 0);
+    }
 }

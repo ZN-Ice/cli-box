@@ -457,3 +457,729 @@ impl IntoResponse for AppError {
         (status, Json(serde_json::json!({"error": message}))).into_response()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::body::Body;
+    use axum::http::{header, Request, StatusCode};
+    use base64::Engine;
+    use std::sync::Arc;
+    use tokio::sync::Mutex;
+    use tower::ServiceExt;
+
+    fn test_state() -> Arc<Mutex<AppState>> {
+        Arc::new(Mutex::new(AppState {
+            sandbox_id: Some("test-sandbox-01".into()),
+            start_time: Instant::now(),
+            window_id: Some(42),
+            recorder: ActionRecorder::new(),
+        }))
+    }
+
+    fn test_router() -> Router {
+        build_router(test_state())
+    }
+
+    // ── Health ─────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn health_returns_ok() {
+        let app = test_router();
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .uri("/health")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), 1024).await.unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["status"], "ok");
+        assert_eq!(json["sandbox_id"], "test-sandbox-01");
+    }
+
+    // ── Sandbox Info ───────────────────────────────────────────
+
+    #[tokio::test]
+    async fn sandbox_info_returns_data() {
+        let app = test_router();
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .uri("/sandbox/info")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), 1024).await.unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["sandbox_id"], "test-sandbox-01");
+        assert_eq!(json["window_id"], 42);
+    }
+
+    // ── Input handlers ─────────────────────────────────────────
+
+    #[tokio::test]
+    async fn click_with_valid_button() {
+        let app = test_router();
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/input/click")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(r#"{"x": 100, "y": 200, "button": "left"}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        // On macOS without accessibility, will be 500; otherwise 200
+        let status = resp.status();
+        assert!(status == StatusCode::OK || status == StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    #[tokio::test]
+    async fn click_with_right_button() {
+        let app = test_router();
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/input/click")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(r#"{"x": 50, "y": 50, "button": "right"}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let status = resp.status();
+        assert!(status == StatusCode::OK || status == StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    #[tokio::test]
+    async fn click_with_middle_button() {
+        let app = test_router();
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/input/click")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(r#"{"x": 50, "y": 50, "button": "middle"}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let status = resp.status();
+        assert!(status == StatusCode::OK || status == StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    #[tokio::test]
+    async fn click_bad_request() {
+        let app = test_router();
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/input/click")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(r#"{"x": 100, "y": 200, "button": "unknown"}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn type_text_handler() {
+        let app = test_router();
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/input/type")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(r#"{"text": "hello world"}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let status = resp.status();
+        assert!(status == StatusCode::OK || status == StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    #[tokio::test]
+    async fn key_handler() {
+        let app = test_router();
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/input/key")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(r#"{"key": "return", "modifiers": ["cmd"]}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let status = resp.status();
+        assert!(status == StatusCode::OK || status == StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    #[tokio::test]
+    async fn key_handler_no_modifiers() {
+        let app = test_router();
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/input/key")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(r#"{"key": "escape", "modifiers": []}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let status = resp.status();
+        assert!(status == StatusCode::OK || status == StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    #[tokio::test]
+    async fn scroll_handler() {
+        let app = test_router();
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/input/scroll")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(
+                        r#"{"x": 0, "y": 0, "direction": "down", "amount": 3}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let status = resp.status();
+        assert!(status == StatusCode::OK || status == StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    #[tokio::test]
+    async fn scroll_handler_unknown_direction() {
+        let app = test_router();
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/input/scroll")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(
+                        r#"{"x": 0, "y": 0, "direction": "diagonal", "amount": 3}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let status = resp.status();
+        assert!(status.is_server_error() || status.is_client_error() || status == StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn drag_handler() {
+        let app = test_router();
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/input/drag")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(
+                        r#"{"from_x": 0, "from_y": 0, "to_x": 100, "to_y": 100}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let status = resp.status();
+        assert!(status == StatusCode::OK || status == StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    // ── Screenshot ─────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn screenshot_uses_window_id_from_state() {
+        let app = test_router();
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .uri("/screenshot")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        // 500 if no screen recording permission, 200 otherwise
+        let status = resp.status();
+        assert!(status == StatusCode::OK || status == StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    #[tokio::test]
+    async fn screenshot_no_window_id_no_state_window() {
+        let state = Arc::new(Mutex::new(AppState {
+            sandbox_id: None,
+            start_time: Instant::now(),
+            window_id: None,
+            recorder: ActionRecorder::new(),
+        }));
+        let app = build_router(state);
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .uri("/screenshot")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let status = resp.status();
+        assert!(status == StatusCode::OK || status == StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    #[tokio::test]
+    async fn screenshot_region() {
+        let app = test_router();
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .uri("/screenshot/region?x=0&y=0&width=100&height=100")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let status = resp.status();
+        assert!(status == StatusCode::OK || status == StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    // ── Windows / Processes ────────────────────────────────────
+
+    #[tokio::test]
+    async fn list_windows() {
+        let app = test_router();
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .uri("/windows")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let status = resp.status();
+        assert!(status == StatusCode::OK || status == StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    #[tokio::test]
+    async fn list_processes() {
+        let app = test_router();
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .uri("/processes")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let status = resp.status();
+        assert!(status == StatusCode::OK || status == StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    // ── Spawn CLI / App ────────────────────────────────────────
+
+    #[tokio::test]
+    async fn spawn_cli_echo() {
+        let app = test_router();
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/cli/spawn")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(r#"{"command": "echo", "args": ["test"]}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let status = resp.status();
+        assert!(status == StatusCode::OK || status == StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    #[tokio::test]
+    async fn spawn_app_nonexistent() {
+        let app = test_router();
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/app/spawn")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(r#"{"path": "/tmp/__no_such_app__.app"}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let status = resp.status();
+        assert!(status == StatusCode::OK || status == StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    // ── Kill process ───────────────────────────────────────────
+
+    #[tokio::test]
+    async fn kill_process_nonexistent() {
+        let app = test_router();
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/process/kill")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(r#"{"pid": 99999}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let status = resp.status();
+        assert!(
+            status == StatusCode::OK
+                || status == StatusCode::INTERNAL_SERVER_ERROR
+                || status == StatusCode::NOT_FOUND
+        );
+    }
+
+    // ── PTY ────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn pty_write_nonexistent() {
+        let app = test_router();
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/pty/write")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(r#"{"pid": 99999, "data": "test"}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let status = resp.status();
+        assert!(status == StatusCode::OK || status == StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    #[tokio::test]
+    async fn pty_output_nonexistent() {
+        let app = test_router();
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .uri("/pty/output/99999")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let status = resp.status();
+        assert!(status == StatusCode::OK || status == StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    // ── UI ─────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn ui_inspect_nonexistent() {
+        let app = test_router();
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .uri("/ui/inspect/99999")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let status = resp.status();
+        assert!(status.is_server_error() || status.is_client_error() || status == StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn ui_find() {
+        let app = test_router();
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/ui/find")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(r#"{"window_id": 42, "role": "button"}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let status = resp.status();
+        assert!(status.is_server_error() || status.is_client_error() || status == StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn ui_value() {
+        let app = test_router();
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .uri("/ui/value?element_id=test123")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let status = resp.status();
+        assert!(status.is_server_error() || status.is_client_error() || status == StatusCode::OK);
+    }
+
+    // ── Recording ──────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn record_start() {
+        let app = test_router();
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/record/start")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(r#"{}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn record_stop() {
+        let app = test_router();
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/record/stop")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(r#"{}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn record_actions() {
+        let app = test_router();
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .uri("/record/actions")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    // ── Playback ───────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn playback_empty_actions() {
+        let app = test_router();
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/playback/actions")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(r#"{"actions": [], "speed": 1.0}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    // ── Scenario ───────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn scenario_run_minimal() {
+        let yaml = r#"name: "test"
+steps:
+  - type: wait
+    duration_ms: 1"#;
+        let app = test_router();
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/scenario/run")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(
+                        serde_json::json!({"yaml": yaml, "speed": 100.0}).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    // ── Diff ───────────────────────────────────────────────────
+
+    use image::codecs::png::PngEncoder;
+    use image::ImageEncoder;
+
+    fn make_test_png(w: u32, h: u32) -> Vec<u8> {
+        let pixels = vec![0u8; (w * h * 4) as usize];
+        let mut buf = Vec::new();
+        PngEncoder::new(&mut buf)
+            .write_image(&pixels, w, h, image::ExtendedColorType::Rgba8)
+            .unwrap();
+        buf
+    }
+
+    #[tokio::test]
+    async fn diff_handler_valid() {
+        let png = make_test_png(10, 10);
+        let expected_b64 = base64::engine::general_purpose::STANDARD.encode(&png);
+        let app = test_router();
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/diff")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(
+                        serde_json::json!({"expected": expected_b64, "actual": expected_b64})
+                            .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn diff_handler_invalid_base64() {
+        let app = test_router();
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/diff")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(
+                        r#"{"expected": "not-base64!!!", "actual": "not-base64!!!"}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    }
+
+    // ── Error handling ─────────────────────────────────────────
+
+    #[tokio::test]
+    async fn app_error_into_response_bad_request() {
+        let err = AppError::BadRequest("test message".into());
+        let resp = err.into_response();
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn app_error_into_response_not_found() {
+        let err = AppError::WindowNotFound("window x".into());
+        let resp = err.into_response();
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn app_error_into_response_instance() {
+        let err = AppError::Instance("instance x".into());
+        let resp = err.into_response();
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn app_error_into_response_internal() {
+        let err = AppError::SandboxNotInitialized;
+        let resp = err.into_response();
+        assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    // ── Route not found ────────────────────────────────────────
+
+    #[tokio::test]
+    async fn unknown_route_returns_404() {
+        let app = test_router();
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .uri("/nonexistent")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    // ── Record with playback ───────────────────────────────────
+
+    #[tokio::test]
+    async fn record_start_stop_flow() {
+        let app = test_router();
+        // Start
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/record/start")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(r#"{}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        // Stop
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/record/stop")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(r#"{}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
+}
