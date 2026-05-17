@@ -186,4 +186,15 @@ A: 删除 `~/.sandbox/instances/` 目录下的 `.json` 文件。
 
 ---
 
-**版本**: v0.2.0 | **构建时间**: 2026-05-17
+## 八、已知问题 (v0.2.1)
+
+1. **Standalone 模式截图**: standalone server 模式下 `sandbox screenshot --id <id>` 返回 503，需要 Tauri app 窗口才能截图。
+
+---
+
+**版本**: v0.2.1 | **构建时间**: 2026-05-17 | **测试报告**: `release_test/2026-05-17-19-09-00/REPORT.md`
+
+### v0.2.1 修复
+
+- **macOS 26 rpath 崩溃**: 已通过 build.rs 自动添加 `LC_RPATH=/usr/lib/swift`，不再需要手动 `install_name_tool`
+- **AXUIElement SEGFAULT**: 已添加 `AXIsProcessTrusted()` 权限检查 + `AXUIElementGetPid` 元素验证，无效元素不再导致崩溃

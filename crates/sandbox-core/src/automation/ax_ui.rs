@@ -40,6 +40,9 @@ mod macos_impl {
     use core_foundation::number::CFNumberRef;
 
     type AXUIElementRef = *const c_void;
+    type AXError = i32;
+
+    const K_AX_ERROR_SUCCESS: AXError = 0;
 
     #[link(name = "ApplicationServices", kind = "framework")]
     extern "C" {
@@ -48,8 +51,8 @@ mod macos_impl {
             element: AXUIElementRef,
             attribute: CFStringRef,
         ) -> CFTypeRef;
-        #[allow(dead_code)]
-        fn AXUIElementGetPid(element: AXUIElementRef, pid: *mut i32) -> i32;
+        fn AXUIElementGetPid(element: AXUIElementRef, pid: *mut i32) -> AXError;
+        fn AXIsProcessTrusted() -> bool;
     }
 
     #[link(name = "CoreGraphics", kind = "framework")]
@@ -68,6 +71,28 @@ mod macos_impl {
 
     fn ax_attr(s: &str) -> CFString {
         CFString::new(s)
+    }
+
+    /// Validate that an AXUIElementRef is usable by calling AXUIElementGetPid.
+    /// Returns true if the element appears valid.
+    unsafe fn ax_element_is_valid(element: AXUIElementRef) -> bool {
+        if element.is_null() {
+            return false;
+        }
+        let mut pid: i32 = 0;
+        let result = AXUIElementGetPid(element, &mut pid as *mut i32);
+        result == K_AX_ERROR_SUCCESS
+    }
+
+    /// Check Accessibility permission and return an error if not granted.
+    fn check_accessibility_permission() -> Result<()> {
+        if unsafe { AXIsProcessTrusted() } {
+            Ok(())
+        } else {
+            Err(AppError::Accessibility(
+                "Accessibility permission not granted. Grant it in System Settings → Privacy & Security → Accessibility.".to_string(),
+            ))
+        }
     }
 
     /// CFTypeRef → String conversion
@@ -92,12 +117,18 @@ mod macos_impl {
     }
 
     unsafe fn ax_get_string(element: AXUIElementRef, attr_name: &str) -> Option<String> {
+        if !ax_element_is_valid(element) {
+            return None;
+        }
         let attr = ax_attr(attr_name);
         let raw = AXUIElementCopyAttributeValue(element, attr.as_concrete_TypeRef());
         cf_to_string(raw)
     }
 
     unsafe fn ax_get_children(element: AXUIElementRef) -> Vec<AXUIElementRef> {
+        if !ax_element_is_valid(element) {
+            return vec![];
+        }
         let attr = ax_attr("AXChildren");
         let raw = AXUIElementCopyAttributeValue(element, attr.as_concrete_TypeRef());
         if raw.is_null() {
@@ -118,6 +149,9 @@ mod macos_impl {
     }
 
     unsafe fn ax_get_attr_array(element: AXUIElementRef, attr_name: &str) -> Vec<AXUIElementRef> {
+        if !ax_element_is_valid(element) {
+            return vec![];
+        }
         let attr = ax_attr(attr_name);
         let raw = AXUIElementCopyAttributeValue(element, attr.as_concrete_TypeRef());
         if raw.is_null() {
@@ -272,6 +306,8 @@ mod macos_impl {
 
     impl UiInspector {
         pub fn inspect_window(window_id: u32) -> Result<UiElement> {
+            check_accessibility_permission()?;
+
             let pid = get_pid_for_window(window_id)
                 .ok_or_else(|| AppError::WindowNotFound(format!("Window {window_id} not found")))?;
 
@@ -303,6 +339,8 @@ mod macos_impl {
             role: Option<&str>,
             title: Option<&str>,
         ) -> Result<Vec<UiElement>> {
+            check_accessibility_permission()?;
+
             let pid = get_pid_for_window(window_id)
                 .ok_or_else(|| AppError::WindowNotFound(format!("Window {window_id} not found")))?;
 
@@ -320,6 +358,8 @@ mod macos_impl {
         }
 
         pub fn get_element_value(element_id: &str) -> Result<Option<String>> {
+            check_accessibility_permission()?;
+
             let parts: Vec<&str> = element_id.split(':').collect();
             if parts.len() < 2 {
                 return Err(AppError::Accessibility("Invalid element ID".to_string()));
