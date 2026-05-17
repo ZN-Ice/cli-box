@@ -185,7 +185,9 @@ function App() {
             {screenshotUrl ? (
               <div className="w-full h-full p-2 flex flex-col">
                 <div className="flex justify-between items-center mb-1">
-                  <span className="text-xs text-gray-400">Latest Screenshot</span>
+                  <span className="text-xs text-gray-400">
+                    Latest Screenshot
+                  </span>
                   <button
                     className="text-xs text-gray-500 hover:text-gray-300"
                     onClick={() => setScreenshotUrl(null)}

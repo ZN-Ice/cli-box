@@ -111,15 +111,12 @@ export default function SandboxTerminal({
   }, [activePid]);
 
   // Refit on window resize
-  const containerRef = useCallback(
-    (node: HTMLDivElement | null) => {
-      if (node) {
-        // Trigger fit after layout
-        requestAnimationFrame(() => fitAddonRef.current?.fit());
-      }
-    },
-    [],
-  );
+  const containerRef = useCallback((node: HTMLDivElement | null) => {
+    if (node) {
+      // Trigger fit after layout
+      requestAnimationFrame(() => fitAddonRef.current?.fit());
+    }
+  }, []);
 
   return (
     <div className="flex flex-col h-full" ref={containerRef}>

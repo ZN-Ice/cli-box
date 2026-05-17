@@ -42,10 +42,7 @@ export interface SandboxInfo {
 
 // ── Generic fetch helper ───────────────────────────────
 
-async function request<T>(
-  path: string,
-  options?: RequestInit,
-): Promise<T> {
+async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE()}${path}`, {
     ...options,
     headers: { "Content-Type": "application/json", ...options?.headers },
@@ -218,9 +215,7 @@ export async function ptyWrite(pid: number, data: string): Promise<void> {
   });
 }
 
-export async function ptyRead(
-  pid: number,
-): Promise<{ output: string | null }> {
+export async function ptyRead(pid: number): Promise<{ output: string | null }> {
   const res = await fetch(`${BASE()}/pty/output/${pid}`);
   return res.json();
 }
@@ -239,6 +234,9 @@ export async function recordStart(): Promise<void> {
 }
 
 export async function recordStop(): Promise<{ actions_count: number }> {
-  const res = await fetch(`${BASE()}/record/stop`, { method: "POST", body: "{}" });
+  const res = await fetch(`${BASE()}/record/stop`, {
+    method: "POST",
+    body: "{}",
+  });
   return res.json();
 }
