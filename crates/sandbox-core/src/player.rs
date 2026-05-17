@@ -413,4 +413,202 @@ mod tests {
             assert!(results.is_empty());
         }
     }
+
+    #[tokio::test]
+    async fn test_play_wait_action_on_macos() {
+        #[cfg(target_os = "macos")]
+        {
+            let mut player = ActionPlayer::new(100.0);
+            let actions = vec![Action::Wait {
+                duration_ms: 1,
+                timestamp_ms: Some(0),
+            }];
+            let results = player.play(&actions).await;
+            assert_eq!(results.len(), 1);
+            assert!(matches!(results[0], ActionResult::Ok));
+        }
+    }
+
+    #[tokio::test]
+    async fn test_play_click_without_permission_on_macos() {
+        #[cfg(target_os = "macos")]
+        {
+            let mut player = ActionPlayer::new(100.0);
+            let actions = vec![Action::Click {
+                x: 100.0,
+                y: 200.0,
+                button: "left".into(),
+                timestamp_ms: None,
+            }];
+            let results = player.play(&actions).await;
+            assert_eq!(results.len(), 1);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_play_type_text_without_permission_on_macos() {
+        #[cfg(target_os = "macos")]
+        {
+            let mut player = ActionPlayer::new(100.0);
+            let actions = vec![Action::TypeText {
+                text: "hello".into(),
+                timestamp_ms: None,
+            }];
+            let results = player.play(&actions).await;
+            assert_eq!(results.len(), 1);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_play_press_key_without_permission_on_macos() {
+        #[cfg(target_os = "macos")]
+        {
+            let mut player = ActionPlayer::new(100.0);
+            let actions = vec![Action::PressKey {
+                key: "return".into(),
+                modifiers: vec!["cmd".into()],
+                timestamp_ms: None,
+            }];
+            let results = player.play(&actions).await;
+            assert_eq!(results.len(), 1);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_play_double_click_without_permission_on_macos() {
+        #[cfg(target_os = "macos")]
+        {
+            let mut player = ActionPlayer::new(100.0);
+            let actions = vec![Action::DoubleClick {
+                x: 50.0,
+                y: 50.0,
+                timestamp_ms: None,
+            }];
+            let results = player.play(&actions).await;
+            assert_eq!(results.len(), 1);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_play_scroll_without_permission_on_macos() {
+        #[cfg(target_os = "macos")]
+        {
+            let mut player = ActionPlayer::new(100.0);
+            let actions = vec![Action::Scroll {
+                x: 50.0,
+                y: 50.0,
+                direction: "down".into(),
+                amount: 3,
+                timestamp_ms: None,
+            }];
+            let results = player.play(&actions).await;
+            assert_eq!(results.len(), 1);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_play_drag_without_permission_on_macos() {
+        #[cfg(target_os = "macos")]
+        {
+            let mut player = ActionPlayer::new(100.0);
+            let actions = vec![Action::Drag {
+                from_x: 0.0,
+                from_y: 0.0,
+                to_x: 100.0,
+                to_y: 100.0,
+                timestamp_ms: None,
+            }];
+            let results = player.play(&actions).await;
+            assert_eq!(results.len(), 1);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_play_screenshot_without_permission_on_macos() {
+        #[cfg(target_os = "macos")]
+        {
+            let mut player = ActionPlayer::new(100.0);
+            let actions = vec![Action::Screenshot {
+                label: Some("test".into()),
+                timestamp_ms: None,
+            }];
+            let results = player.play(&actions).await;
+            assert_eq!(results.len(), 1);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_play_spawn_app_nonexistent_on_macos() {
+        #[cfg(target_os = "macos")]
+        {
+            let mut player = ActionPlayer::new(100.0);
+            let actions = vec![Action::SpawnApp {
+                path: "/tmp/__no_such_app__.app".into(),
+                timestamp_ms: None,
+            }];
+            let results = player.play(&actions).await;
+            assert_eq!(results.len(), 1);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_play_spawn_cli_on_macos() {
+        #[cfg(target_os = "macos")]
+        {
+            let mut player = ActionPlayer::new(100.0);
+            let actions = vec![Action::SpawnCli {
+                command: "echo".into(),
+                args: vec!["hello".into()],
+                timestamp_ms: None,
+            }];
+            let results = player.play(&actions).await;
+            assert_eq!(results.len(), 1);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_play_assert_screenshot_no_label_on_macos() {
+        #[cfg(target_os = "macos")]
+        {
+            let mut player = ActionPlayer::new(100.0);
+            let actions = vec![Action::AssertScreenshot {
+                label: None,
+                max_diff_percentage: 0.05,
+                timestamp_ms: None,
+            }];
+            let results = player.play(&actions).await;
+            assert_eq!(results.len(), 1);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_play_multiple_actions_on_macos() {
+        #[cfg(target_os = "macos")]
+        {
+            let mut player = ActionPlayer::new(100.0);
+            let actions = vec![
+                Action::Wait {
+                    duration_ms: 1,
+                    timestamp_ms: Some(0),
+                },
+                Action::Wait {
+                    duration_ms: 1,
+                    timestamp_ms: Some(10),
+                },
+            ];
+            let results = player.play(&actions).await;
+            assert_eq!(results.len(), 2);
+            assert!(results.iter().all(|r| matches!(r, ActionResult::Ok)));
+        }
+    }
+
+    #[test]
+    fn test_action_result_debug() {
+        let ok = ActionResult::Ok;
+        assert!(format!("{ok:?}").contains("Ok"));
+        let err = ActionResult::Error {
+            message: "test".into(),
+        };
+        assert!(format!("{err:?}").contains("test"));
+    }
 }

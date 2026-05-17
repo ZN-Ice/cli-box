@@ -235,4 +235,135 @@ mod tests {
         assert_eq!(modifier_to_flag("ctrl"), Some(flags::CONTROL));
         assert_eq!(modifier_to_flag("unknown"), None);
     }
+
+    #[test]
+    fn test_key_name_modifier_keys() {
+        assert_eq!(key_name_to_code("command"), Some(0x37));
+        assert_eq!(key_name_to_code("cmd"), Some(0x37));
+        assert_eq!(key_name_to_code("shift"), Some(0x38));
+        assert_eq!(key_name_to_code("caps_lock"), Some(0x39));
+        assert_eq!(key_name_to_code("option"), Some(0x3A));
+        assert_eq!(key_name_to_code("alt"), Some(0x3A));
+        assert_eq!(key_name_to_code("control"), Some(0x3B));
+        assert_eq!(key_name_to_code("ctrl"), Some(0x3B));
+        assert_eq!(key_name_to_code("right_shift"), Some(0x3C));
+        assert_eq!(key_name_to_code("right_option"), Some(0x3D));
+        assert_eq!(key_name_to_code("right_alt"), Some(0x3D));
+        assert_eq!(key_name_to_code("right_control"), Some(0x3E));
+        assert_eq!(key_name_to_code("right_ctrl"), Some(0x3E));
+        assert_eq!(key_name_to_code("function"), Some(0x3F));
+        assert_eq!(key_name_to_code("fn"), Some(0x3F));
+    }
+
+    #[test]
+    fn test_key_name_function_keys() {
+        assert_eq!(key_name_to_code("f1"), Some(0x7A));
+        assert_eq!(key_name_to_code("f2"), Some(0x7B));
+        assert_eq!(key_name_to_code("f3"), Some(0x7C));
+        assert_eq!(key_name_to_code("f4"), Some(0x7D));
+        assert_eq!(key_name_to_code("f5"), Some(0x7E));
+        assert_eq!(key_name_to_code("f6"), Some(0x7F));
+        assert_eq!(key_name_to_code("f7"), Some(0x80));
+        assert_eq!(key_name_to_code("f8"), Some(0x81));
+        assert_eq!(key_name_to_code("f9"), Some(0x82));
+        assert_eq!(key_name_to_code("f10"), Some(0x83));
+        assert_eq!(key_name_to_code("f11"), Some(0x84));
+        assert_eq!(key_name_to_code("f12"), Some(0x85));
+    }
+
+    #[test]
+    fn test_key_name_navigation() {
+        assert_eq!(key_name_to_code("home"), Some(0x73));
+        assert_eq!(key_name_to_code("end"), Some(0x77));
+        assert_eq!(key_name_to_code("page_up"), Some(0x74));
+        assert_eq!(key_name_to_code("page_down"), Some(0x79));
+        assert_eq!(key_name_to_code("left"), Some(0x7B));
+        assert_eq!(key_name_to_code("right"), Some(0x7C));
+        assert_eq!(key_name_to_code("down"), Some(0x7D));
+        assert_eq!(key_name_to_code("up"), Some(0x7E));
+        assert_eq!(key_name_to_code("left_arrow"), Some(0x7B));
+        assert_eq!(key_name_to_code("right_arrow"), Some(0x7C));
+        assert_eq!(key_name_to_code("down_arrow"), Some(0x7D));
+        assert_eq!(key_name_to_code("up_arrow"), Some(0x7E));
+    }
+
+    #[test]
+    fn test_key_name_media() {
+        assert_eq!(key_name_to_code("volume_up"), Some(0x48));
+        assert_eq!(key_name_to_code("volume_down"), Some(0x49));
+        assert_eq!(key_name_to_code("mute"), Some(0x4A));
+    }
+
+    #[test]
+    fn test_key_name_special() {
+        assert_eq!(key_name_to_code("delete"), Some(0x33));
+        assert_eq!(key_name_to_code("backspace"), Some(0x33));
+        assert_eq!(key_name_to_code("backtick"), Some(0x32));
+    }
+
+    #[test]
+    fn test_key_name_unknown() {
+        assert_eq!(key_name_to_code("nonexistent"), None);
+        assert_eq!(key_name_to_code(""), None);
+    }
+
+    #[test]
+    fn test_char_to_key_name_letters() {
+        assert_eq!(char_to_key_name('a'), Some("a"));
+        assert_eq!(char_to_key_name('z'), Some("z"));
+        assert_eq!(char_to_key_name('A'), Some("a"));
+        assert_eq!(char_to_key_name('Z'), Some("z"));
+    }
+
+    #[test]
+    fn test_char_to_key_name_digits() {
+        for c in '0'..='9' {
+            assert!(char_to_key_name(c).is_some(), "char {c}");
+        }
+        assert_eq!(char_to_key_name('5'), Some("5"));
+    }
+
+    #[test]
+    fn test_char_to_key_name_special() {
+        assert_eq!(char_to_key_name(' '), Some("space"));
+        assert_eq!(char_to_key_name('\n'), Some("return"));
+        assert_eq!(char_to_key_name('\r'), Some("return"));
+        assert_eq!(char_to_key_name('\t'), Some("tab"));
+        assert_eq!(char_to_key_name('-'), Some("minus"));
+        assert_eq!(char_to_key_name('='), Some("equal"));
+        assert_eq!(char_to_key_name('['), Some("left_bracket"));
+        assert_eq!(char_to_key_name(']'), Some("right_bracket"));
+        assert_eq!(char_to_key_name('\\'), Some("backslash"));
+        assert_eq!(char_to_key_name(';'), Some("semicolon"));
+        assert_eq!(char_to_key_name('\''), Some("quote"));
+        assert_eq!(char_to_key_name(','), Some("comma"));
+        assert_eq!(char_to_key_name('.'), Some("period"));
+        assert_eq!(char_to_key_name('/'), Some("slash"));
+        assert_eq!(char_to_key_name('`'), Some("backtick"));
+    }
+
+    #[test]
+    fn test_char_to_key_name_unknown() {
+        assert_eq!(char_to_key_name('!'), None);
+        assert_eq!(char_to_key_name('@'), None);
+        assert_eq!(char_to_key_name('~'), None);
+    }
+
+    #[test]
+    fn test_char_needs_shift_comprehensive() {
+        let shift_chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ!@#$%^&*()_+{}|:\"<>?";
+        for c in shift_chars.chars() {
+            assert!(char_needs_shift(c), "char '{c}' should need shift");
+        }
+        let no_shift = "abcdefghijklmnopqrstuvwxyz0123456789-=[]\\;',./`";
+        for c in no_shift.chars() {
+            assert!(!char_needs_shift(c), "char '{c}' should NOT need shift");
+        }
+    }
+
+    #[test]
+    fn test_modifier_to_flag_aliases() {
+        assert_eq!(modifier_to_flag("command"), Some(flags::COMMAND));
+        assert_eq!(modifier_to_flag("alt"), Some(flags::ALTERNATE));
+    }
 }

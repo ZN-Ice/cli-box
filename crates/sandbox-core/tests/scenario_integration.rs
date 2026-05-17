@@ -376,3 +376,79 @@ steps: []
     let scenario = ScenarioRunner::load_from_str(yaml).unwrap();
     assert!(scenario.steps.is_empty());
 }
+
+#[test]
+fn report_with_skip_step_markdown() {
+    let mut report = TestReport::new("skip test");
+    report.add_step(StepResult {
+        index: 0,
+        description: "skipped step".into(),
+        status: StepStatus::Skip,
+        duration_ms: 0,
+        screenshot_label: None,
+        error: None,
+        diff_percentage: None,
+    });
+
+    let md = report.to_markdown();
+    assert!(md.contains("⏭️"));
+    assert!(md.contains("skipped step"));
+    assert!(md.contains("PASSED"));
+}
+
+#[test]
+fn report_with_skip_step_html() {
+    let mut report = TestReport::new("skip html");
+    report.add_step(StepResult {
+        index: 0,
+        description: "skipped".into(),
+        status: StepStatus::Skip,
+        duration_ms: 0,
+        screenshot_label: None,
+        error: None,
+        diff_percentage: None,
+    });
+
+    let html = report.to_html();
+    assert!(html.contains(r#"class="skip""#));
+    assert!(html.contains("SKIP"));
+    assert!(html.contains("</html>"));
+}
+
+#[test]
+fn report_with_mixed_status_html() {
+    let mut report = TestReport::new("mixed html");
+    report.add_step(StepResult {
+        index: 0,
+        description: "ok step".into(),
+        status: StepStatus::Pass,
+        duration_ms: 10,
+        screenshot_label: None,
+        error: None,
+        diff_percentage: None,
+    });
+    report.add_step(StepResult {
+        index: 1,
+        description: "bad step".into(),
+        status: StepStatus::Fail,
+        duration_ms: 5,
+        screenshot_label: None,
+        error: Some("error msg".into()),
+        diff_percentage: None,
+    });
+    report.add_step(StepResult {
+        index: 2,
+        description: "skip step".into(),
+        status: StepStatus::Skip,
+        duration_ms: 0,
+        screenshot_label: None,
+        error: None,
+        diff_percentage: None,
+    });
+
+    let html = report.to_html();
+    assert!(html.contains("FAIL"));
+    assert!(html.contains("PASS"));
+    assert!(html.contains("SKIP"));
+    assert!(html.contains("error msg"));
+}
