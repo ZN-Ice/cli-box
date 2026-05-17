@@ -6,7 +6,8 @@ target/
 # Build output
 dist/
 out/
-release/
+release/*
+!release/README.md
 
 # Rust
 **/*.rs.bk
