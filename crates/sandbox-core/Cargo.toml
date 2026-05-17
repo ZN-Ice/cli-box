@@ -27,7 +27,8 @@ axum.workspace = true
 tower.workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
-core-graphics = { version = "0.25", features = ["highsierra"] }
+core-graphics = { version = "0.25", features = ["highsierra", "elcapitan"] }
 core-foundation = "0.10"
+libc = "0.2"
 objc = "0.2"
 screencapturekit = { version = "2.1", features = ["macos_14_0"], optional = true }

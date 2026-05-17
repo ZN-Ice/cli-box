@@ -232,7 +232,7 @@ impl ScenarioRunner {
     #[cfg(target_os = "macos")]
     pub async fn run(scenario: &Scenario, speed: f64) -> TestReport {
         let mut report = TestReport::new(&scenario.name);
-        let mut player = ActionPlayer::new(speed);
+        let mut player = ActionPlayer::new(speed, None);
 
         let actions: Vec<Action> = scenario.steps.iter().map(|s| s.to_action()).collect();
 

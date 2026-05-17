@@ -48,7 +48,7 @@ impl SandboxMcpServer {
             "middle" => MouseButton::Middle,
             _ => MouseButton::Left,
         };
-        InputSimulator::click(params.x, params.y, button)
+        InputSimulator::click(params.x, params.y, button, None)
             .map_err(|e| rmcp::ErrorData::internal_error(e.to_string(), None))?;
         Ok(CallToolResult::success(vec![Content::text(
             "ok".to_string(),
@@ -59,7 +59,7 @@ impl SandboxMcpServer {
         &self,
         params: TypeTextParams,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        InputSimulator::type_text(&params.text)
+        InputSimulator::type_text(&params.text, None)
             .map_err(|e| rmcp::ErrorData::internal_error(e.to_string(), None))?;
         Ok(CallToolResult::success(vec![Content::text(
             "ok".to_string(),
@@ -71,7 +71,7 @@ impl SandboxMcpServer {
         params: PressKeyParams,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let mod_refs: Vec<&str> = params.modifiers.iter().map(|s| s.as_str()).collect();
-        InputSimulator::press_key(&params.key, &mod_refs)
+        InputSimulator::press_key(&params.key, &mod_refs, None)
             .map_err(|e| rmcp::ErrorData::internal_error(e.to_string(), None))?;
         Ok(CallToolResult::success(vec![Content::text(
             "ok".to_string(),
@@ -125,7 +125,7 @@ impl SandboxMcpServer {
         &self,
         params: ClickParams,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        InputSimulator::double_click(params.x, params.y)
+        InputSimulator::double_click(params.x, params.y, None)
             .map_err(|e| rmcp::ErrorData::internal_error(e.to_string(), None))?;
         Ok(CallToolResult::success(vec![Content::text(
             "ok".to_string(),
@@ -205,7 +205,7 @@ impl SandboxMcpServer {
         &self,
         params: PlayActionsParams,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let mut player = ActionPlayer::new(params.speed);
+        let mut player = ActionPlayer::new(params.speed, None);
         let results = player.play(&params.actions).await;
         Ok(CallToolResult::success(vec![Content::text(format!(
             "{results:?}"

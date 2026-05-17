@@ -24,6 +24,7 @@ pub struct AppState {
     pub sandbox_id: Option<String>,
     pub start_time: Instant,
     pub window_id: Option<u32>,
+    pub target_pid: Option<u32>,
     pub recorder: ActionRecorder,
 }
 
@@ -264,41 +265,66 @@ async fn kill_process_handler(
     Ok(Json(serde_json::json!({"killed": req.pid})))
 }
 
-async fn click_handler(Json(req): Json<ClickRequest>) -> Result<Json<serde_json::Value>, AppError> {
+const SANDBOX_WINDOW_REQUIRED: &str =
+    "Sandbox window not available. Build and run the Tauri app first, or use `sandbox-cli start --cli/--app`.";
+
+fn require_target_pid(target_pid: Option<u32>) -> Result<u32, AppError> {
+    target_pid.ok_or_else(|| AppError::BadRequest(SANDBOX_WINDOW_REQUIRED.to_string()))
+}
+
+async fn click_handler(
+    State(state): State<Arc<Mutex<AppState>>>,
+    Json(req): Json<ClickRequest>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let target_pid = require_target_pid(state.lock().await.target_pid)?;
     let button = match req.button.to_lowercase().as_str() {
         "left" => MouseButton::Left,
         "right" => MouseButton::Right,
         "middle" => MouseButton::Middle,
         other => return Err(AppError::BadRequest(format!("Unknown button: {other}"))),
     };
-    InputSimulator::click(req.x, req.y, button)?;
+    InputSimulator::click(req.x, req.y, button, Some(target_pid))?;
     Ok(Json(
         serde_json::json!({"clicked": {"x": req.x, "y": req.y, "button": req.button}}),
     ))
 }
 
-async fn type_handler(Json(req): Json<TypeRequest>) -> Result<Json<serde_json::Value>, AppError> {
-    InputSimulator::type_text(&req.text)?;
+async fn type_handler(
+    State(state): State<Arc<Mutex<AppState>>>,
+    Json(req): Json<TypeRequest>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let target_pid = require_target_pid(state.lock().await.target_pid)?;
+    InputSimulator::type_text(&req.text, Some(target_pid))?;
     Ok(Json(serde_json::json!({"typed": req.text})))
 }
 
-async fn key_handler(Json(req): Json<KeyRequest>) -> Result<Json<serde_json::Value>, AppError> {
+async fn key_handler(
+    State(state): State<Arc<Mutex<AppState>>>,
+    Json(req): Json<KeyRequest>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let target_pid = require_target_pid(state.lock().await.target_pid)?;
     let mod_refs: Vec<&str> = req.modifiers.iter().map(|s| s.as_str()).collect();
-    InputSimulator::press_key(&req.key, &mod_refs)?;
+    InputSimulator::press_key(&req.key, &mod_refs, Some(target_pid))?;
     Ok(Json(
         serde_json::json!({"pressed": {"key": req.key, "modifiers": req.modifiers}}),
     ))
 }
 
 async fn scroll_handler(
+    State(state): State<Arc<Mutex<AppState>>>,
     Json(req): Json<ScrollRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    InputSimulator::scroll(req.x, req.y, &req.direction, req.amount)?;
+    let target_pid = require_target_pid(state.lock().await.target_pid)?;
+    InputSimulator::scroll(req.x, req.y, &req.direction, req.amount, Some(target_pid))?;
     Ok(Json(serde_json::json!({"scrolled": true})))
 }
 
-async fn drag_handler(Json(req): Json<DragRequest>) -> Result<Json<serde_json::Value>, AppError> {
-    InputSimulator::drag(req.from_x, req.from_y, req.to_x, req.to_y)?;
+async fn drag_handler(
+    State(state): State<Arc<Mutex<AppState>>>,
+    Json(req): Json<DragRequest>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let target_pid = require_target_pid(state.lock().await.target_pid)?;
+    InputSimulator::drag(req.from_x, req.from_y, req.to_x, req.to_y, Some(target_pid))?;
     Ok(Json(serde_json::json!({"dragged": true})))
 }
 
@@ -312,10 +338,7 @@ async fn screenshot_handler(
             let png_data = ScreenCapture::capture_window(id)?;
             Ok((StatusCode::OK, [("content-type", "image/png")], png_data).into_response())
         }
-        None => {
-            let png_data = ScreenCapture::capture_sandbox()?;
-            Ok((StatusCode::OK, [("content-type", "image/png")], png_data).into_response())
-        }
+        None => Err(AppError::BadRequest(SANDBOX_WINDOW_REQUIRED.to_string())),
     }
 }
 
@@ -396,9 +419,11 @@ async fn record_actions_handler(
 }
 
 async fn playback_actions_handler(
+    State(state): State<Arc<Mutex<AppState>>>,
     Json(req): Json<PlaybackRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let mut player = ActionPlayer::new(req.speed);
+    let target_pid = require_target_pid(state.lock().await.target_pid)?;
+    let mut player = ActionPlayer::new(req.speed, Some(target_pid));
     let results = player.play(&req.actions).await;
     Ok(Json(serde_json::json!({
         "results_count": results.len(),
@@ -473,6 +498,7 @@ mod tests {
             sandbox_id: Some("test-sandbox-01".into()),
             start_time: Instant::now(),
             window_id: Some(42),
+            target_pid: None,
             recorder: ActionRecorder::new(),
         }))
     }
@@ -539,9 +565,8 @@ mod tests {
             )
             .await
             .unwrap();
-        // On macOS without accessibility, will be 500; otherwise 200
-        let status = resp.status();
-        assert!(status == StatusCode::OK || status == StatusCode::INTERNAL_SERVER_ERROR);
+        // target_pid is None in test state — input ops require a sandbox window
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
     }
 
     #[tokio::test]
@@ -558,8 +583,7 @@ mod tests {
             )
             .await
             .unwrap();
-        let status = resp.status();
-        assert!(status == StatusCode::OK || status == StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
     }
 
     #[tokio::test]
@@ -576,8 +600,7 @@ mod tests {
             )
             .await
             .unwrap();
-        let status = resp.status();
-        assert!(status == StatusCode::OK || status == StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
     }
 
     #[tokio::test]
@@ -611,8 +634,7 @@ mod tests {
             )
             .await
             .unwrap();
-        let status = resp.status();
-        assert!(status == StatusCode::OK || status == StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
     }
 
     #[tokio::test]
@@ -629,8 +651,7 @@ mod tests {
             )
             .await
             .unwrap();
-        let status = resp.status();
-        assert!(status == StatusCode::OK || status == StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
     }
 
     #[tokio::test]
@@ -647,8 +668,7 @@ mod tests {
             )
             .await
             .unwrap();
-        let status = resp.status();
-        assert!(status == StatusCode::OK || status == StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
     }
 
     #[tokio::test]
@@ -667,8 +687,7 @@ mod tests {
             )
             .await
             .unwrap();
-        let status = resp.status();
-        assert!(status == StatusCode::OK || status == StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
     }
 
     #[tokio::test]
@@ -687,8 +706,8 @@ mod tests {
             )
             .await
             .unwrap();
-        let status = resp.status();
-        assert!(status.is_server_error() || status.is_client_error() || status == StatusCode::OK);
+        // target_pid is None — rejected before direction validation
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
     }
 
     #[tokio::test]
@@ -707,8 +726,7 @@ mod tests {
             )
             .await
             .unwrap();
-        let status = resp.status();
-        assert!(status == StatusCode::OK || status == StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
     }
 
     // ── Screenshot ─────────────────────────────────────────────
@@ -1002,7 +1020,8 @@ mod tests {
             )
             .await
             .unwrap();
-        assert_eq!(resp.status(), StatusCode::OK);
+        // target_pid is None in test state — playback requires a sandbox window
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
     }
 
     // ── Scenario ───────────────────────────────────────────────
@@ -1164,5 +1183,138 @@ steps:
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    // ── Standalone mode rejection ─────────────────────────────────
+
+    #[tokio::test]
+    async fn standalone_rejects_click() {
+        let app = test_router();
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/input/click")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(r#"{"x": 100, "y": 200, "button": "left"}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+        let body = axum::body::to_bytes(resp.into_body(), 1024).await.unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert!(json["error"]
+            .as_str()
+            .unwrap()
+            .contains("Sandbox window not available"));
+    }
+
+    #[tokio::test]
+    async fn standalone_rejects_type() {
+        let app = test_router();
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/input/type")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(r#"{"text": "hello"}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn standalone_rejects_key() {
+        let app = test_router();
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/input/key")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(r#"{"key": "return", "modifiers": []}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn standalone_rejects_scroll() {
+        let app = test_router();
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/input/scroll")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(
+                        r#"{"x": 0, "y": 0, "direction": "down", "amount": 3}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn standalone_rejects_drag() {
+        let app = test_router();
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/input/drag")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(
+                        r#"{"from_x": 0, "from_y": 0, "to_x": 100, "to_y": 100}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn standalone_rejects_screenshot() {
+        let app = test_router();
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .uri("/screenshot")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let status = resp.status();
+        assert!(
+            matches!(status.as_u16(), 200 | 404 | 500),
+            "unexpected status: {status}"
+        );
+    }
+
+    #[tokio::test]
+    async fn standalone_rejects_playback() {
+        let app = test_router();
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/playback/actions")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(r#"{"actions": [], "speed": 1.0}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
     }
 }

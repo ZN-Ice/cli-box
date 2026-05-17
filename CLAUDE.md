@@ -127,24 +127,24 @@ system-test-sandbox/
 ```bash
 # 多实例管理
 sandbox-cli start --cli "claude"              # 启动沙箱，运行 Claude Code，返回 sandbox-id
-sandbox-cli start --cli "echo" --args "hello" # 带参数启动 CLI
+sandbox-cli start --cli "echo" -- "hello"     # 带参数启动 CLI
 sandbox-cli start --app "/path/to/App.app"    # 启动沙箱，运行 macOS 应用
 sandbox-cli list                              # 列出所有活跃沙箱及其状态
 sandbox-cli close <sandbox-id>                # 关闭指定沙箱
 sandbox-cli inspect <sandbox-id>              # 查看沙箱详情
 
-# 沙箱作用域操作 (通过 --id 或 <id> 指定目标沙箱)
-sandbox-cli screenshot <id>                   # 截取沙箱截图
-sandbox-cli screenshot <id> -o result.png     # 截图并指定输出路径
-sandbox-cli click <id> 100 200                # 在沙箱内模拟点击
-sandbox-cli type <id> "hello world"           # 在沙箱内模拟输入
-sandbox-cli key <id> Return --modifiers cmd   # 在沙箱内模拟按键
+# 沙箱作用域操作 (通过 --id 指定目标沙箱)
+sandbox-cli screenshot --id <id>              # 截取沙箱截图
+sandbox-cli screenshot --id <id> -o result.png  # 截图并指定输出路径
+sandbox-cli click --id <id> 100 200           # 在沙箱内模拟点击
+sandbox-cli type --id <id> "hello world"      # 在沙箱内模拟输入
+sandbox-cli key --id <id> Return --modifiers cmd  # 在沙箱内模拟按键
 
 # 进程管理 (沙箱内)
-sandbox-cli windows <id>                      # 列出沙箱内窗口
-sandbox-cli processes <id>                    # 列出沙箱内进程
-sandbox-cli spawn-cli <id> "npm" --args "test" # 在沙箱内启动新的 CLI
-sandbox-cli kill <id> <pid>                   # 终止沙箱内进程
+sandbox-cli windows --id <id>                 # 列出沙箱内窗口
+sandbox-cli processes --id <id>               # 列出沙箱内进程
+sandbox-cli spawn-cli --id <id> "npm" -- "test"  # 在沙箱内启动新的 CLI
+sandbox-cli kill --id <id> <pid>              # 终止沙箱内进程
 
 # 独立模式 (无多实例，向后兼容)
 sandbox-cli serve --port 5801                 # 启动独立 HTTP + MCP 服务器
@@ -325,10 +325,10 @@ sandbox-cli list
 # → def456  "cc-switch"        APP   Running  15802  2026-05-16 10:31
 
 # 4. 操作指定沙箱
-sandbox-cli screenshot abc123 -o sandbox.png    # 截图
-sandbox-cli click abc123 100 200                 # 点击
-sandbox-cli type abc123 "帮我写一个函数"          # 输入文本
-sandbox-cli key abc123 Return                    # 按键
+sandbox-cli screenshot --id abc123 -o sandbox.png  # 截图
+sandbox-cli click --id abc123 100 200               # 点击
+sandbox-cli type --id abc123 "帮我写一个函数"        # 输入文本
+sandbox-cli key --id abc123 Return                  # 按键
 
 # 5. 关闭沙箱
 sandbox-cli close abc123

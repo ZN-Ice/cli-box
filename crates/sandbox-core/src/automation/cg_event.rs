@@ -12,10 +12,21 @@ pub enum MouseButton {
 /// Input simulator using CGEvents (macOS Core Graphics)
 pub struct InputSimulator;
 
+/// Post a CGEvent to either a specific process or globally.
+/// When `target_pid` is `Some`, uses `post_to_pid` for targeted delivery.
+/// When `None`, uses `post(HID)` for global delivery (legacy behavior).
+#[cfg(target_os = "macos")]
+fn post_event(event: &core_graphics::event::CGEvent, target_pid: Option<u32>) {
+    match target_pid {
+        Some(pid) => event.post_to_pid(pid as libc::pid_t),
+        None => event.post(core_graphics::event::CGEventTapLocation::HID),
+    }
+}
+
 impl InputSimulator {
     /// Simulate a mouse click at the given coordinates
     #[cfg(target_os = "macos")]
-    pub fn click(x: f64, y: f64, button: MouseButton) -> Result<()> {
+    pub fn click(x: f64, y: f64, button: MouseButton, target_pid: Option<u32>) -> Result<()> {
         use core_graphics::event::CGEventType;
         use core_graphics::event_source::CGEventSource;
 
@@ -31,57 +42,59 @@ impl InputSimulator {
             MouseButton::Middle => (CGEventType::OtherMouseDown, CGEventType::OtherMouseUp),
         };
 
-        mouse_event(&source, down_type, position, button)?;
-        mouse_event(&source, up_type, position, button)?;
+        mouse_event(&source, down_type, position, button, target_pid)?;
+        mouse_event(&source, up_type, position, button, target_pid)?;
 
-        tracing::debug!("Click at ({}, {}), button={:?}", x, y, button);
+        tracing::debug!(
+            "Click at ({}, {}), button={:?}, target_pid={:?}",
+            x,
+            y,
+            button,
+            target_pid
+        );
         Ok(())
     }
 
     #[cfg(not(target_os = "macos"))]
-    pub fn click(_x: f64, _y: f64, _button: MouseButton) -> Result<()> {
+    pub fn click(_x: f64, _y: f64, _button: MouseButton, _target_pid: Option<u32>) -> Result<()> {
         Err(AppError::Input("click only supported on macOS".into()))
     }
 
     /// Simulate a double click at the given coordinates
-    pub fn double_click(x: f64, y: f64) -> Result<()> {
-        // Set double-click interval via CGEvent
-        #[cfg(target_os = "macos")]
-        {
-            // CGEventSetIntegerValueField for click count
-            Self::click(x, y, MouseButton::Left)?;
-            std::thread::sleep(std::time::Duration::from_millis(50));
-            Self::click(x, y, MouseButton::Left)?;
-        }
-        #[cfg(not(target_os = "macos"))]
-        {
-            let _ = (x, y);
-            return Err(AppError::Input(
-                "double_click only supported on macOS".into(),
-            ));
-        }
+    #[cfg(target_os = "macos")]
+    pub fn double_click(x: f64, y: f64, target_pid: Option<u32>) -> Result<()> {
+        Self::click(x, y, MouseButton::Left, target_pid)?;
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        Self::click(x, y, MouseButton::Left, target_pid)?;
         Ok(())
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    pub fn double_click(_x: f64, _y: f64, _target_pid: Option<u32>) -> Result<()> {
+        Err(AppError::Input(
+            "double_click only supported on macOS".into(),
+        ))
     }
 
     /// Simulate typing text character by character
     #[cfg(target_os = "macos")]
-    pub fn type_text(text: &str) -> Result<()> {
+    pub fn type_text(text: &str, target_pid: Option<u32>) -> Result<()> {
         for c in text.chars() {
-            type_character(c)?;
+            type_character(c, target_pid)?;
         }
         Ok(())
     }
 
     #[cfg(not(target_os = "macos"))]
-    pub fn type_text(_text: &str) -> Result<()> {
+    pub fn type_text(_text: &str, _target_pid: Option<u32>) -> Result<()> {
         Err(AppError::Input("type_text only supported on macOS".into()))
     }
 
     /// Simulate pressing a key with optional modifiers
     #[cfg(target_os = "macos")]
-    pub fn press_key(key: &str, modifiers: &[&str]) -> Result<()> {
+    pub fn press_key(key: &str, modifiers: &[&str], target_pid: Option<u32>) -> Result<()> {
+        use core_graphics::event::CGEvent;
         use core_graphics::event::CGEventFlags;
-        use core_graphics::event::{CGEvent, CGEventTapLocation};
         use core_graphics::event_source::CGEventSource;
 
         let key_code = keycodes::key_name_to_code(key)
@@ -105,28 +118,40 @@ impl InputSimulator {
         if flags > 0 {
             key_down.set_flags(CGEventFlags::from_bits_truncate(flags));
         }
-        key_down.post(CGEventTapLocation::HID);
+        post_event(&key_down, target_pid);
 
         let key_up = CGEvent::new_keyboard_event(source, key_code, false)
             .map_err(|e| AppError::Input(format!("Failed to create key-up event: {e:?}")))?;
         if flags > 0 {
             key_up.set_flags(CGEventFlags::from_bits_truncate(flags));
         }
-        key_up.post(CGEventTapLocation::HID);
+        post_event(&key_up, target_pid);
 
-        tracing::debug!("Press key={}, modifiers={:?}", key, modifiers);
+        tracing::debug!(
+            "Press key={}, modifiers={:?}, target_pid={:?}",
+            key,
+            modifiers,
+            target_pid
+        );
         Ok(())
     }
 
     #[cfg(not(target_os = "macos"))]
-    pub fn press_key(_key: &str, _modifiers: &[&str]) -> Result<()> {
+    pub fn press_key(_key: &str, _modifiers: &[&str], _target_pid: Option<u32>) -> Result<()> {
         Err(AppError::Input("press_key only supported on macOS".into()))
     }
 
     /// Simulate scrolling
     #[cfg(target_os = "macos")]
-    pub fn scroll(x: f64, y: f64, direction: &str, amount: i32) -> Result<()> {
-        use core_graphics::event::{CGEvent, CGEventTapLocation, ScrollEventUnit};
+    pub fn scroll(
+        x: f64,
+        y: f64,
+        direction: &str,
+        amount: i32,
+        target_pid: Option<u32>,
+    ) -> Result<()> {
+        use core_graphics::event::CGEvent;
+        use core_graphics::event::ScrollEventUnit;
         use core_graphics::event_source::CGEventSource;
 
         let _ = (x, y);
@@ -151,20 +176,38 @@ impl InputSimulator {
             CGEvent::new_scroll_event(source, ScrollEventUnit::LINE, 2, delta_y, delta_x, 0)
                 .map_err(|e| AppError::Input(format!("Failed to create scroll event: {e:?}")))?;
 
-        scroll.post(CGEventTapLocation::HID);
-        tracing::debug!("Scroll dir={}, amount={}", direction, amount);
+        post_event(&scroll, target_pid);
+        tracing::debug!(
+            "Scroll dir={}, amount={}, target_pid={:?}",
+            direction,
+            amount,
+            target_pid
+        );
         Ok(())
     }
 
     #[cfg(not(target_os = "macos"))]
-    pub fn scroll(_x: f64, _y: f64, _direction: &str, _amount: i32) -> Result<()> {
+    pub fn scroll(
+        _x: f64,
+        _y: f64,
+        _direction: &str,
+        _amount: i32,
+        _target_pid: Option<u32>,
+    ) -> Result<()> {
         Err(AppError::Input("scroll only supported on macOS".into()))
     }
 
     /// Simulate a drag from one point to another
     #[cfg(target_os = "macos")]
-    pub fn drag(from_x: f64, from_y: f64, to_x: f64, to_y: f64) -> Result<()> {
-        use core_graphics::event::{CGEvent, CGEventTapLocation, CGEventType};
+    pub fn drag(
+        from_x: f64,
+        from_y: f64,
+        to_x: f64,
+        to_y: f64,
+        target_pid: Option<u32>,
+    ) -> Result<()> {
+        use core_graphics::event::CGEvent;
+        use core_graphics::event::CGEventType;
         use core_graphics::event_source::CGEventSource;
         use core_graphics::geometry::CGPoint;
 
@@ -184,7 +227,7 @@ impl InputSimulator {
             core_graphics::event::CGMouseButton::Left,
         )
         .map_err(|e| AppError::Input(format!("Failed to create mouse-down event: {e:?}")))?;
-        down.post(CGEventTapLocation::HID);
+        post_event(&down, target_pid);
 
         // Drag to end (small steps for smoothness)
         let steps = 20;
@@ -201,7 +244,7 @@ impl InputSimulator {
                 core_graphics::event::CGMouseButton::Left,
             )
             .map_err(|e| AppError::Input(format!("Failed to create drag event: {e:?}")))?;
-            drag.post(CGEventTapLocation::HID);
+            post_event(&drag, target_pid);
             std::thread::sleep(std::time::Duration::from_millis(5));
         }
 
@@ -213,14 +256,27 @@ impl InputSimulator {
             core_graphics::event::CGMouseButton::Left,
         )
         .map_err(|e| AppError::Input(format!("Failed to create mouse-up event: {e:?}")))?;
-        up.post(CGEventTapLocation::HID);
+        post_event(&up, target_pid);
 
-        tracing::debug!("Drag from ({},{}) to ({},{})", from_x, from_y, to_x, to_y);
+        tracing::debug!(
+            "Drag from ({},{}) to ({},{}), target_pid={:?}",
+            from_x,
+            from_y,
+            to_x,
+            to_y,
+            target_pid
+        );
         Ok(())
     }
 
     #[cfg(not(target_os = "macos"))]
-    pub fn drag(_from_x: f64, _from_y: f64, _to_x: f64, _to_y: f64) -> Result<()> {
+    pub fn drag(
+        _from_x: f64,
+        _from_y: f64,
+        _to_x: f64,
+        _to_y: f64,
+        _target_pid: Option<u32>,
+    ) -> Result<()> {
         Err(AppError::Input("drag only supported on macOS".into()))
     }
 }
@@ -232,8 +288,9 @@ fn mouse_event(
     event_type: core_graphics::event::CGEventType,
     position: core_graphics::geometry::CGPoint,
     button: MouseButton,
+    target_pid: Option<u32>,
 ) -> Result<()> {
-    use core_graphics::event::{CGEvent, CGEventTapLocation};
+    use core_graphics::event::CGEvent;
 
     let cg_button = match button {
         MouseButton::Left => core_graphics::event::CGMouseButton::Left,
@@ -244,14 +301,14 @@ fn mouse_event(
     let event = CGEvent::new_mouse_event(source.clone(), event_type, position, cg_button)
         .map_err(|e| AppError::Input(format!("Failed to create mouse event: {e:?}")))?;
 
-    event.post(CGEventTapLocation::HID);
+    post_event(&event, target_pid);
     Ok(())
 }
 
 /// Type a single character using CGEvent keyboard simulation
 #[cfg(target_os = "macos")]
-fn type_character(c: char) -> Result<()> {
-    use core_graphics::event::{CGEvent, CGEventTapLocation};
+fn type_character(c: char, target_pid: Option<u32>) -> Result<()> {
+    use core_graphics::event::CGEvent;
     use core_graphics::event_source::CGEventSource;
 
     let needs_shift = keycodes::char_needs_shift(c);
@@ -268,7 +325,7 @@ fn type_character(c: char) -> Result<()> {
     if needs_shift {
         let shift_down = CGEvent::new_keyboard_event(source.clone(), 0x38, true)
             .map_err(|e| AppError::Input(format!("Failed to create shift-down event: {e:?}")))?;
-        shift_down.post(CGEventTapLocation::HID);
+        post_event(&shift_down, target_pid);
     }
 
     // Key down
@@ -278,18 +335,18 @@ fn type_character(c: char) -> Result<()> {
         use core_graphics::event::CGEventFlags;
         key_down.set_flags(CGEventFlags::CGEventFlagShift);
     }
-    key_down.post(CGEventTapLocation::HID);
+    post_event(&key_down, target_pid);
 
     // Key up
     let key_up = CGEvent::new_keyboard_event(source.clone(), key_code, false)
         .map_err(|e| AppError::Input(format!("Failed to create key-up for '{c}': {e:?}")))?;
-    key_up.post(CGEventTapLocation::HID);
+    post_event(&key_up, target_pid);
 
     // Release shift if needed
     if needs_shift {
         let shift_up = CGEvent::new_keyboard_event(source, 0x38, false)
             .map_err(|e| AppError::Input(format!("Failed to create shift-up event: {e:?}")))?;
-        shift_up.post(CGEventTapLocation::HID);
+        post_event(&shift_up, target_pid);
     }
 
     Ok(())

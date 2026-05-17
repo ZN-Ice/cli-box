@@ -12,6 +12,8 @@ use std::time::Duration;
 pub struct ActionPlayer {
     /// Speed multiplier (1.0 = original speed, 2.0 = 2x speed)
     speed: f64,
+    /// Target process PID for directed CGEvent delivery
+    target_pid: Option<u32>,
     /// Screenshots taken during playback, keyed by label
     screenshots: HashMap<String, Vec<u8>>,
 }
@@ -34,9 +36,10 @@ pub enum ActionResult {
 }
 
 impl ActionPlayer {
-    pub fn new(speed: f64) -> Self {
+    pub fn new(speed: f64, target_pid: Option<u32>) -> Self {
         Self {
             speed: speed.max(0.1),
+            target_pid,
             screenshots: HashMap::new(),
         }
     }
@@ -107,6 +110,7 @@ impl ActionPlayer {
 
     #[cfg(target_os = "macos")]
     async fn execute(&mut self, action: &Action) -> ActionResult {
+        let pid = self.target_pid;
         match action {
             Action::Click { x, y, button, .. } => {
                 let btn = match button.to_lowercase().as_str() {
@@ -114,20 +118,20 @@ impl ActionPlayer {
                     "middle" => MouseButton::Middle,
                     _ => MouseButton::Left,
                 };
-                match InputSimulator::click(*x, *y, btn) {
+                match InputSimulator::click(*x, *y, btn, pid) {
                     Ok(()) => ActionResult::Ok,
                     Err(e) => ActionResult::Error {
                         message: e.to_string(),
                     },
                 }
             }
-            Action::DoubleClick { x, y, .. } => match InputSimulator::double_click(*x, *y) {
+            Action::DoubleClick { x, y, .. } => match InputSimulator::double_click(*x, *y, pid) {
                 Ok(()) => ActionResult::Ok,
                 Err(e) => ActionResult::Error {
                     message: e.to_string(),
                 },
             },
-            Action::TypeText { text, .. } => match InputSimulator::type_text(text) {
+            Action::TypeText { text, .. } => match InputSimulator::type_text(text, pid) {
                 Ok(()) => ActionResult::Ok,
                 Err(e) => ActionResult::Error {
                     message: e.to_string(),
@@ -135,7 +139,7 @@ impl ActionPlayer {
             },
             Action::PressKey { key, modifiers, .. } => {
                 let m: Vec<&str> = modifiers.iter().map(|s| s.as_str()).collect();
-                match InputSimulator::press_key(key, &m) {
+                match InputSimulator::press_key(key, &m, pid) {
                     Ok(()) => ActionResult::Ok,
                     Err(e) => ActionResult::Error {
                         message: e.to_string(),
@@ -148,7 +152,7 @@ impl ActionPlayer {
                 direction,
                 amount,
                 ..
-            } => match InputSimulator::scroll(*x, *y, direction, *amount) {
+            } => match InputSimulator::scroll(*x, *y, direction, *amount, pid) {
                 Ok(()) => ActionResult::Ok,
                 Err(e) => ActionResult::Error {
                     message: e.to_string(),
@@ -160,7 +164,7 @@ impl ActionPlayer {
                 to_x,
                 to_y,
                 ..
-            } => match InputSimulator::drag(*from_x, *from_y, *to_x, *to_y) {
+            } => match InputSimulator::drag(*from_x, *from_y, *to_x, *to_y, pid) {
                 Ok(()) => ActionResult::Ok,
                 Err(e) => ActionResult::Error {
                     message: e.to_string(),
@@ -255,13 +259,13 @@ mod tests {
 
     #[test]
     fn test_new_speed_clamped() {
-        let player = ActionPlayer::new(0.0);
+        let player = ActionPlayer::new(0.0, None);
         assert!(!player.screenshots().is_empty() || player.screenshots().is_empty());
     }
 
     #[test]
     fn test_get_timestamp_none() {
-        let player = ActionPlayer::new(1.0);
+        let player = ActionPlayer::new(1.0, None);
         let action = Action::Click {
             x: 0.0,
             y: 0.0,
@@ -273,7 +277,7 @@ mod tests {
 
     #[test]
     fn test_get_timestamp_some() {
-        let player = ActionPlayer::new(1.0);
+        let player = ActionPlayer::new(1.0, None);
         let action = Action::Click {
             x: 0.0,
             y: 0.0,
@@ -285,7 +289,7 @@ mod tests {
 
     #[test]
     fn test_get_timestamp_all_variants() {
-        let player = ActionPlayer::new(1.0);
+        let player = ActionPlayer::new(1.0, None);
         let actions: Vec<Action> = vec![
             Action::DoubleClick {
                 x: 0.0,
@@ -402,13 +406,13 @@ mod tests {
     async fn test_play_returns_error_on_non_macos() {
         #[cfg(not(target_os = "macos"))]
         {
-            let mut player = ActionPlayer::new(1.0);
+            let mut player = ActionPlayer::new(1.0, None);
             let results = player.play(&[]).await;
             assert!(!results.is_empty());
         }
         #[cfg(target_os = "macos")]
         {
-            let mut player = ActionPlayer::new(1.0);
+            let mut player = ActionPlayer::new(1.0, None);
             let results = player.play(&[]).await;
             assert!(results.is_empty());
         }
@@ -418,7 +422,7 @@ mod tests {
     async fn test_play_wait_action_on_macos() {
         #[cfg(target_os = "macos")]
         {
-            let mut player = ActionPlayer::new(100.0);
+            let mut player = ActionPlayer::new(100.0, None);
             let actions = vec![Action::Wait {
                 duration_ms: 1,
                 timestamp_ms: Some(0),
@@ -433,7 +437,7 @@ mod tests {
     async fn test_play_click_without_permission_on_macos() {
         #[cfg(target_os = "macos")]
         {
-            let mut player = ActionPlayer::new(100.0);
+            let mut player = ActionPlayer::new(100.0, None);
             let actions = vec![Action::Click {
                 x: 100.0,
                 y: 200.0,
@@ -449,7 +453,7 @@ mod tests {
     async fn test_play_type_text_without_permission_on_macos() {
         #[cfg(target_os = "macos")]
         {
-            let mut player = ActionPlayer::new(100.0);
+            let mut player = ActionPlayer::new(100.0, None);
             let actions = vec![Action::TypeText {
                 text: "hello".into(),
                 timestamp_ms: None,
@@ -463,7 +467,7 @@ mod tests {
     async fn test_play_press_key_without_permission_on_macos() {
         #[cfg(target_os = "macos")]
         {
-            let mut player = ActionPlayer::new(100.0);
+            let mut player = ActionPlayer::new(100.0, None);
             let actions = vec![Action::PressKey {
                 key: "return".into(),
                 modifiers: vec!["cmd".into()],
@@ -478,7 +482,7 @@ mod tests {
     async fn test_play_double_click_without_permission_on_macos() {
         #[cfg(target_os = "macos")]
         {
-            let mut player = ActionPlayer::new(100.0);
+            let mut player = ActionPlayer::new(100.0, None);
             let actions = vec![Action::DoubleClick {
                 x: 50.0,
                 y: 50.0,
@@ -493,7 +497,7 @@ mod tests {
     async fn test_play_scroll_without_permission_on_macos() {
         #[cfg(target_os = "macos")]
         {
-            let mut player = ActionPlayer::new(100.0);
+            let mut player = ActionPlayer::new(100.0, None);
             let actions = vec![Action::Scroll {
                 x: 50.0,
                 y: 50.0,
@@ -510,7 +514,7 @@ mod tests {
     async fn test_play_drag_without_permission_on_macos() {
         #[cfg(target_os = "macos")]
         {
-            let mut player = ActionPlayer::new(100.0);
+            let mut player = ActionPlayer::new(100.0, None);
             let actions = vec![Action::Drag {
                 from_x: 0.0,
                 from_y: 0.0,
@@ -527,7 +531,7 @@ mod tests {
     async fn test_play_screenshot_without_permission_on_macos() {
         #[cfg(target_os = "macos")]
         {
-            let mut player = ActionPlayer::new(100.0);
+            let mut player = ActionPlayer::new(100.0, None);
             let actions = vec![Action::Screenshot {
                 label: Some("test".into()),
                 timestamp_ms: None,
@@ -541,7 +545,7 @@ mod tests {
     async fn test_play_spawn_app_nonexistent_on_macos() {
         #[cfg(target_os = "macos")]
         {
-            let mut player = ActionPlayer::new(100.0);
+            let mut player = ActionPlayer::new(100.0, None);
             let actions = vec![Action::SpawnApp {
                 path: "/tmp/__no_such_app__.app".into(),
                 timestamp_ms: None,
@@ -555,7 +559,7 @@ mod tests {
     async fn test_play_spawn_cli_on_macos() {
         #[cfg(target_os = "macos")]
         {
-            let mut player = ActionPlayer::new(100.0);
+            let mut player = ActionPlayer::new(100.0, None);
             let actions = vec![Action::SpawnCli {
                 command: "echo".into(),
                 args: vec!["hello".into()],
@@ -570,7 +574,7 @@ mod tests {
     async fn test_play_assert_screenshot_no_label_on_macos() {
         #[cfg(target_os = "macos")]
         {
-            let mut player = ActionPlayer::new(100.0);
+            let mut player = ActionPlayer::new(100.0, None);
             let actions = vec![Action::AssertScreenshot {
                 label: None,
                 max_diff_percentage: 0.05,
@@ -585,7 +589,7 @@ mod tests {
     async fn test_play_multiple_actions_on_macos() {
         #[cfg(target_os = "macos")]
         {
-            let mut player = ActionPlayer::new(100.0);
+            let mut player = ActionPlayer::new(100.0, None);
             let actions = vec![
                 Action::Wait {
                     duration_ms: 1,
@@ -606,7 +610,7 @@ mod tests {
     async fn test_play_scroll_left_on_macos() {
         #[cfg(target_os = "macos")]
         {
-            let mut player = ActionPlayer::new(100.0);
+            let mut player = ActionPlayer::new(100.0, None);
             let actions = vec![Action::Scroll {
                 x: 0.0,
                 y: 0.0,
@@ -623,7 +627,7 @@ mod tests {
     async fn test_play_scroll_right_on_macos() {
         #[cfg(target_os = "macos")]
         {
-            let mut player = ActionPlayer::new(100.0);
+            let mut player = ActionPlayer::new(100.0, None);
             let actions = vec![Action::Scroll {
                 x: 0.0,
                 y: 0.0,
@@ -640,7 +644,7 @@ mod tests {
     async fn test_play_type_text_uppercase_on_macos() {
         #[cfg(target_os = "macos")]
         {
-            let mut player = ActionPlayer::new(100.0);
+            let mut player = ActionPlayer::new(100.0, None);
             let actions = vec![Action::TypeText {
                 text: "ABC".into(),
                 timestamp_ms: None,
@@ -654,7 +658,7 @@ mod tests {
     async fn test_play_assert_screenshot_with_label_missing_on_macos() {
         #[cfg(target_os = "macos")]
         {
-            let mut player = ActionPlayer::new(100.0);
+            let mut player = ActionPlayer::new(100.0, None);
             let actions = vec![Action::AssertScreenshot {
                 label: Some("no_such_ref".into()),
                 max_diff_percentage: 0.05,

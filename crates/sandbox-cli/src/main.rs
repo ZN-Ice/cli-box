@@ -213,6 +213,7 @@ async fn main() -> anyhow::Result<()> {
                     sandbox_id: Some(sandbox_id.clone()),
                     start_time: Instant::now(),
                     window_id: None,
+                    target_pid: None,
                     recorder: ActionRecorder::new(),
                 }));
 
@@ -340,18 +341,28 @@ async fn main() -> anyhow::Result<()> {
         } => {
             let path = output.unwrap_or_else(|| PathBuf::from("sandbox_screenshot.png"));
 
-            if let Some(sandbox_id) = id {
+            let png_data = if let Some(sandbox_id) = id {
                 let registry = InstanceRegistry::default();
                 let instance = registry.get(&sandbox_id)?;
                 let cli = client::SandboxClient::new(instance.port);
-                let png_data = cli.screenshot().await?;
-                std::fs::write(&path, &png_data)?;
-                println!("Screenshot saved to {path:?} ({} bytes)", png_data.len());
+                cli.screenshot().await?
             } else {
-                let png_data = ScreenCapture::capture_sandbox_by_id(window_id)?;
-                std::fs::write(&path, &png_data)?;
-                println!("Screenshot saved to {path:?} ({} bytes)", png_data.len());
-            }
+                let data = ScreenCapture::capture_sandbox_by_id(window_id)?;
+                if data.is_empty() {
+                    anyhow::bail!("Screenshot returned empty data — no sandbox window available");
+                }
+                if !data.starts_with(b"\x89PNG") {
+                    anyhow::bail!(
+                        "Screenshot returned non-PNG data ({} bytes). \
+                         The sandbox window may not be running.",
+                        data.len()
+                    );
+                }
+                data
+            };
+
+            std::fs::write(&path, &png_data)?;
+            println!("Screenshot saved to {path:?} ({} bytes)", png_data.len());
         }
 
         Commands::Windows { id } => {
@@ -434,7 +445,7 @@ async fn main() -> anyhow::Result<()> {
                     "middle" => MouseButton::Middle,
                     other => anyhow::bail!("Unknown button: {other}. Use left, right, or middle."),
                 };
-                InputSimulator::click(x, y, btn)?;
+                InputSimulator::click(x, y, btn, None)?;
                 println!("Clicked at ({x}, {y})");
             }
         }
@@ -447,7 +458,7 @@ async fn main() -> anyhow::Result<()> {
                 cli.type_text(&text).await?;
                 println!("Typed text in sandbox {sandbox_id}");
             } else {
-                InputSimulator::type_text(&text)?;
+                InputSimulator::type_text(&text, None)?;
                 println!("Typed: {text}");
             }
         }
@@ -461,7 +472,7 @@ async fn main() -> anyhow::Result<()> {
                 println!("Pressed key: {key} in sandbox {sandbox_id}");
             } else {
                 let mod_refs: Vec<&str> = modifiers.iter().map(|s| s.as_str()).collect();
-                InputSimulator::press_key(&key, &mod_refs)?;
+                InputSimulator::press_key(&key, &mod_refs, None)?;
                 println!("Pressed key: {key} {modifiers:?}");
             }
         }
@@ -487,6 +498,7 @@ async fn main() -> anyhow::Result<()> {
                 sandbox_id: None,
                 start_time: Instant::now(),
                 window_id: None,
+                target_pid: None,
                 recorder: ActionRecorder::new(),
             }));
 

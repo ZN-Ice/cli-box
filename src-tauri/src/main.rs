@@ -155,6 +155,7 @@ fn main() {
                     sandbox_id: Some(id.clone()),
                     start_time: Instant::now(),
                     window_id: None,
+                    target_pid: Some(std::process::id()),
                     recorder: ActionRecorder::new(),
                 }));
 
