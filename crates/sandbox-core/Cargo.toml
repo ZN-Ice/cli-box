@@ -22,6 +22,9 @@ image.workspace = true
 nix.workspace = true
 portable-pty.workspace = true
 serde_yaml.workspace = true
+uuid.workspace = true
+axum.workspace = true
+tower.workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
 core-graphics = { version = "0.25", features = ["highsierra"] }

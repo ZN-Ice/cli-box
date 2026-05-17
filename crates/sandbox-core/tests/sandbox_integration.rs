@@ -106,6 +106,7 @@ fn custom_sandbox_config() {
         width: 1920,
         height: 1080,
         title: "Custom Sandbox".into(),
+        ..SandboxConfig::default()
     };
     let sandbox = Sandbox::new(config.clone());
     assert_eq!(sandbox.config().width, 1920);

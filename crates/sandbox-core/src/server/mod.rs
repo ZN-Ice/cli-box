@@ -1,3 +1,12 @@
+use crate::automation::ax_ui::{UiElement, UiInspector};
+use crate::automation::cg_event::{InputSimulator, MouseButton};
+use crate::capture::ScreenCapture;
+use crate::diff::{diff_images, DiffOptions, DiffResult};
+use crate::error::AppError;
+use crate::player::ActionPlayer;
+use crate::process::ProcessManager;
+use crate::recorder::{Action, ActionRecorder};
+use crate::scenario::ScenarioRunner;
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
@@ -5,14 +14,6 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use sandbox_core::automation::ax_ui::{UiElement, UiInspector};
-use sandbox_core::automation::cg_event::{InputSimulator, MouseButton};
-use sandbox_core::capture::ScreenCapture;
-use sandbox_core::diff::{diff_images, DiffOptions, DiffResult};
-use sandbox_core::player::ActionPlayer;
-use sandbox_core::process::ProcessManager;
-use sandbox_core::recorder::{Action, ActionRecorder};
-use sandbox_core::scenario::ScenarioRunner;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::Instant;
@@ -20,18 +21,10 @@ use tokio::sync::Mutex;
 
 /// Shared application state for the HTTP server
 pub struct AppState {
+    pub sandbox_id: Option<String>,
     pub start_time: Instant,
-    #[allow(dead_code)]
-    pub sandbox_title: String,
+    pub window_id: Option<u32>,
     pub recorder: ActionRecorder,
-}
-
-/// API response wrapper
-#[derive(Serialize)]
-#[allow(dead_code)]
-struct ApiResponse<T: Serialize> {
-    success: bool,
-    data: T,
 }
 
 /// Health check response
@@ -40,9 +33,17 @@ struct HealthResponse {
     status: String,
     version: String,
     uptime_secs: u64,
+    sandbox_id: Option<String>,
 }
 
-/// Click request body
+/// Sandbox info response
+#[derive(Serialize)]
+struct SandboxInfoResponse {
+    sandbox_id: Option<String>,
+    window_id: Option<u32>,
+    uptime_secs: u64,
+}
+
 #[derive(Deserialize)]
 struct ClickRequest {
     x: f64,
@@ -55,13 +56,11 @@ fn default_button() -> String {
     "left".to_string()
 }
 
-/// Type text request body
 #[derive(Deserialize)]
 struct TypeRequest {
     text: String,
 }
 
-/// Key press request body
 #[derive(Deserialize)]
 struct KeyRequest {
     key: String,
@@ -69,7 +68,6 @@ struct KeyRequest {
     modifiers: Vec<String>,
 }
 
-/// Scroll request body
 #[derive(Deserialize)]
 struct ScrollRequest {
     x: f64,
@@ -78,7 +76,6 @@ struct ScrollRequest {
     amount: i32,
 }
 
-/// Drag request body
 #[derive(Deserialize)]
 struct DragRequest {
     from_x: f64,
@@ -87,13 +84,11 @@ struct DragRequest {
     to_y: f64,
 }
 
-/// Spawn app request body
 #[derive(Deserialize)]
 struct SpawnAppRequest {
     path: String,
 }
 
-/// Spawn CLI request body
 #[derive(Deserialize)]
 struct SpawnCliRequest {
     command: String,
@@ -101,13 +96,11 @@ struct SpawnCliRequest {
     args: Vec<String>,
 }
 
-/// Kill process request body
 #[derive(Deserialize)]
 struct KillRequest {
     pid: u32,
 }
 
-/// Region screenshot query params
 #[derive(Deserialize)]
 struct RegionQuery {
     x: i32,
@@ -116,42 +109,89 @@ struct RegionQuery {
     height: u32,
 }
 
-/// Screenshot query params
 #[derive(Deserialize)]
 struct ScreenshotQuery {
     #[serde(default)]
     window_id: Option<u32>,
 }
 
+#[derive(Deserialize)]
+struct PtyWriteRequest {
+    pid: u32,
+    data: String,
+}
+
+#[derive(Deserialize)]
+struct RecordStartRequest {
+    #[serde(default)]
+    output_path: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct PlaybackRequest {
+    actions: Vec<Action>,
+    #[serde(default = "default_speed")]
+    speed: f64,
+}
+
+fn default_speed() -> f64 {
+    1.0
+}
+
+#[derive(Deserialize)]
+struct ScenarioRequest {
+    yaml: String,
+    #[serde(default = "default_speed")]
+    speed: f64,
+}
+
+#[derive(Deserialize)]
+struct DiffRequest {
+    expected: String,
+    actual: String,
+    #[serde(default)]
+    threshold: Option<u8>,
+    #[serde(default)]
+    max_diff_percentage: Option<f64>,
+}
+
+#[derive(Deserialize)]
+struct UiFindRequest {
+    window_id: u32,
+    #[serde(default)]
+    role: Option<String>,
+    #[serde(default)]
+    title: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct UiValueQuery {
+    element_id: String,
+}
+
 /// Build the HTTP API router
 pub fn build_router(state: Arc<Mutex<AppState>>) -> Router {
     Router::new()
-        // Health
         .route("/health", get(health_handler))
-        // Windows
+        .route("/sandbox/info", get(sandbox_info_handler))
+        .route("/shutdown", post(shutdown_handler))
         .route("/windows", get(list_windows_handler))
-        // Processes
         .route("/processes", get(list_processes_handler))
-        // App spawn
         .route("/app/spawn", post(spawn_app_handler))
-        // CLI spawn
         .route("/cli/spawn", post(spawn_cli_handler))
-        // Process kill
         .route("/process/kill", post(kill_process_handler))
-        // Input
         .route("/input/click", post(click_handler))
         .route("/input/type", post(type_handler))
         .route("/input/key", post(key_handler))
         .route("/input/scroll", post(scroll_handler))
         .route("/input/drag", post(drag_handler))
-        // Screenshots
         .route("/screenshot", get(screenshot_handler))
         .route("/screenshot/region", get(screenshot_region_handler))
-        // UI inspect (Phase 3)
+        .route("/pty/write", post(pty_write_handler))
+        .route("/pty/output/{pid}", get(pty_output_handler))
         .route("/ui/inspect/{window_id}", get(ui_inspect_handler))
         .route("/ui/find", post(ui_find_handler))
         .route("/ui/value", get(ui_value_handler))
-        // Recording & Playback (Phase 4)
         .route("/record/start", post(record_start_handler))
         .route("/record/stop", post(record_stop_handler))
         .route("/record/actions", get(record_actions_handler))
@@ -169,7 +209,28 @@ async fn health_handler(State(state): State<Arc<Mutex<AppState>>>) -> Json<Healt
         status: "ok".to_string(),
         version: env!("CARGO_PKG_VERSION").to_string(),
         uptime_secs: s.start_time.elapsed().as_secs(),
+        sandbox_id: s.sandbox_id.clone(),
     })
+}
+
+async fn sandbox_info_handler(
+    State(state): State<Arc<Mutex<AppState>>>,
+) -> Json<SandboxInfoResponse> {
+    let s = state.lock().await;
+    Json(SandboxInfoResponse {
+        sandbox_id: s.sandbox_id.clone(),
+        window_id: s.window_id,
+        uptime_secs: s.start_time.elapsed().as_secs(),
+    })
+}
+
+async fn shutdown_handler() -> Json<serde_json::Value> {
+    tracing::info!("Shutdown requested via HTTP");
+    std::thread::spawn(|| {
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        std::process::exit(0);
+    });
+    Json(serde_json::json!({"shutting_down": true}))
 }
 
 async fn list_windows_handler() -> Result<Json<Vec<(u32, String)>>, AppError> {
@@ -177,22 +238,21 @@ async fn list_windows_handler() -> Result<Json<Vec<(u32, String)>>, AppError> {
     Ok(Json(windows))
 }
 
-async fn list_processes_handler() -> Result<Json<Vec<sandbox_core::process::ProcessInfo>>, AppError>
-{
+async fn list_processes_handler() -> Result<Json<Vec<crate::process::ProcessInfo>>, AppError> {
     let processes = ProcessManager::list_processes()?;
     Ok(Json(processes))
 }
 
 async fn spawn_app_handler(
     Json(req): Json<SpawnAppRequest>,
-) -> Result<Json<sandbox_core::process::ProcessInfo>, AppError> {
+) -> Result<Json<crate::process::ProcessInfo>, AppError> {
     let info = ProcessManager::spawn_app(&req.path)?;
     Ok(Json(info))
 }
 
 async fn spawn_cli_handler(
     Json(req): Json<SpawnCliRequest>,
-) -> Result<Json<sandbox_core::process::ProcessInfo>, AppError> {
+) -> Result<Json<crate::process::ProcessInfo>, AppError> {
     let info = ProcessManager::spawn_cli(&req.command, &req.args)?;
     Ok(Json(info))
 }
@@ -243,10 +303,20 @@ async fn drag_handler(Json(req): Json<DragRequest>) -> Result<Json<serde_json::V
 }
 
 async fn screenshot_handler(
+    State(state): State<Arc<Mutex<AppState>>>,
     Query(q): Query<ScreenshotQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let png_data = ScreenCapture::capture_sandbox_by_id(q.window_id)?;
-    Ok((StatusCode::OK, [("content-type", "image/png")], png_data))
+    let window_id = q.window_id.or(state.lock().await.window_id);
+    match window_id {
+        Some(id) => {
+            let png_data = ScreenCapture::capture_window(id)?;
+            Ok((StatusCode::OK, [("content-type", "image/png")], png_data).into_response())
+        }
+        None => {
+            let png_data = ScreenCapture::capture_sandbox()?;
+            Ok((StatusCode::OK, [("content-type", "image/png")], png_data).into_response())
+        }
+    }
 }
 
 async fn screenshot_region_handler(
@@ -256,20 +326,23 @@ async fn screenshot_region_handler(
     Ok((StatusCode::OK, [("content-type", "image/png")], png_data))
 }
 
+async fn pty_write_handler(
+    Json(req): Json<PtyWriteRequest>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    ProcessManager::send_input(req.pid, req.data.as_bytes())?;
+    Ok(Json(serde_json::json!({"written": true})))
+}
+
+async fn pty_output_handler(Path(pid): Path<u32>) -> Result<Json<serde_json::Value>, AppError> {
+    let output = ProcessManager::read_output(pid)?;
+    Ok(Json(serde_json::json!({"output": output})))
+}
+
 async fn ui_inspect_handler(Path(window_id): Path<u32>) -> Result<Json<UiElement>, AppError> {
     let result = tokio::task::spawn_blocking(move || UiInspector::inspect_window(window_id))
         .await
         .map_err(|e| AppError::Accessibility(format!("UI inspect task failed: {e}")))?;
     Ok(Json(result?))
-}
-
-#[derive(Deserialize)]
-struct UiFindRequest {
-    window_id: u32,
-    #[serde(default)]
-    role: Option<String>,
-    #[serde(default)]
-    title: Option<String>,
 }
 
 async fn ui_find_handler(Json(req): Json<UiFindRequest>) -> Result<Json<Vec<UiElement>>, AppError> {
@@ -284,11 +357,6 @@ async fn ui_find_handler(Json(req): Json<UiFindRequest>) -> Result<Json<Vec<UiEl
     Ok(Json(result?))
 }
 
-#[derive(Deserialize)]
-struct UiValueQuery {
-    element_id: String,
-}
-
 async fn ui_value_handler(
     Query(q): Query<UiValueQuery>,
 ) -> Result<Json<serde_json::Value>, AppError> {
@@ -296,13 +364,7 @@ async fn ui_value_handler(
     Ok(Json(serde_json::json!({ "value": value })))
 }
 
-// ── Recording & Playback (Phase 4) ──────────────────────
-
-#[derive(Deserialize)]
-struct RecordStartRequest {
-    #[serde(default)]
-    output_path: Option<String>,
-}
+// ── Recording & Playback ──────────────────────────────────
 
 async fn record_start_handler(
     State(state): State<Arc<Mutex<AppState>>>,
@@ -333,17 +395,6 @@ async fn record_actions_handler(
     Ok(Json(app.recorder.actions()))
 }
 
-#[derive(Deserialize)]
-struct PlaybackRequest {
-    actions: Vec<Action>,
-    #[serde(default = "default_speed")]
-    speed: f64,
-}
-
-fn default_speed() -> f64 {
-    1.0
-}
-
 async fn playback_actions_handler(
     Json(req): Json<PlaybackRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
@@ -353,14 +404,6 @@ async fn playback_actions_handler(
         "results_count": results.len(),
         "results": format!("{results:?}"),
     })))
-}
-
-#[derive(Deserialize)]
-struct ScenarioRequest {
-    /// YAML scenario content as a string
-    yaml: String,
-    #[serde(default = "default_speed")]
-    speed: f64,
 }
 
 async fn scenario_run_handler(
@@ -378,16 +421,6 @@ async fn scenario_run_handler(
         "report_markdown": report.to_markdown(),
         "report_json": serde_json::to_value(&report).unwrap_or_default(),
     })))
-}
-
-#[derive(Deserialize)]
-struct DiffRequest {
-    expected: String, // base64 encoded PNG
-    actual: String,   // base64 encoded PNG
-    #[serde(default)]
-    threshold: Option<u8>,
-    #[serde(default)]
-    max_diff_percentage: Option<f64>,
 }
 
 async fn diff_handler(Json(req): Json<DiffRequest>) -> Result<Json<DiffResult>, AppError> {
@@ -411,26 +444,15 @@ async fn diff_handler(Json(req): Json<DiffRequest>) -> Result<Json<DiffResult>, 
     Ok(Json(result))
 }
 
-// ── Error handling ───────────────────────────────────────
-
-enum AppError {
-    Core(sandbox_core::AppError),
-    BadRequest(String),
-    Accessibility(String),
-}
-
-impl From<sandbox_core::AppError> for AppError {
-    fn from(e: sandbox_core::AppError) -> Self {
-        AppError::Core(e)
-    }
-}
+// ── Error handling ────────────────────────────────────────
 
 impl IntoResponse for AppError {
     fn into_response(self) -> axum::response::Response {
-        let (status, message) = match self {
-            AppError::Core(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
-            AppError::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg),
-            AppError::Accessibility(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg),
+        let (status, message) = match &self {
+            AppError::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg.clone()),
+            AppError::WindowNotFound(msg) => (StatusCode::NOT_FOUND, msg.clone()),
+            AppError::Instance(msg) => (StatusCode::NOT_FOUND, msg.clone()),
+            _ => (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()),
         };
         (status, Json(serde_json::json!({"error": message}))).into_response()
     }
