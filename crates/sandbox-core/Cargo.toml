@@ -21,7 +21,6 @@ base64.workspace = true
 image.workspace = true
 nix.workspace = true
 portable-pty.workspace = true
-serde_yaml.workspace = true
 uuid.workspace = true
 axum.workspace = true
 tower.workspace = true

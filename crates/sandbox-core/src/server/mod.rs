@@ -1,12 +1,8 @@
 use crate::automation::ax_ui::{UiElement, UiInspector};
 use crate::automation::cg_event::{InputSimulator, MouseButton};
 use crate::capture::ScreenCapture;
-use crate::diff::{diff_images, DiffOptions, DiffResult};
 use crate::error::AppError;
-use crate::player::ActionPlayer;
 use crate::process::ProcessManager;
-use crate::recorder::{Action, ActionRecorder};
-use crate::scenario::ScenarioRunner;
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
@@ -25,7 +21,6 @@ pub struct AppState {
     pub start_time: Instant,
     pub window_id: Option<u32>,
     pub target_pid: Option<u32>,
-    pub recorder: ActionRecorder,
 }
 
 /// Health check response
@@ -123,40 +118,6 @@ struct PtyWriteRequest {
 }
 
 #[derive(Deserialize)]
-struct RecordStartRequest {
-    #[serde(default)]
-    output_path: Option<String>,
-}
-
-#[derive(Deserialize)]
-struct PlaybackRequest {
-    actions: Vec<Action>,
-    #[serde(default = "default_speed")]
-    speed: f64,
-}
-
-fn default_speed() -> f64 {
-    1.0
-}
-
-#[derive(Deserialize)]
-struct ScenarioRequest {
-    yaml: String,
-    #[serde(default = "default_speed")]
-    speed: f64,
-}
-
-#[derive(Deserialize)]
-struct DiffRequest {
-    expected: String,
-    actual: String,
-    #[serde(default)]
-    threshold: Option<u8>,
-    #[serde(default)]
-    max_diff_percentage: Option<f64>,
-}
-
-#[derive(Deserialize)]
 struct UiFindRequest {
     window_id: u32,
     #[serde(default)]
@@ -193,12 +154,6 @@ pub fn build_router(state: Arc<Mutex<AppState>>) -> Router {
         .route("/ui/inspect/{window_id}", get(ui_inspect_handler))
         .route("/ui/find", post(ui_find_handler))
         .route("/ui/value", get(ui_value_handler))
-        .route("/record/start", post(record_start_handler))
-        .route("/record/stop", post(record_stop_handler))
-        .route("/record/actions", get(record_actions_handler))
-        .route("/playback/actions", post(playback_actions_handler))
-        .route("/scenario/run", post(scenario_run_handler))
-        .route("/diff", post(diff_handler))
         .with_state(state)
 }
 
@@ -387,88 +342,6 @@ async fn ui_value_handler(
     Ok(Json(serde_json::json!({ "value": value })))
 }
 
-// ── Recording & Playback ──────────────────────────────────
-
-async fn record_start_handler(
-    State(state): State<Arc<Mutex<AppState>>>,
-    Json(req): Json<RecordStartRequest>,
-) -> Result<Json<serde_json::Value>, AppError> {
-    let app = state.lock().await;
-    let path = req.output_path.map(std::path::PathBuf::from);
-    app.recorder.start(path)?;
-    Ok(Json(serde_json::json!({"recording": true})))
-}
-
-async fn record_stop_handler(
-    State(state): State<Arc<Mutex<AppState>>>,
-) -> Result<Json<serde_json::Value>, AppError> {
-    let app = state.lock().await;
-    let actions = app.recorder.stop()?;
-    Ok(Json(serde_json::json!({
-        "recording": false,
-        "actions_count": actions.len(),
-        "actions": actions,
-    })))
-}
-
-async fn record_actions_handler(
-    State(state): State<Arc<Mutex<AppState>>>,
-) -> Result<Json<Vec<Action>>, AppError> {
-    let app = state.lock().await;
-    Ok(Json(app.recorder.actions()))
-}
-
-async fn playback_actions_handler(
-    State(state): State<Arc<Mutex<AppState>>>,
-    Json(req): Json<PlaybackRequest>,
-) -> Result<Json<serde_json::Value>, AppError> {
-    let target_pid = require_target_pid(state.lock().await.target_pid)?;
-    let mut player = ActionPlayer::new(req.speed, Some(target_pid));
-    let results = player.play(&req.actions).await;
-    Ok(Json(serde_json::json!({
-        "results_count": results.len(),
-        "results": format!("{results:?}"),
-    })))
-}
-
-async fn scenario_run_handler(
-    Json(req): Json<ScenarioRequest>,
-) -> Result<Json<serde_json::Value>, AppError> {
-    let scenario = ScenarioRunner::load_from_str(&req.yaml)?;
-    let report = ScenarioRunner::run(&scenario, req.speed).await;
-    Ok(Json(serde_json::json!({
-        "name": report.name,
-        "status": format!("{:?}", report.status),
-        "passed": report.passed_steps,
-        "failed": report.failed_steps,
-        "total": report.total_steps,
-        "duration_ms": report.duration_ms,
-        "report_markdown": report.to_markdown(),
-        "report_json": serde_json::to_value(&report).unwrap_or_default(),
-    })))
-}
-
-async fn diff_handler(Json(req): Json<DiffRequest>) -> Result<Json<DiffResult>, AppError> {
-    use base64::Engine;
-    let expected = base64::engine::general_purpose::STANDARD
-        .decode(&req.expected)
-        .map_err(|e| AppError::BadRequest(format!("Invalid base64 (expected): {e}")))?;
-    let actual = base64::engine::general_purpose::STANDARD
-        .decode(&req.actual)
-        .map_err(|e| AppError::BadRequest(format!("Invalid base64 (actual): {e}")))?;
-
-    let mut options = DiffOptions::default();
-    if let Some(t) = req.threshold {
-        options.threshold = t;
-    }
-    if let Some(m) = req.max_diff_percentage {
-        options.max_diff_percentage = m;
-    }
-
-    let result = diff_images(&expected, &actual, &options)?;
-    Ok(Json(result))
-}
-
 // ── Error handling ────────────────────────────────────────
 
 impl IntoResponse for AppError {
@@ -499,7 +372,6 @@ mod tests {
             start_time: Instant::now(),
             window_id: Some(42),
             target_pid: None,
-            recorder: ActionRecorder::new(),
         }))
     }
 
@@ -953,157 +825,6 @@ mod tests {
         assert!(status.is_server_error() || status.is_client_error() || status == StatusCode::OK);
     }
 
-    // ── Recording ──────────────────────────────────────────────
-
-    #[tokio::test]
-    async fn record_start() {
-        let app = test_router();
-        let resp = app
-            .oneshot(
-                Request::builder()
-                    .method("POST")
-                    .uri("/record/start")
-                    .header(header::CONTENT_TYPE, "application/json")
-                    .body(Body::from(r#"{}"#))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), StatusCode::OK);
-    }
-
-    #[tokio::test]
-    async fn record_stop() {
-        let app = test_router();
-        let resp = app
-            .oneshot(
-                Request::builder()
-                    .method("POST")
-                    .uri("/record/stop")
-                    .header(header::CONTENT_TYPE, "application/json")
-                    .body(Body::from(r#"{}"#))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), StatusCode::OK);
-    }
-
-    #[tokio::test]
-    async fn record_actions() {
-        let app = test_router();
-        let resp = app
-            .oneshot(
-                Request::builder()
-                    .uri("/record/actions")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), StatusCode::OK);
-    }
-
-    // ── Playback ───────────────────────────────────────────────
-
-    #[tokio::test]
-    async fn playback_empty_actions() {
-        let app = test_router();
-        let resp = app
-            .oneshot(
-                Request::builder()
-                    .method("POST")
-                    .uri("/playback/actions")
-                    .header(header::CONTENT_TYPE, "application/json")
-                    .body(Body::from(r#"{"actions": [], "speed": 1.0}"#))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        // target_pid is None in test state — playback requires a sandbox window
-        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
-    }
-
-    // ── Scenario ───────────────────────────────────────────────
-
-    #[tokio::test]
-    async fn scenario_run_minimal() {
-        let yaml = r#"name: "test"
-steps:
-  - type: wait
-    duration_ms: 1"#;
-        let app = test_router();
-        let resp = app
-            .oneshot(
-                Request::builder()
-                    .method("POST")
-                    .uri("/scenario/run")
-                    .header(header::CONTENT_TYPE, "application/json")
-                    .body(Body::from(
-                        serde_json::json!({"yaml": yaml, "speed": 100.0}).to_string(),
-                    ))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), StatusCode::OK);
-    }
-
-    // ── Diff ───────────────────────────────────────────────────
-
-    use image::codecs::png::PngEncoder;
-    use image::ImageEncoder;
-
-    fn make_test_png(w: u32, h: u32) -> Vec<u8> {
-        let pixels = vec![0u8; (w * h * 4) as usize];
-        let mut buf = Vec::new();
-        PngEncoder::new(&mut buf)
-            .write_image(&pixels, w, h, image::ExtendedColorType::Rgba8)
-            .unwrap();
-        buf
-    }
-
-    #[tokio::test]
-    async fn diff_handler_valid() {
-        let png = make_test_png(10, 10);
-        let expected_b64 = base64::engine::general_purpose::STANDARD.encode(&png);
-        let app = test_router();
-        let resp = app
-            .oneshot(
-                Request::builder()
-                    .method("POST")
-                    .uri("/diff")
-                    .header(header::CONTENT_TYPE, "application/json")
-                    .body(Body::from(
-                        serde_json::json!({"expected": expected_b64, "actual": expected_b64})
-                            .to_string(),
-                    ))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), StatusCode::OK);
-    }
-
-    #[tokio::test]
-    async fn diff_handler_invalid_base64() {
-        let app = test_router();
-        let resp = app
-            .oneshot(
-                Request::builder()
-                    .method("POST")
-                    .uri("/diff")
-                    .header(header::CONTENT_TYPE, "application/json")
-                    .body(Body::from(
-                        r#"{"expected": "not-base64!!!", "actual": "not-base64!!!"}"#,
-                    ))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
-    }
-
     // ── Error handling ─────────────────────────────────────────
 
     #[tokio::test]
@@ -1149,40 +870,6 @@ steps:
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::NOT_FOUND);
-    }
-
-    // ── Record with playback ───────────────────────────────────
-
-    #[tokio::test]
-    async fn record_start_stop_flow() {
-        let app = test_router();
-        // Start
-        let resp = app
-            .clone()
-            .oneshot(
-                Request::builder()
-                    .method("POST")
-                    .uri("/record/start")
-                    .header(header::CONTENT_TYPE, "application/json")
-                    .body(Body::from(r#"{}"#))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), StatusCode::OK);
-        // Stop
-        let resp = app
-            .oneshot(
-                Request::builder()
-                    .method("POST")
-                    .uri("/record/stop")
-                    .header(header::CONTENT_TYPE, "application/json")
-                    .body(Body::from(r#"{}"#))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), StatusCode::OK);
     }
 
     // ── Standalone mode rejection ─────────────────────────────────
@@ -1294,6 +981,8 @@ steps:
             )
             .await
             .unwrap();
+        // When window_id is Some(42) in test state, screenshot tries to capture
+        // which fails on non-macOS or without permissions, returning 404 or 500
         let status = resp.status();
         assert!(
             matches!(status.as_u16(), 200 | 404 | 500),
@@ -1302,19 +991,52 @@ steps:
     }
 
     #[tokio::test]
-    async fn standalone_rejects_playback() {
-        let app = test_router();
+    async fn screenshot_without_window_id_returns_error() {
+        // Create a state with window_id = None
+        let state = Arc::new(Mutex::new(AppState {
+            sandbox_id: Some("test-sandbox-no-window".into()),
+            start_time: Instant::now(),
+            window_id: None,
+            target_pid: None,
+        }));
+        let app = build_router(state);
         let resp = app
             .oneshot(
                 Request::builder()
-                    .method("POST")
-                    .uri("/playback/actions")
-                    .header(header::CONTENT_TYPE, "application/json")
-                    .body(Body::from(r#"{"actions": [], "speed": 1.0}"#))
+                    .uri("/screenshot")
+                    .body(Body::empty())
                     .unwrap(),
             )
             .await
             .unwrap();
+        // Should return 400 Bad Request with descriptive error
         assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+        let body = axum::body::to_bytes(resp.into_body(), 1024).await.unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert!(json["error"]
+            .as_str()
+            .unwrap()
+            .contains("Sandbox window not available"));
+    }
+
+    #[tokio::test]
+    async fn screenshot_with_query_window_id() {
+        // Test that window_id from query parameter is used
+        let app = test_router();
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .uri("/screenshot?window_id=999")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        // Should try to capture window 999, which doesn't exist, returning 404 or 500
+        let status = resp.status();
+        assert!(
+            matches!(status.as_u16(), 200 | 404 | 500),
+            "unexpected status: {status}"
+        );
     }
 }
