@@ -18,8 +18,8 @@ mod macos_impl {
     /// Without this, `SCShareableContent::get()` (async path) triggers
     /// `CGS_REQUIRE_INIT` assertion when run from non-GUI context.
     fn ensure_cg_initialized() {
-        CG_INIT.call_once(|| {
-            unsafe { screencapturekit::ffi::sc_initialize_core_graphics(); }
+        CG_INIT.call_once(|| unsafe {
+            screencapturekit::ffi::sc_initialize_core_graphics();
         });
     }
 
