@@ -1,41 +1,24 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import ReactDOM from "react-dom/client";
 import SandboxTerminal from "./components/Terminal";
-import StatusBar from "./components/StatusBar";
-import ControlPanel from "./components/ControlPanel";
 import * as api from "./api";
 import "./index.css";
 
-interface ProcessInfo {
-  pid: number;
-  name: string;
-  is_running: boolean;
-}
-
 function App() {
-  const [processes, setProcesses] = useState<ProcessInfo[]>([]);
-  const [screenshotCount, setScreenshotCount] = useState(0);
-  const [serverStatus] = useState<"running" | "stopped" | "error">("running");
-  const [screenshotLoading, setScreenshotLoading] = useState(false);
-  const [screenshotUrl, setScreenshotUrl] = useState<string | null>(null);
   const [activePid, setActivePid] = useState<number | null>(null);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [connected, setConnected] = useState(false);
+  const [screenshotUrl, setScreenshotUrl] = useState<string | null>(null);
+  const [screenshotLoading, setScreenshotLoading] = useState(false);
+  const [showPreview, setShowPreview] = useState(false);
   const hasConnectedRef = useRef(false);
 
-  const showError = useCallback((msg: string) => {
-    setErrorMsg(msg);
-    setTimeout(() => setErrorMsg(null), 4000);
-  }, []);
-
-  // ── Auto-connect to spawned processes ──────────────────
-  // Polls for running processes and auto-connects to the first PTY
+  // Auto-connect to spawned processes
   useEffect(() => {
     const pollProcesses = async () => {
       try {
         const list = await api.listProcesses();
         if (list.length > 0) {
-          setProcesses(list.map((p) => ({ pid: p.pid, name: p.name, is_running: p.is_running })));
-          // Auto-connect to the first running process
+          setConnected(true);
           if (activePid === null && !hasConnectedRef.current) {
             const running = list.find((p) => p.is_running);
             if (running) {
@@ -43,196 +26,145 @@ function App() {
               hasConnectedRef.current = true;
             }
           }
+        } else {
+          setConnected(false);
         }
       } catch {
-        // Server may not be ready yet
+        setConnected(false);
       }
     };
 
     pollProcesses();
-    const interval = setInterval(pollProcesses, 1000);
+    const interval = setInterval(pollProcesses, 2000);
     return () => clearInterval(interval);
   }, [activePid]);
 
-  // ── Terminal input → PTY ─────────────────────────────
-
+  // Terminal input → PTY
   const handleTerminalInput = useCallback(
     (data: string) => {
       if (activePid !== null) {
-        api.ptyWrite(activePid, data).catch(() => {
-          // PTY write failures are expected when the process exits
-        });
+        api.ptyWrite(activePid, data).catch(() => {});
       }
     },
     [activePid],
   );
 
-  // ── Screenshot ───────────────────────────────────────
-
+  // Screenshot
   const handleScreenshot = useCallback(async () => {
     setScreenshotLoading(true);
     try {
       const url = await api.takeScreenshot();
       setScreenshotUrl(url);
-      setScreenshotCount((c) => c + 1);
-    } catch (e) {
-      showError(`Screenshot failed: ${e}`);
+      setShowPreview(true);
+    } catch {
+      // silent
     } finally {
       setScreenshotLoading(false);
     }
-  }, [showError]);
+  }, []);
 
-  // ── Spawn App ────────────────────────────────────────
-
-  const handleSpawnApp = useCallback(
-    (path: string) => {
-      api
-        .spawnApp(path)
-        .then((info) => {
-          setProcesses((prev) => [
-            ...prev,
-            { pid: info.pid, name: info.name, is_running: info.is_running },
-          ]);
-        })
-        .catch((e) => showError(`spawnApp failed: ${e}`));
-    },
-    [showError],
-  );
-
-  // ── Spawn CLI ────────────────────────────────────────
-
-  const handleSpawnCli = useCallback(
-    (command: string, args: string[]) => {
-      api
-        .spawnCli(command, args)
-        .then((info) => {
-          setProcesses((prev) => [
-            ...prev,
-            { pid: info.pid, name: info.name, is_running: info.is_running },
-          ]);
-          // Auto-connect terminal to this PTY
-          setActivePid(info.pid);
-        })
-        .catch((e) => showError(`spawnCli failed: ${e}`));
-    },
-    [showError],
-  );
-
-  // ── Click ────────────────────────────────────────────
-
-  const handleClick = useCallback(
-    (x: number, y: number, button: string) => {
-      api
-        .click(x, y, button as "left" | "right" | "middle")
-        .catch((e) => showError(`Click failed: ${e}`));
-    },
-    [showError],
-  );
-
-  // ── Type Text ────────────────────────────────────────
-
-  const handleTypeText = useCallback(
-    (text: string) => {
-      api.typeText(text).catch((e) => showError(`Type failed: ${e}`));
-    },
-    [showError],
-  );
-
-  // ── Press Key ────────────────────────────────────────
-
-  const handlePressKey = useCallback(
-    (key: string, modifiers: string[]) => {
-      api.pressKey(key, modifiers).catch((e) => showError(`Key failed: ${e}`));
-    },
-    [showError],
-  );
+  // Close preview
+  const closePreview = useCallback(() => {
+    setShowPreview(false);
+    if (screenshotUrl) {
+      URL.revokeObjectURL(screenshotUrl);
+      setScreenshotUrl(null);
+    }
+  }, [screenshotUrl]);
 
   return (
-    <div className="flex h-screen bg-gray-900 text-white">
-      {/* Main content area */}
-      <div className="flex-1 flex flex-col min-w-0">
-        {/* Header */}
-        <header className="h-10 bg-gray-800 flex items-center justify-between px-4 border-b border-gray-700 flex-shrink-0">
-          <span className="text-sm font-medium text-gray-300">
-            System Test Sandbox
-          </span>
-          <span className="text-xs text-gray-500">
-            macOS Desktop Automation
-          </span>
-        </header>
+    <div className="w-full h-screen bg-term-bg text-term-fg relative overflow-hidden">
+      {/* Full-screen terminal */}
+      <SandboxTerminal
+        onInput={handleTerminalInput}
+        activePid={activePid}
+      />
 
-        {/* Error toast */}
-        {errorMsg && (
-          <div className="bg-red-900/80 text-red-200 text-xs px-4 py-1.5 text-center">
-            {errorMsg}
-          </div>
-        )}
-
-        {/* Content: Terminal + Screenshot / App view */}
-        <div className="flex-1 flex min-h-0">
-          {/* Terminal — left half */}
-          <div className="w-1/2 border-r border-gray-700">
-            <SandboxTerminal
-              onInput={handleTerminalInput}
-              connected={activePid !== null}
-              activePid={activePid}
-            />
-          </div>
-
-          {/* Screenshot preview / App view — right half */}
-          <div className="w-1/2 flex items-center justify-center bg-gray-850">
-            {screenshotUrl ? (
-              <div className="w-full h-full p-2 flex flex-col">
-                <div className="flex justify-between items-center mb-1">
-                  <span className="text-xs text-gray-400">
-                    Latest Screenshot
-                  </span>
-                  <button
-                    className="text-xs text-gray-500 hover:text-gray-300"
-                    onClick={() => setScreenshotUrl(null)}
-                  >
-                    Clear
-                  </button>
-                </div>
-                <img
-                  src={screenshotUrl}
-                  alt="Sandbox screenshot"
-                  className="flex-1 object-contain bg-black rounded"
-                />
-              </div>
+      {/* Floating toolbar — top right, macOS style */}
+      <div className="absolute top-3 right-4 z-10">
+        <div className="flex items-center gap-1 bg-term-surface/80 backdrop-blur-md border border-term-border/50 rounded-lg px-2 py-1 shadow-lg shadow-black/20">
+          {/* Screenshot button */}
+          <button
+            onClick={handleScreenshot}
+            disabled={screenshotLoading}
+            className="flex items-center gap-1.5 px-2.5 py-1 text-xs text-term-muted hover:text-term-fg hover:bg-white/5 rounded-md transition-all duration-150 disabled:opacity-40"
+            title="Screenshot"
+          >
+            <svg
+              className="w-3.5 h-3.5"
+              fill="none"
+              viewBox="0 0 24 24"
+              strokeWidth={1.5}
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M6.827 6.175A2.31 2.31 0 0 1 5.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 0 0-1.134-.175 2.31 2.31 0 0 1-1.64-1.055l-.822-1.316a2.192 2.192 0 0 0-1.736-1.039 48.774 48.774 0 0 0-5.232 0 2.192 2.192 0 0 0-1.736 1.039l-.821 1.316Z"
+              />
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M16.5 12.75a4.5 4.5 0 1 1-9 0 4.5 4.5 0 0 1 9 0ZM18.75 10.5h.008v.008h-.008V10.5Z"
+              />
+            </svg>
+            {screenshotLoading ? (
+              <span className="animate-pulse">...</span>
             ) : (
-              <div className="text-center text-gray-600">
-                <div className="text-4xl mb-2">🖥</div>
-                <p className="text-sm">Screenshot Preview</p>
-                <p className="text-xs text-gray-700 mt-1">
-                  Click "Screenshot" to capture
-                </p>
-              </div>
+              <span>Screenshot</span>
             )}
+          </button>
+
+          {/* Divider */}
+          <div className="w-px h-3.5 bg-term-border/50" />
+
+          {/* Connection status */}
+          <div className="flex items-center gap-1.5 px-2 py-1 text-xs text-term-muted">
+            <span
+              className={`w-1.5 h-1.5 rounded-full ${
+                connected ? "bg-green-400" : "bg-term-muted"
+              }`}
+            />
+            <span>{connected ? "Connected" : "Waiting..."}</span>
           </div>
         </div>
-
-        {/* Status bar */}
-        <StatusBar
-          processes={processes}
-          screenshotCount={screenshotCount}
-          serverStatus={serverStatus}
-          httpPort={5801}
-        />
       </div>
 
-      {/* Right sidebar — control panel */}
-      <div className="w-60 flex-shrink-0">
-        <ControlPanel
-          onScreenshot={handleScreenshot}
-          onSpawnApp={handleSpawnApp}
-          onSpawnCli={handleSpawnCli}
-          onClick={handleClick}
-          onTypeText={handleTypeText}
-          onPressKey={handlePressKey}
-          screenshotLoading={screenshotLoading}
-        />
-      </div>
+      {/* Screenshot preview — floating panel */}
+      {showPreview && screenshotUrl && (
+        <div className="absolute bottom-4 right-4 z-20" style={{ animation: "fadeIn 0.2s ease-out" }}>
+          <div className="bg-term-surface/90 backdrop-blur-md border border-term-border/50 rounded-xl shadow-2xl shadow-black/40 overflow-hidden">
+            {/* Preview header */}
+            <div className="flex items-center justify-between px-3 py-2 border-b border-term-border/30">
+              <span className="text-xs text-term-muted">Screenshot</span>
+              <button
+                onClick={closePreview}
+                className="text-term-muted hover:text-term-fg transition-colors p-0.5"
+              >
+                <svg
+                  className="w-3.5 h-3.5"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  strokeWidth={2}
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M6 18 18 6M6 6l12 12"
+                  />
+                </svg>
+              </button>
+            </div>
+            {/* Preview image */}
+            <img
+              src={screenshotUrl}
+              alt="Screenshot"
+              className="w-[400px] max-h-[300px] object-contain bg-black/30"
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
