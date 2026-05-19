@@ -143,20 +143,27 @@ release/
 ### 启动沙箱
 
 \`\`\`bash
-# 在沙箱终端中启动 Claude Code
+# 在沙箱中启动 Claude Code（交互模式）
 ./sandbox start claude
 
-# 启动其他命令
-./sandbox start node
+# 非交互式：直接向 Claude 提问（约 30 秒响应）
+./sandbox start claude -- -p "你的问题"
 
-# 带参数启动
-./sandbox start echo -- "hello world"
+# 启动交互式 Shell
+./sandbox start zsh
+./sandbox start bash
+
+# 启动其他 CLI 工具
+./sandbox start node
+./sandbox start npm -- test
 \`\`\`
+
+> **注意**：命令与参数之间用 \`--\` 分隔，如 \`./sandbox start <command> -- <args>\`。
 
 ### 截图
 
 \`\`\`bash
-# 自动发现沙箱窗口并截图
+# 自动发现沙箱窗口并截图（保存为 PNG）
 ./sandbox screenshot -o screenshot.png
 
 # 指定窗口 ID 截图
@@ -176,16 +183,24 @@ release/
 ### 示例工作流
 
 \`\`\`bash
-# 启动 Claude Code
+# 1. 启动 Claude Code
 ./sandbox start claude
 
-# 等待 Claude 启动（约 10 秒）
+# 2. 等待 Claude 启动（约 10 秒）
 sleep 10
 
-# 截图查看状态
-./sandbox screenshot -o before.png
+# 3. 截图查看状态
+./sandbox screenshot -o screenshot.png
 
-# 关闭沙箱
+# 4. 关闭沙箱
+./sandbox shutdown
+\`\`\`
+
+\`\`\`bash
+# 非交互式快速提问
+./sandbox start claude -- -p "用 Python 写一个 hello world"
+sleep 30
+./sandbox screenshot -o claude_response.png
 ./sandbox shutdown
 \`\`\`
 
