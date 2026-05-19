@@ -81,6 +81,10 @@ fn parse_sandbox_args() -> SandboxLaunchArgs {
         } else if arg == "--cmd" && i + 1 < args.len() {
             i += 1;
             result.cmd = Some(args[i].clone());
+        } else if arg == "--" {
+            // Everything after -- is passed as trailing args to the CLI command
+            result.args = args[(i + 1)..].to_vec();
+            break;
         }
         i += 1;
     }
