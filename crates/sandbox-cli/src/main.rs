@@ -109,34 +109,42 @@ fn cmd_start(command: &str, args: &[String]) -> anyhow::Result<()> {
 /// Find the Tauri app bundle path.
 ///
 /// Search order:
-/// 1. <exe_dir>/bundle/macos/System Test Sandbox.app  (cargo tauri build output)
-/// 2. <exe_dir>/../target/release/bundle/macos/...     (release build layout)
+/// 1. <exe_dir>/System Test Sandbox.app              (release layout: side-by-side)
+/// 2. <exe_dir>/bundle/macos/System Test Sandbox.app (cargo tauri build layout)
+/// 3. <project_root>/target/release/bundle/macos/... (dev build layout)
 fn find_tauri_bundle() -> anyhow::Result<PathBuf> {
     let app_name = "System Test Sandbox.app";
     let exe_path = std::env::current_exe().context("Failed to get current exe path")?;
     let exe_dir = exe_path.parent().context("No parent dir for exe")?;
 
-    // Try 1: relative to exe (cargo tauri build layout)
-    let path1 = exe_dir.join("bundle/macos").join(app_name);
+    // Try 1: side-by-side with CLI (release layout)
+    let path1 = exe_dir.join(app_name);
     if path1.exists() {
         return Ok(path1);
     }
 
-    // Try 2: project root layout (exe is in <root>/release/, bundle is in <root>/target/release/bundle/macos/)
+    // Try 2: <exe_dir>/bundle/macos/ (cargo tauri build output)
+    let path2 = exe_dir.join("bundle/macos").join(app_name);
+    if path2.exists() {
+        return Ok(path2);
+    }
+
+    // Try 3: project root layout (exe in <root>/release/, bundle in <root>/target/release/bundle/macos/)
     if let Some(project_root) = exe_dir.parent() {
-        let path2 = project_root
+        let path3 = project_root
             .join("target/release/bundle/macos")
             .join(app_name);
-        if path2.exists() {
-            return Ok(path2);
+        if path3.exists() {
+            return Ok(path3);
         }
     }
 
     anyhow::bail!(
         "Tauri sandbox app not found.\n\
-         Searched:\n  {}\n  {}\n\
+         Searched:\n  {}\n  {}\n  {}\n\
          Build it first with: cargo tauri build",
         path1.display(),
+        path2.display(),
         exe_dir
             .join("../target/release/bundle/macos")
             .join(app_name)
