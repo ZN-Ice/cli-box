@@ -2,6 +2,8 @@ import { useEffect, useRef, useCallback } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import * as api from "../api";
+import { useTheme } from "../themes/ThemeContext";
+import type { TerminalTheme } from "../themes/types";
 import "@xterm/xterm/css/xterm.css";
 
 interface TerminalProps {
@@ -9,31 +11,32 @@ interface TerminalProps {
   activePid?: number | null;
 }
 
-// Tokyo Night inspired color scheme — clean, readable, macOS-like
-const TERM_THEME = {
-  background: "#1a1b26",
-  foreground: "#a9b1d6",
-  cursor: "#c0caf5",
-  cursorAccent: "#1a1b26",
-  selectionBackground: "rgba(122, 162, 247, 0.3)",
-  selectionForeground: "#c0caf5",
-  black: "#15161e",
-  red: "#f7768e",
-  green: "#9ece6a",
-  yellow: "#e0af68",
-  blue: "#7aa2f7",
-  magenta: "#bb9af7",
-  cyan: "#7dcfff",
-  white: "#a9b1d6",
-  brightBlack: "#414868",
-  brightRed: "#f7768e",
-  brightGreen: "#9ece6a",
-  brightYellow: "#e0af68",
-  brightBlue: "#7aa2f7",
-  brightMagenta: "#bb9af7",
-  brightCyan: "#7dcfff",
-  brightWhite: "#c0caf5",
-};
+function buildTerminalTheme(t: TerminalTheme): Record<string, string> {
+  return {
+    background: t.background,
+    foreground: t.foreground,
+    cursor: t.cursor,
+    cursorAccent: t.cursorAccent,
+    selectionBackground: t.selectionBackground,
+    selectionForeground: t.selectionForeground,
+    black: t.black,
+    red: t.red,
+    green: t.green,
+    yellow: t.yellow,
+    blue: t.blue,
+    magenta: t.magenta,
+    cyan: t.cyan,
+    white: t.white,
+    brightBlack: t.brightBlack,
+    brightRed: t.brightRed,
+    brightGreen: t.brightGreen,
+    brightYellow: t.brightYellow,
+    brightBlue: t.brightBlue,
+    brightMagenta: t.brightMagenta,
+    brightCyan: t.brightCyan,
+    brightWhite: t.brightWhite,
+  };
+}
 
 export default function SandboxTerminal({
   onInput,
@@ -43,10 +46,18 @@ export default function SandboxTerminal({
   const xtermRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const { theme } = useTheme();
 
-  // Initialize xterm.js once
+  // Initialize xterm.js — recreate on theme change
   useEffect(() => {
-    if (!terminalRef.current || xtermRef.current) return;
+    if (!terminalRef.current) return;
+
+    // Dispose previous terminal
+    if (xtermRef.current) {
+      xtermRef.current.dispose();
+      xtermRef.current = null;
+      fitAddonRef.current = null;
+    }
 
     const term = new Terminal({
       cursorBlink: true,
@@ -59,7 +70,7 @@ export default function SandboxTerminal({
       fontWeightBold: "600",
       letterSpacing: 0,
       scrollback: 10000,
-      theme: TERM_THEME,
+      theme: buildTerminalTheme(theme.terminal),
       allowProposedApi: true,
       drawBoldTextInBrightColors: true,
     });
@@ -82,8 +93,9 @@ export default function SandboxTerminal({
     return () => {
       window.removeEventListener("resize", handleResize);
       term.dispose();
+      xtermRef.current = null;
     };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [theme.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // PTY output polling
   useEffect(() => {
@@ -106,7 +118,7 @@ export default function SandboxTerminal({
           pollRef.current = null;
         }
       }
-    }, 100); // 100ms polling for smooth streaming
+    }, 100);
 
     return () => {
       if (pollRef.current) {

@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import ReactDOM from "react-dom/client";
 import SandboxTerminal from "./components/Terminal";
+import { ThemeProvider, useTheme } from "./themes/ThemeContext";
 import * as api from "./api";
 import "./index.css";
 
@@ -11,6 +12,7 @@ function App() {
   const [screenshotLoading, setScreenshotLoading] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
   const hasConnectedRef = useRef(false);
+  const { theme, toggleTheme } = useTheme();
 
   // Auto-connect to spawned processes
   useEffect(() => {
@@ -39,7 +41,7 @@ function App() {
     return () => clearInterval(interval);
   }, [activePid]);
 
-  // Terminal input → PTY
+  // Terminal input -> PTY
   const handleTerminalInput = useCallback(
     (data: string) => {
       if (activePid !== null) {
@@ -72,26 +74,57 @@ function App() {
     }
   }, [screenshotUrl]);
 
-  return (
-    <div className="w-full h-screen bg-term-bg text-term-fg relative overflow-hidden">
-      {/* Full-screen terminal */}
-      <SandboxTerminal
-        onInput={handleTerminalInput}
-        activePid={activePid}
-      />
+  const isDark = theme.kind === "dark";
 
-      {/* Floating toolbar — top right, macOS style */}
-      <div className="absolute top-3 right-4 z-10">
-        <div className="flex items-center gap-1 bg-term-surface/80 backdrop-blur-md border border-term-border/50 rounded-lg px-2 py-1 shadow-lg shadow-black/20">
+  return (
+    <div className="flex flex-col h-screen bg-sandbox-bg-primary text-sandbox-fg-primary">
+      {/* Header bar — bridges native title bar and terminal */}
+      <header
+        className="h-8 flex items-center justify-between px-3 select-none shrink-0 border-b"
+        style={{
+          backgroundColor: "var(--sandbox-titlebar-bg)",
+          borderColor: "var(--sandbox-border)",
+        }}
+      >
+        {/* Left: sandbox info */}
+        <div className="flex items-center gap-2 text-xs text-sandbox-fg-secondary">
+          <div className="flex items-center gap-1.5">
+            <span
+              className="w-1.5 h-1.5 rounded-full"
+              style={{ backgroundColor: connected ? "var(--sandbox-success)" : "var(--sandbox-fg-tertiary)" }}
+            />
+            <span>{connected ? "Connected" : "Waiting..."}</span>
+          </div>
+        </div>
+
+        {/* Right: actions */}
+        <div className="flex items-center gap-1">
+          {/* Theme toggle */}
+          <button
+            onClick={toggleTheme}
+            className="flex items-center justify-center w-6 h-6 rounded-md text-sandbox-fg-secondary hover:text-sandbox-fg-primary hover:bg-sandbox-bg-tertiary/50 transition-colors"
+            title={`Switch to ${isDark ? "light" : "dark"} theme`}
+          >
+            {isDark ? (
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v2.25m6.364.386l-1.591 1.591M21 12h-2.25m-.386 6.364l-1.591-1.591M12 18.75V21m-4.773-4.227l-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z" />
+              </svg>
+            ) : (
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M21.752 15.002A9.718 9.718 0 0118 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 003 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 009.002-5.998z" />
+              </svg>
+            )}
+          </button>
+
           {/* Screenshot button */}
           <button
             onClick={handleScreenshot}
             disabled={screenshotLoading}
-            className="flex items-center gap-1.5 px-2.5 py-1 text-xs text-term-muted hover:text-term-fg hover:bg-white/5 rounded-md transition-all duration-150 disabled:opacity-40"
+            className="flex items-center gap-1 px-2 py-0.5 text-xs text-sandbox-fg-secondary hover:text-sandbox-fg-primary hover:bg-sandbox-bg-tertiary/50 rounded-md transition-colors disabled:opacity-40"
             title="Screenshot"
           >
             <svg
-              className="w-3.5 h-3.5"
+              className="w-3 h-3"
               fill="none"
               viewBox="0 0 24 24"
               strokeWidth={1.5}
@@ -114,59 +147,65 @@ function App() {
               <span>Screenshot</span>
             )}
           </button>
-
-          {/* Divider */}
-          <div className="w-px h-3.5 bg-term-border/50" />
-
-          {/* Connection status */}
-          <div className="flex items-center gap-1.5 px-2 py-1 text-xs text-term-muted">
-            <span
-              className={`w-1.5 h-1.5 rounded-full ${
-                connected ? "bg-green-400" : "bg-term-muted"
-              }`}
-            />
-            <span>{connected ? "Connected" : "Waiting..."}</span>
-          </div>
         </div>
-      </div>
+      </header>
 
-      {/* Screenshot preview — floating panel */}
-      {showPreview && screenshotUrl && (
-        <div className="absolute bottom-4 right-4 z-20" style={{ animation: "fadeIn 0.2s ease-out" }}>
-          <div className="bg-term-surface/90 backdrop-blur-md border border-term-border/50 rounded-xl shadow-2xl shadow-black/40 overflow-hidden">
-            {/* Preview header */}
-            <div className="flex items-center justify-between px-3 py-2 border-b border-term-border/30">
-              <span className="text-xs text-term-muted">Screenshot</span>
-              <button
-                onClick={closePreview}
-                className="text-term-muted hover:text-term-fg transition-colors p-0.5"
+      {/* Terminal — fills remaining space */}
+      <div className="flex-1 relative overflow-hidden">
+        <SandboxTerminal
+          onInput={handleTerminalInput}
+          activePid={activePid}
+        />
+
+        {/* Screenshot preview — floating panel */}
+        {showPreview && screenshotUrl && (
+          <div className="absolute bottom-4 right-4 z-20" style={{ animation: "fadeIn 0.2s ease-out" }}>
+            <div className="rounded-xl shadow-2xl shadow-black/40 overflow-hidden border"
+              style={{
+                backgroundColor: "var(--sandbox-bg-secondary)",
+                borderColor: "var(--sandbox-border)",
+              }}
+            >
+              {/* Preview header */}
+              <div className="flex items-center justify-between px-3 py-2 border-b"
+                style={{ borderColor: "var(--sandbox-border)" }}
               >
-                <svg
-                  className="w-3.5 h-3.5"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  strokeWidth={2}
-                  stroke="currentColor"
+                <span className="text-xs text-sandbox-fg-secondary">Screenshot</span>
+                <button
+                  onClick={closePreview}
+                  className="text-sandbox-fg-secondary hover:text-sandbox-fg-primary transition-colors p-0.5"
                 >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M6 18 18 6M6 6l12 12"
-                  />
-                </svg>
-              </button>
+                  <svg
+                    className="w-3.5 h-3.5"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    strokeWidth={2}
+                    stroke="currentColor"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M6 18 18 6M6 6l12 12"
+                    />
+                  </svg>
+                </button>
+              </div>
+              {/* Preview image */}
+              <img
+                src={screenshotUrl}
+                alt="Screenshot"
+                className="w-[400px] max-h-[300px] object-contain bg-black/30"
+              />
             </div>
-            {/* Preview image */}
-            <img
-              src={screenshotUrl}
-              alt="Screenshot"
-              className="w-[400px] max-h-[300px] object-contain bg-black/30"
-            />
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }
 
-ReactDOM.createRoot(document.getElementById("root")!).render(<App />);
+ReactDOM.createRoot(document.getElementById("root")!).render(
+  <ThemeProvider>
+    <App />
+  </ThemeProvider>,
+);

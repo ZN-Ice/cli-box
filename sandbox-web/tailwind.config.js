@@ -4,13 +4,29 @@ export default {
   theme: {
     extend: {
       colors: {
-        term: {
-          bg: "#1a1b26",
-          fg: "#a9b1d6",
-          surface: "#24283b",
-          border: "#3b4261",
-          accent: "#7aa2f7",
-          muted: "#565f89",
+        sandbox: {
+          bg: {
+            primary: "var(--sandbox-bg-primary)",
+            secondary: "var(--sandbox-bg-secondary)",
+            tertiary: "var(--sandbox-bg-tertiary)",
+          },
+          fg: {
+            primary: "var(--sandbox-fg-primary)",
+            secondary: "var(--sandbox-fg-secondary)",
+            tertiary: "var(--sandbox-fg-tertiary)",
+          },
+          border: "var(--sandbox-border)",
+          accent: "var(--sandbox-accent)",
+          scrollbar: {
+            bg: "var(--sandbox-scrollbar-bg)",
+            fg: "var(--sandbox-scrollbar-fg)",
+          },
+          success: "var(--sandbox-success)",
+          error: "var(--sandbox-error)",
+          titlebar: {
+            bg: "var(--sandbox-titlebar-bg)",
+            fg: "var(--sandbox-titlebar-fg)",
+          },
         },
       },
       fontFamily: {
