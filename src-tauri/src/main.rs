@@ -164,7 +164,12 @@ fn main() {
             init_sandbox,
         ])
         .setup(move |app_handle| {
-            tracing::info!("[setup] sandbox_id={:?}, port={:?}, kind={:?}", sandbox_id, sandbox_port, kind);
+            tracing::info!(
+                "[setup] sandbox_id={:?}, port={:?}, kind={:?}",
+                sandbox_id,
+                sandbox_port,
+                kind
+            );
 
             // Set window title
             if let Some(window) = app_handle.get_webview_window("main") {
@@ -229,10 +234,18 @@ fn main() {
                         tracing::info!("[setup] spawning CLI now: {} {:?}", cmd, cmd_args);
                         match ProcessManager::spawn_cli(&cmd, &cmd_args) {
                             Ok(info) => {
-                                tracing::info!("[setup] auto-spawned CLI: {} (pid={})", cmd, info.pid);
+                                tracing::info!(
+                                    "[setup] auto-spawned CLI: {} (pid={})",
+                                    cmd,
+                                    info.pid
+                                );
                             }
                             Err(e) => {
-                                tracing::error!("[setup] failed to auto-spawn CLI '{}': {}", cmd, e);
+                                tracing::error!(
+                                    "[setup] failed to auto-spawn CLI '{}': {}",
+                                    cmd,
+                                    e
+                                );
                             }
                         }
                     });
@@ -255,7 +268,9 @@ fn main() {
                         Err(e) => {
                             tracing::warn!("[setup] failed to discover sandbox window: {e}");
                             // List all windows for debugging
-                            if let Ok(windows) = sandbox_core::capture::ScreenCapture::list_windows() {
+                            if let Ok(windows) =
+                                sandbox_core::capture::ScreenCapture::list_windows()
+                            {
                                 for (wid, wtitle) in &windows {
                                     if !wtitle.is_empty() {
                                         tracing::info!("[setup]   window {}: '{}'", wid, wtitle);
@@ -317,7 +332,12 @@ mod tests {
     #[test]
     fn parse_trailing_args_after_separator() {
         let r = parse_sandbox_args_from_slice(&args(&[
-            "bin", "--mode=cli", "--cmd=claude", "--", "-p", "你是谁？",
+            "bin",
+            "--mode=cli",
+            "--cmd=claude",
+            "--",
+            "-p",
+            "你是谁？",
         ]));
         assert_eq!(r.mode.as_deref(), Some("cli"));
         assert_eq!(r.cmd.as_deref(), Some("claude"));
