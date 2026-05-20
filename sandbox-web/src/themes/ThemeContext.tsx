@@ -1,4 +1,11 @@
-import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from "react";
+import {
+  createContext,
+  useContext,
+  useState,
+  useCallback,
+  useEffect,
+  type ReactNode,
+} from "react";
 import type { SandboxTheme, TerminalTheme } from "./types";
 import { themeRegistry } from "./registry";
 
@@ -33,6 +40,11 @@ function applyThemeCSS(theme: SandboxTheme): void {
   root.style.setProperty("--sandbox-error", c.error);
   root.style.setProperty("--sandbox-titlebar-bg", c.titlebarBg);
   root.style.setProperty("--sandbox-titlebar-fg", c.titlebarFg);
+  root.style.setProperty("--sandbox-sidebar-bg", c.sidebarBg);
+  root.style.setProperty("--sandbox-sidebar-fg", c.sidebarFg);
+  root.style.setProperty("--sandbox-sidebar-border", c.sidebarBorder);
+  root.style.setProperty("--sandbox-sidebar-active", c.sidebarActive);
+  root.style.setProperty("--sandbox-panel-bg", c.panelBg);
 }
 
 export { ThemeContext, STORAGE_KEY };
@@ -68,7 +80,9 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   }, [theme.id, setTheme]);
 
   return (
-    <ThemeContext.Provider value={{ theme, setTheme, toggleTheme, themes: themeRegistry.list() }}>
+    <ThemeContext.Provider
+      value={{ theme, setTheme, toggleTheme, themes: themeRegistry.list() }}
+    >
       {children}
     </ThemeContext.Provider>
   );

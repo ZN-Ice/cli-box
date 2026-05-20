@@ -14,6 +14,13 @@ export interface SandboxThemeColors {
   error: string;
   titlebarBg: string;
   titlebarFg: string;
+  /** Sidebar background (typically dark even in light themes) */
+  sidebarBg: string;
+  sidebarFg: string;
+  sidebarBorder: string;
+  sidebarActive: string;
+  /** Right detail panel background */
+  panelBg: string;
 }
 
 /** xterm.js terminal theme (subset of ITerminalOptions['theme']) */

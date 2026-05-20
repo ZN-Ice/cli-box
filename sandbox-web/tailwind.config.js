@@ -27,6 +27,15 @@ export default {
             bg: "var(--sandbox-titlebar-bg)",
             fg: "var(--sandbox-titlebar-fg)",
           },
+          sidebar: {
+            bg: "var(--sandbox-sidebar-bg)",
+            fg: "var(--sandbox-sidebar-fg)",
+            border: "var(--sandbox-sidebar-border)",
+            active: "var(--sandbox-sidebar-active)",
+          },
+          panel: {
+            bg: "var(--sandbox-panel-bg)",
+          },
         },
       },
       fontFamily: {

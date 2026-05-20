@@ -19,6 +19,11 @@ export const tokyoNight: SandboxTheme = {
     error: "#f7768e",
     titlebarBg: "#1f2233",
     titlebarFg: "#a9b1d6",
+    sidebarBg: "#16161e",
+    sidebarFg: "#a9b1d6",
+    sidebarBorder: "#292e42",
+    sidebarActive: "rgba(122, 162, 247, 0.15)",
+    panelBg: "#1f2233",
   },
   terminal: {
     background: "#1a1b26",
