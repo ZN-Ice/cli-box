@@ -114,11 +114,7 @@ impl ProcessManager {
         ))
     }
 
-    /// Launch a CLI process with PTY support.
-    ///
-    /// The command is executed inside a zsh shell (`zsh -c "<cmd> <args>"`),
-    /// so the user's shell environment (PATH, .zshrc, etc.) is loaded first.
-    /// This matches the behavior of opening Terminal.app and typing the command.
+    /// Launch a CLI process with PTY support
     #[cfg(target_os = "macos")]
     pub fn spawn_cli(command: &str, args: &[String]) -> Result<ProcessInfo> {
         let pty_system = native_pty_system();
@@ -131,29 +127,8 @@ impl ProcessManager {
             })
             .map_err(|e| AppError::Process(format!("Failed to open PTY: {e}")))?;
 
-        // Build the full shell command string, e.g. `claude -p '你是谁'`
-        let full_command = if args.is_empty() {
-            command.to_string()
-        } else {
-            let escaped: Vec<String> = args
-                .iter()
-                .map(|a| {
-                    if a.chars()
-                        .any(|c| c.is_whitespace() || c == '\'' || c == '"')
-                    {
-                        format!("'{}'", a.replace('\'', "'\\''"))
-                    } else {
-                        a.clone()
-                    }
-                })
-                .collect();
-            format!("{command} {}", escaped.join(" "))
-        };
-
-        let mut cmd = CommandBuilder::new("zsh");
-        cmd.arg("-c");
-        cmd.arg(&full_command);
-
+        let mut cmd = CommandBuilder::new(command);
+        cmd.args(args);
         let child = pty_pair
             .slave
             .spawn_command(cmd)
@@ -188,8 +163,8 @@ impl ProcessManager {
         );
 
         info!(
-            "Spawned CLI via shell: {} (tracked_id={}, os_pid={:?})",
-            full_command, tracked_id, child_pid
+            "Spawned CLI: {} (tracked_id={}, os_pid={:?})",
+            command, tracked_id, child_pid
         );
 
         Ok(ProcessInfo {
