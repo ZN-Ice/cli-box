@@ -44,6 +44,10 @@ mod macos_impl {
 
     const K_AX_ERROR_SUCCESS: AXError = 0;
 
+    /// Minimum pointer address to be considered a valid AXUIElementRef.
+    /// Anything below this is almost certainly a null offset or dangling pointer.
+    const MIN_VALID_PTR: usize = 0x1000;
+
     #[link(name = "ApplicationServices", kind = "framework")]
     extern "C" {
         fn AXUIElementCreateApplication(pid: i32) -> AXUIElementRef;
@@ -73,15 +77,38 @@ mod macos_impl {
         CFString::new(s)
     }
 
-    /// Validate that an AXUIElementRef is usable by calling AXUIElementGetPid.
-    /// Returns true if the element appears valid.
-    unsafe fn ax_element_is_valid(element: AXUIElementRef) -> bool {
+    /// Safe wrapper around AXUIElementCopyAttributeValue.
+    /// Validates the element pointer before calling to prevent SIGSEGV.
+    /// Returns None if the element is invalid or the call fails.
+    unsafe fn ax_try_copy_value(element: AXUIElementRef, attr_name: &str) -> Option<CFTypeRef> {
         if element.is_null() {
-            return false;
+            eprintln!("[ax_ui] ax_try_copy_value: null element for attr '{attr_name}'");
+            return None;
         }
+        if (element as usize) < MIN_VALID_PTR {
+            eprintln!(
+                "[ax_ui] ax_try_copy_value: suspicious pointer {:#x} for attr '{attr_name}'",
+                element as usize
+            );
+            return None;
+        }
+        // Secondary validation via AXUIElementGetPid
         let mut pid: i32 = 0;
-        let result = AXUIElementGetPid(element, &mut pid as *mut i32);
-        result == K_AX_ERROR_SUCCESS
+        let pid_result = AXUIElementGetPid(element, &mut pid as *mut i32);
+        if pid_result != K_AX_ERROR_SUCCESS {
+            eprintln!(
+                "[ax_ui] ax_try_copy_value: AXUIElementGetPid failed (err={}) for attr '{attr_name}'",
+                pid_result
+            );
+            return None;
+        }
+        let attr = ax_attr(attr_name);
+        let raw = AXUIElementCopyAttributeValue(element, attr.as_concrete_TypeRef());
+        if raw.is_null() {
+            eprintln!("[ax_ui] ax_try_copy_value: AXUIElementCopyAttributeValue returned null for attr '{attr_name}'");
+            return None;
+        }
+        Some(raw)
     }
 
     /// Check Accessibility permission and return an error if not granted.
@@ -117,29 +144,21 @@ mod macos_impl {
     }
 
     unsafe fn ax_get_string(element: AXUIElementRef, attr_name: &str) -> Option<String> {
-        if !ax_element_is_valid(element) {
-            return None;
-        }
-        let attr = ax_attr(attr_name);
-        let raw = AXUIElementCopyAttributeValue(element, attr.as_concrete_TypeRef());
+        let raw = ax_try_copy_value(element, attr_name)?;
         cf_to_string(raw)
     }
 
     unsafe fn ax_get_children(element: AXUIElementRef) -> Vec<AXUIElementRef> {
-        if !ax_element_is_valid(element) {
-            return vec![];
-        }
-        let attr = ax_attr("AXChildren");
-        let raw = AXUIElementCopyAttributeValue(element, attr.as_concrete_TypeRef());
-        if raw.is_null() {
-            return vec![];
-        }
+        let raw = match ax_try_copy_value(element, "AXChildren") {
+            Some(r) => r,
+            None => return vec![],
+        };
         let arr = CFArray::<*const c_void>::wrap_under_get_rule(raw as CFArrayRef);
         let mut children = Vec::new();
         for i in 0..arr.len() {
             if let Some(ptr_val) = arr.get(i) {
                 let val = *ptr_val;
-                if !val.is_null() {
+                if !val.is_null() && (val as usize) >= MIN_VALID_PTR {
                     CFRetain(val as CFTypeRef);
                     children.push(val);
                 }
@@ -149,20 +168,16 @@ mod macos_impl {
     }
 
     unsafe fn ax_get_attr_array(element: AXUIElementRef, attr_name: &str) -> Vec<AXUIElementRef> {
-        if !ax_element_is_valid(element) {
-            return vec![];
-        }
-        let attr = ax_attr(attr_name);
-        let raw = AXUIElementCopyAttributeValue(element, attr.as_concrete_TypeRef());
-        if raw.is_null() {
-            return vec![];
-        }
+        let raw = match ax_try_copy_value(element, attr_name) {
+            Some(r) => r,
+            None => return vec![],
+        };
         let arr = CFArray::<*const c_void>::wrap_under_get_rule(raw as CFArrayRef);
         let mut items = Vec::new();
         for i in 0..arr.len() {
             if let Some(ptr_val) = arr.get(i) {
                 let val = *ptr_val;
-                if !val.is_null() {
+                if !val.is_null() && (val as usize) >= MIN_VALID_PTR {
                     CFRetain(val as CFTypeRef);
                     items.push(val);
                 }
@@ -187,11 +202,17 @@ mod macos_impl {
 
     const MAX_UI_DEPTH: usize = 30;
 
-    unsafe fn ax_to_ui_element(element: AXUIElementRef) -> UiElement {
-        ax_to_ui_element_inner(element, 0)
-    }
+    /// Convert an AXUIElementRef to a UiElement.
+    /// Returns None if the element is invalid or an error occurs.
+    unsafe fn ax_to_ui_element_safe(element: AXUIElementRef, depth: usize) -> Option<UiElement> {
+        if element.is_null() || (element as usize) < MIN_VALID_PTR {
+            eprintln!(
+                "[ax_ui] ax_to_ui_element_safe: invalid element {:#x} at depth {depth}",
+                element as usize
+            );
+            return None;
+        }
 
-    unsafe fn ax_to_ui_element_inner(element: AXUIElementRef, depth: usize) -> UiElement {
         let role = ax_get_string(element, "AXRole").unwrap_or_else(|| "unknown".to_string());
         let title = ax_get_string(element, "AXTitle");
         let value = ax_get_string(element, "AXValue");
@@ -201,22 +222,24 @@ mod macos_impl {
             vec![]
         } else {
             let children_elements = ax_get_children(element);
-            let result: Vec<UiElement> = children_elements
-                .iter()
-                .map(|&child| ax_to_ui_element_inner(child, depth + 1))
-                .collect();
+            let mut result = Vec::new();
+            for &child in &children_elements {
+                if let Some(ui_child) = ax_to_ui_element_safe(child, depth + 1) {
+                    result.push(ui_child);
+                }
+            }
             ax_release_all(&children_elements);
             result
         };
 
-        UiElement {
+        Some(UiElement {
             role,
             title,
             value,
             description,
             bounds: None,
             children,
-        }
+        })
     }
 
     unsafe fn ax_find_in_tree(
@@ -224,8 +247,13 @@ mod macos_impl {
         role: Option<&str>,
         title: Option<&str>,
     ) -> Vec<UiElement> {
-        let ui = ax_to_ui_element(element);
-        find_ui_matches(&ui, role, title)
+        match ax_to_ui_element_safe(element, 0) {
+            Some(ui) => find_ui_matches(&ui, role, title),
+            None => {
+                eprintln!("[ax_ui] ax_find_in_tree: failed to convert root element");
+                vec![]
+            }
+        }
     }
 
     fn find_ui_matches(
@@ -311,9 +339,12 @@ mod macos_impl {
             let pid = get_pid_for_window(window_id)
                 .ok_or_else(|| AppError::WindowNotFound(format!("Window {window_id} not found")))?;
 
+            eprintln!("[ax_ui] inspect_window: window_id={window_id}, pid={pid}");
+
             unsafe {
                 let app = AXUIElementCreateApplication(pid);
                 if app.is_null() {
+                    eprintln!("[ax_ui] inspect_window: AXUIElementCreateApplication returned null for pid {pid}");
                     return Err(AppError::Accessibility(
                         "Failed to create AXUIElement for application".to_string(),
                     ));
@@ -321,16 +352,34 @@ mod macos_impl {
 
                 let windows = ax_get_attr_array(app, "AXWindows");
                 if windows.is_empty() {
+                    eprintln!("[ax_ui] inspect_window: no AXWindows for pid {pid}");
                     ax_release_one(app);
                     return Err(AppError::WindowNotFound(format!(
                         "No AXWindows for PID {pid}"
                     )));
                 }
 
-                let ui = ax_to_ui_element(windows[0]);
-                ax_release_all(&windows);
-                ax_release_one(app);
-                Ok(ui)
+                let first_window = windows[0];
+                eprintln!(
+                    "[ax_ui] inspect_window: first window ptr = {:#x}",
+                    first_window as usize
+                );
+
+                match ax_to_ui_element_safe(first_window, 0) {
+                    Some(ui) => {
+                        ax_release_all(&windows);
+                        ax_release_one(app);
+                        Ok(ui)
+                    }
+                    None => {
+                        eprintln!("[ax_ui] inspect_window: failed to convert window element");
+                        ax_release_all(&windows);
+                        ax_release_one(app);
+                        Err(AppError::Accessibility(
+                            "Failed to read UI tree from window".to_string(),
+                        ))
+                    }
+                }
             }
         }
 

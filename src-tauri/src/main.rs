@@ -55,8 +55,7 @@ struct SandboxLaunchArgs {
     args: Vec<String>,
 }
 
-fn parse_sandbox_args() -> SandboxLaunchArgs {
-    let args: Vec<String> = std::env::args().collect();
+fn parse_sandbox_args_from_slice(args: &[String]) -> SandboxLaunchArgs {
     let mut result = SandboxLaunchArgs::default();
     let mut i = 1;
     while i < args.len() {
@@ -82,7 +81,6 @@ fn parse_sandbox_args() -> SandboxLaunchArgs {
             i += 1;
             result.cmd = Some(args[i].clone());
         } else if arg == "--" {
-            // Everything after -- is passed as trailing args to the CLI command
             result.args = args[(i + 1)..].to_vec();
             break;
         }
@@ -91,16 +89,29 @@ fn parse_sandbox_args() -> SandboxLaunchArgs {
     result
 }
 
+fn parse_sandbox_args() -> SandboxLaunchArgs {
+    let args: Vec<String> = std::env::args().collect();
+    tracing::info!("[args] raw args: {:?}", args);
+    let result = parse_sandbox_args_from_slice(&args);
+    tracing::info!(
+        "[args] parsed: mode={:?}, cmd={:?}, args={:?}, sandbox_id={:?}, port={:?}",
+        result.mode,
+        result.cmd,
+        result.args,
+        result.sandbox_id,
+        result.sandbox_port,
+    );
+    result
+}
+
 fn main() {
     let launch_args = parse_sandbox_args();
 
     // Auto-generate sandbox_id and port if not provided
-    let sandbox_id = launch_args.sandbox_id.clone().or_else(|| {
-        Some(format!(
-            "{}",
-            uuid::Uuid::new_v4().to_string()[..8].to_string()
-        ))
-    });
+    let sandbox_id = launch_args
+        .sandbox_id
+        .clone()
+        .or_else(|| Some(uuid::Uuid::new_v4().to_string()[..8].to_string()));
     let sandbox_port = launch_args.sandbox_port.or(Some(5801));
 
     let config = SandboxConfig {
@@ -153,9 +164,19 @@ fn main() {
             init_sandbox,
         ])
         .setup(move |app_handle| {
+            tracing::info!(
+                "[setup] sandbox_id={:?}, port={:?}, kind={:?}",
+                sandbox_id,
+                sandbox_port,
+                kind
+            );
+
             // Set window title
             if let Some(window) = app_handle.get_webview_window("main") {
+                tracing::info!("[setup] setting window title: {}", title);
                 let _ = window.set_title(&title);
+            } else {
+                tracing::warn!("[setup] main window not found!");
             }
 
             // Start embedded HTTP server if in managed mode
@@ -207,32 +228,55 @@ fn main() {
                 if let Some(InstanceKind::Cli { command, args }) = &kind {
                     let cmd = command.clone();
                     let cmd_args = args.clone();
+                    tracing::info!("[setup] auto-spawn CLI: cmd={:?}, args={:?}", cmd, cmd_args);
                     tauri::async_runtime::spawn(async move {
                         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                        tracing::info!("[setup] spawning CLI now: {} {:?}", cmd, cmd_args);
                         match ProcessManager::spawn_cli(&cmd, &cmd_args) {
                             Ok(info) => {
-                                tracing::info!("Auto-spawned CLI: {} (pid={})", cmd, info.pid);
+                                tracing::info!(
+                                    "[setup] auto-spawned CLI: {} (pid={})",
+                                    cmd,
+                                    info.pid
+                                );
                             }
                             Err(e) => {
-                                tracing::error!("Failed to auto-spawn CLI '{cmd}': {e}");
+                                tracing::error!(
+                                    "[setup] failed to auto-spawn CLI '{}': {}",
+                                    cmd,
+                                    e
+                                );
                             }
                         }
                     });
+                } else {
+                    tracing::info!("[setup] not CLI mode, skipping auto-spawn. kind={:?}", kind);
                 }
 
                 // Auto-discover the Tauri window's SCWindow ID for screenshot support.
                 // The window needs time to render before ScreenCaptureKit can find it.
                 tauri::async_runtime::spawn(async move {
                     tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                    tracing::info!("[setup] discovering window by title 'System Test Sandbox'");
                     match sandbox_core::capture::ScreenCapture::find_window_by_title(
                         "System Test Sandbox",
                     ) {
                         Ok(id) => {
-                            tracing::info!("Discovered sandbox window: SCWindow ID={id}");
+                            tracing::info!("[setup] discovered sandbox window: SCWindow ID={id}");
                             state_for_window.lock().await.window_id = Some(id);
                         }
                         Err(e) => {
-                            tracing::warn!("Failed to discover sandbox window: {e}");
+                            tracing::warn!("[setup] failed to discover sandbox window: {e}");
+                            // List all windows for debugging
+                            if let Ok(windows) =
+                                sandbox_core::capture::ScreenCapture::list_windows()
+                            {
+                                for (wid, wtitle) in &windows {
+                                    if !wtitle.is_empty() {
+                                        tracing::info!("[setup]   window {}: '{}'", wid, wtitle);
+                                    }
+                                }
+                            }
                         }
                     }
                 });
@@ -258,4 +302,256 @@ fn main() {
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn args(s: &[&str]) -> Vec<String> {
+        s.iter().map(|s| s.to_string()).collect()
+    }
+
+    // ── parse_sandbox_args_from_slice ──────────────────────
+
+    #[test]
+    fn parse_mode_and_cmd_eq() {
+        let r = parse_sandbox_args_from_slice(&args(&["bin", "--mode=cli", "--cmd=claude"]));
+        assert_eq!(r.mode.as_deref(), Some("cli"));
+        assert_eq!(r.cmd.as_deref(), Some("claude"));
+        assert!(r.args.is_empty());
+    }
+
+    #[test]
+    fn parse_mode_and_cmd_space() {
+        let r = parse_sandbox_args_from_slice(&args(&["bin", "--mode", "cli", "--cmd", "claude"]));
+        assert_eq!(r.mode.as_deref(), Some("cli"));
+        assert_eq!(r.cmd.as_deref(), Some("claude"));
+    }
+
+    #[test]
+    fn parse_trailing_args_after_separator() {
+        let r = parse_sandbox_args_from_slice(&args(&[
+            "bin",
+            "--mode=cli",
+            "--cmd=claude",
+            "--",
+            "-p",
+            "你是谁？",
+        ]));
+        assert_eq!(r.mode.as_deref(), Some("cli"));
+        assert_eq!(r.cmd.as_deref(), Some("claude"));
+        assert_eq!(r.args, vec!["-p", "你是谁？"]);
+    }
+
+    #[test]
+    fn parse_no_trailing_args() {
+        let r = parse_sandbox_args_from_slice(&args(&["bin", "--mode=cli", "--cmd=zsh"]));
+        assert_eq!(r.mode.as_deref(), Some("cli"));
+        assert_eq!(r.cmd.as_deref(), Some("zsh"));
+        assert!(r.args.is_empty());
+    }
+
+    #[test]
+    fn parse_sandbox_id_and_port() {
+        let r = parse_sandbox_args_from_slice(&args(&[
+            "bin",
+            "--sandbox-id=abc123",
+            "--sandbox-port=15801",
+            "--mode=cli",
+            "--cmd=echo",
+        ]));
+        assert_eq!(r.sandbox_id.as_deref(), Some("abc123"));
+        assert_eq!(r.sandbox_port, Some(15801));
+        assert_eq!(r.mode.as_deref(), Some("cli"));
+        assert_eq!(r.cmd.as_deref(), Some("echo"));
+    }
+
+    #[test]
+    fn parse_empty_args() {
+        let r = parse_sandbox_args_from_slice(&args(&["bin"]));
+        assert!(r.mode.is_none());
+        assert!(r.cmd.is_none());
+        assert!(r.args.is_empty());
+    }
+
+    #[test]
+    fn parse_only_cmd_no_mode() {
+        let r = parse_sandbox_args_from_slice(&args(&["bin", "--cmd=claude"]));
+        assert!(r.mode.is_none());
+        assert_eq!(r.cmd.as_deref(), Some("claude"));
+    }
+
+    #[test]
+    fn parse_mixed_eq_and_space() {
+        let r = parse_sandbox_args_from_slice(&args(&[
+            "bin",
+            "--mode=cli",
+            "--cmd",
+            "claude",
+            "--",
+            "-p",
+            "hello",
+        ]));
+        assert_eq!(r.mode.as_deref(), Some("cli"));
+        assert_eq!(r.cmd.as_deref(), Some("claude"));
+        assert_eq!(r.args, vec!["-p", "hello"]);
+    }
+
+    // ── SandboxConfig construction from parsed args ───────
+
+    #[test]
+    fn config_from_parsed_cli_args() {
+        let r = parse_sandbox_args_from_slice(&args(&[
+            "bin",
+            "--sandbox-id=test1",
+            "--sandbox-port=5801",
+            "--mode=cli",
+            "--cmd=claude",
+            "--",
+            "-p",
+            "你是谁？",
+        ]));
+
+        let config = SandboxConfig {
+            id: r.sandbox_id.clone(),
+            port: r.sandbox_port,
+            mode: r.mode.clone(),
+            command: r.cmd.clone(),
+            args: r.args.clone(),
+            ..SandboxConfig::default()
+        };
+
+        assert_eq!(config.id.as_deref(), Some("test1"));
+        assert_eq!(config.port, Some(5801));
+        assert_eq!(config.mode.as_deref(), Some("cli"));
+        assert_eq!(config.command.as_deref(), Some("claude"));
+        assert_eq!(config.args, vec!["-p", "你是谁？"]);
+    }
+
+    #[test]
+    fn kind_from_config_cli() {
+        let config = SandboxConfig {
+            mode: Some("cli".into()),
+            command: Some("claude".into()),
+            args: vec!["-p".into(), "你是谁？".into()],
+            ..SandboxConfig::default()
+        };
+        let sandbox = Sandbox::new(config);
+        let kind = sandbox.kind().unwrap();
+        match kind {
+            InstanceKind::Cli { command, args } => {
+                assert_eq!(command, "claude");
+                assert_eq!(args, vec!["-p", "你是谁？"]);
+            }
+            _ => panic!("Expected CLI kind"),
+        }
+    }
+
+    #[test]
+    fn kind_from_config_app() {
+        let config = SandboxConfig {
+            mode: Some("app".into()),
+            command: Some("/Applications/Safari.app".into()),
+            ..SandboxConfig::default()
+        };
+        let sandbox = Sandbox::new(config);
+        let kind = sandbox.kind().unwrap();
+        assert!(matches!(kind, InstanceKind::App { .. }));
+    }
+
+    #[test]
+    fn kind_none_without_mode() {
+        let config = SandboxConfig::default();
+        let sandbox = Sandbox::new(config);
+        assert!(sandbox.kind().is_none());
+    }
+
+    // ── CLI args construction (mirrors cmd_start logic) ───
+
+    #[test]
+    fn cli_builds_tauri_args_simple() {
+        let command = "claude";
+        let cli_args: Vec<String> = vec![];
+
+        let mut tauri_args = vec!["--mode=cli".to_string(), format!("--cmd={}", command)];
+        if !cli_args.is_empty() {
+            tauri_args.push("--".to_string());
+            tauri_args.extend(cli_args.iter().cloned());
+        }
+
+        assert_eq!(tauri_args, vec!["--mode=cli", "--cmd=claude"]);
+    }
+
+    #[test]
+    fn cli_builds_tauri_args_with_trailing() {
+        let command = "claude";
+        let cli_args: Vec<String> = vec!["-p".into(), "你是谁？".into()];
+
+        let mut tauri_args = vec!["--mode=cli".to_string(), format!("--cmd={}", command)];
+        if !cli_args.is_empty() {
+            tauri_args.push("--".to_string());
+            tauri_args.extend(cli_args.iter().cloned());
+        }
+
+        assert_eq!(
+            tauri_args,
+            vec!["--mode=cli", "--cmd=claude", "--", "-p", "你是谁？"]
+        );
+    }
+
+    #[test]
+    fn cli_builds_tauri_args_zsh() {
+        let command = "zsh";
+        let cli_args: Vec<String> = vec![];
+
+        let mut tauri_args = vec!["--mode=cli".to_string(), format!("--cmd={}", command)];
+        if !cli_args.is_empty() {
+            tauri_args.push("--".to_string());
+            tauri_args.extend(cli_args.iter().cloned());
+        }
+
+        assert_eq!(tauri_args, vec!["--mode=cli", "--cmd=zsh"]);
+    }
+
+    // ── Round-trip: CLI builds args → Tauri parses them ───
+
+    #[test]
+    fn roundtrip_claude_with_args() {
+        // CLI constructs these args
+        let command = "claude";
+        let cli_args = vec!["-p".to_string(), "你是谁？".to_string()];
+        let mut tauri_args = vec!["--mode=cli".to_string(), format!("--cmd={}", command)];
+        tauri_args.push("--".to_string());
+        tauri_args.extend(cli_args);
+
+        // Prepend program name (as std::env::args would)
+        let mut full_args = vec!["system-test-sandbox".to_string()];
+        full_args.extend(tauri_args);
+
+        // Tauri parses them
+        let r = parse_sandbox_args_from_slice(&full_args);
+        assert_eq!(r.mode.as_deref(), Some("cli"));
+        assert_eq!(r.cmd.as_deref(), Some("claude"));
+        assert_eq!(r.args, vec!["-p", "你是谁？"]);
+    }
+
+    #[test]
+    fn roundtrip_simple_command() {
+        let command = "zsh";
+        let cli_args: Vec<String> = vec![];
+        let mut tauri_args = vec!["--mode=cli".to_string(), format!("--cmd={}", command)];
+        if !cli_args.is_empty() {
+            tauri_args.push("--".to_string());
+            tauri_args.extend(cli_args);
+        }
+
+        let mut full_args = vec!["system-test-sandbox".to_string()];
+        full_args.extend(tauri_args);
+
+        let r = parse_sandbox_args_from_slice(&full_args);
+        assert_eq!(r.mode.as_deref(), Some("cli"));
+        assert_eq!(r.cmd.as_deref(), Some("zsh"));
+        assert!(r.args.is_empty());
+    }
 }

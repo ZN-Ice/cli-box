@@ -226,4 +226,3 @@ export async function listWindows(): Promise<[number, string][]> {
   const res = await fetch(`${BASE()}/windows`);
   return res.json();
 }
-

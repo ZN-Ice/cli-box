@@ -13,16 +13,20 @@
     "windows": [
       {
         "label": "sandbox",
-        "title": "System Test Sandbox",
+        "title": "",
         "width": 1280,
         "height": 800,
+        "minWidth": 800,
+        "minHeight": 500,
         "resizable": true,
-        "transparent": false
+        "titleBarStyle": "Overlay",
+        "center": true
       }
     ],
     "security": {
       "csp": null
-    }
+    },
+    "macOSPrivateApi": true
   },
   "bundle": {
     "active": true,
