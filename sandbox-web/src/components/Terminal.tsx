@@ -5,17 +5,38 @@ import * as api from "../api";
 import "@xterm/xterm/css/xterm.css";
 
 interface TerminalProps {
-  /** Callback when terminal receives input */
   onInput?: (data: string) => void;
-  /** Whether the terminal is connected to a PTY */
-  connected?: boolean;
-  /** The tracked PID of the active PTY process (null = none) */
   activePid?: number | null;
 }
 
+// Tokyo Night inspired color scheme — clean, readable, macOS-like
+const TERM_THEME = {
+  background: "#1a1b26",
+  foreground: "#a9b1d6",
+  cursor: "#c0caf5",
+  cursorAccent: "#1a1b26",
+  selectionBackground: "rgba(122, 162, 247, 0.3)",
+  selectionForeground: "#c0caf5",
+  black: "#15161e",
+  red: "#f7768e",
+  green: "#9ece6a",
+  yellow: "#e0af68",
+  blue: "#7aa2f7",
+  magenta: "#bb9af7",
+  cyan: "#7dcfff",
+  white: "#a9b1d6",
+  brightBlack: "#414868",
+  brightRed: "#f7768e",
+  brightGreen: "#9ece6a",
+  brightYellow: "#e0af68",
+  brightBlue: "#7aa2f7",
+  brightMagenta: "#bb9af7",
+  brightCyan: "#7dcfff",
+  brightWhite: "#c0caf5",
+};
+
 export default function SandboxTerminal({
   onInput,
-  connected = false,
   activePid = null,
 }: TerminalProps) {
   const terminalRef = useRef<HTMLDivElement>(null);
@@ -29,31 +50,18 @@ export default function SandboxTerminal({
 
     const term = new Terminal({
       cursorBlink: true,
+      cursorStyle: "bar",
       fontSize: 14,
-      fontFamily: '"JetBrains Mono", "Fira Code", "Cascadia Code", monospace',
-      theme: {
-        background: "#0d1117",
-        foreground: "#c9d1d9",
-        cursor: "#58a6ff",
-        selectionBackground: "#264f78",
-        black: "#484f58",
-        red: "#ff7b72",
-        green: "#3fb950",
-        yellow: "#d29922",
-        blue: "#58a6ff",
-        magenta: "#bc8cff",
-        cyan: "#39c5d6",
-        white: "#b1bac4",
-        brightBlack: "#6e7681",
-        brightRed: "#ffa198",
-        brightGreen: "#56d364",
-        brightYellow: "#e3b341",
-        brightBlue: "#79c0ff",
-        brightMagenta: "#d2a8ff",
-        brightCyan: "#56d4dd",
-        brightWhite: "#f0f6fc",
-      },
+      lineHeight: 1.35,
+      fontFamily:
+        '"SF Mono", "Menlo", "Monaco", "Cascadia Code", "JetBrains Mono", monospace',
+      fontWeight: "400",
+      fontWeightBold: "600",
+      letterSpacing: 0,
+      scrollback: 10000,
+      theme: TERM_THEME,
       allowProposedApi: true,
+      drawBoldTextInBrightColors: true,
     });
 
     const fitAddon = new FitAddon();
@@ -77,9 +85,8 @@ export default function SandboxTerminal({
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // PTY output polling — runs while activePid is set
+  // PTY output polling
   useEffect(() => {
-    // Clear any existing poll
     if (pollRef.current) {
       clearInterval(pollRef.current);
       pollRef.current = null;
@@ -94,13 +101,12 @@ export default function SandboxTerminal({
           xtermRef.current?.write(result.output);
         }
       } catch {
-        // Process may have exited; stop polling
         if (pollRef.current) {
           clearInterval(pollRef.current);
           pollRef.current = null;
         }
       }
-    }, 200);
+    }, 100); // 100ms polling for smooth streaming
 
     return () => {
       if (pollRef.current) {
@@ -110,24 +116,15 @@ export default function SandboxTerminal({
     };
   }, [activePid]);
 
-  // Refit on window resize
   const containerRef = useCallback((node: HTMLDivElement | null) => {
     if (node) {
-      // Trigger fit after layout
       requestAnimationFrame(() => fitAddonRef.current?.fit());
     }
   }, []);
 
   return (
-    <div className="flex flex-col h-full" ref={containerRef}>
-      <div className="flex items-center justify-between px-3 py-1.5 bg-gray-800 border-b border-gray-700">
-        <span className="text-xs text-gray-400 font-medium">Terminal</span>
-        <span
-          className={`inline-block w-2 h-2 rounded-full ${connected ? "bg-green-500" : "bg-gray-500"}`}
-          title={connected ? "Connected" : "Disconnected"}
-        />
-      </div>
-      <div ref={terminalRef} className="flex-1" />
+    <div ref={containerRef} className="w-full h-full">
+      <div ref={terminalRef} className="w-full h-full" />
     </div>
   );
 }
