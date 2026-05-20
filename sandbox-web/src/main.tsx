@@ -5,7 +5,6 @@ import Sidebar from "./components/Sidebar";
 import Dashboard from "./components/Dashboard";
 import { ThemeProvider } from "./themes/ThemeContext";
 import * as api from "./api";
-import type { HealthResponse } from "./api";
 import "./index.css";
 
 const isMac =
@@ -14,7 +13,6 @@ const isMac =
 function App() {
   const [activePid, setActivePid] = useState<number | null>(null);
   const [connected, setConnected] = useState(false);
-  const [health, setHealth] = useState<HealthResponse | null>(null);
   const [screenshotUrl, setScreenshotUrl] = useState<string | null>(null);
   const [showPreview, setShowPreview] = useState(false);
   const [command, setCommand] = useState("Sandbox");
@@ -46,22 +44,6 @@ function App() {
     const interval = setInterval(pollProcesses, 2000);
     return () => clearInterval(interval);
   }, [activePid]);
-
-  // Health poll
-  useEffect(() => {
-    const pollHealth = async () => {
-      try {
-        const h = await api.health();
-        setHealth(h);
-      } catch {
-        // silent
-      }
-    };
-
-    pollHealth();
-    const interval = setInterval(pollHealth, 5000);
-    return () => clearInterval(interval);
-  }, []);
 
   // Fetch command from Tauri sandbox config
   useEffect(() => {
@@ -111,8 +93,6 @@ function App() {
     }
   }, [screenshotUrl]);
 
-  const sandboxName = health?.sandbox_id ?? "Sandbox";
-
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-sandbox-bg-primary text-sandbox-fg-primary">
       {/* macOS drag region — reserves space for traffic light buttons */}
@@ -126,7 +106,7 @@ function App() {
 
       <Sidebar command={command} />
       <Dashboard
-        sandboxName={sandboxName}
+        command={command}
         connected={connected}
         activePid={activePid}
         onTerminalInput={handleTerminalInput}

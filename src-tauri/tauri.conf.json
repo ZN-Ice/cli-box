@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "sandbox",
-        "title": "System Test Sandbox",
+        "title": "",
         "width": 1280,
         "height": 800,
         "minWidth": 800,

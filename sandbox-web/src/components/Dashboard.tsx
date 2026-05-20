@@ -2,7 +2,7 @@ import { type ReactNode } from "react";
 import SandboxTerminal from "./Terminal";
 
 interface DashboardProps {
-  sandboxName: string;
+  command: string;
   connected: boolean;
   activePid: number | null;
   onTerminalInput: (data: string) => void;
@@ -11,7 +11,7 @@ interface DashboardProps {
 }
 
 export default function Dashboard({
-  sandboxName,
+  command,
   connected,
   activePid,
   onTerminalInput,
@@ -96,7 +96,7 @@ export default function Dashboard({
                 className="text-sm font-medium"
                 style={{ color: "var(--sandbox-fg-primary)" }}
               >
-                {sandboxName} (Sandboxed)
+                {command} (Sandboxed)
               </span>
             </div>
             <ResourceStats connected={connected} />
