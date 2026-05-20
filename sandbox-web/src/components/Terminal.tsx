@@ -47,17 +47,15 @@ export default function SandboxTerminal({
   const fitAddonRef = useRef<FitAddon | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const { theme } = useTheme();
+  const onInputRef = useRef(onInput);
+  onInputRef.current = onInput;
 
-  // Initialize xterm.js — recreate on theme change
+  // Initialize xterm.js once — theme updates in-place
   useEffect(() => {
     if (!terminalRef.current) return;
+    if (xtermRef.current) return; // already initialized
 
-    // Dispose previous terminal
-    if (xtermRef.current) {
-      xtermRef.current.dispose();
-      xtermRef.current = null;
-      fitAddonRef.current = null;
-    }
+    console.log("[Terminal] initializing xterm.js");
 
     const term = new Terminal({
       cursorBlink: true,
@@ -81,7 +79,7 @@ export default function SandboxTerminal({
     fitAddon.fit();
 
     term.onData((data) => {
-      onInput?.(data);
+      onInputRef.current?.(data);
     });
 
     const handleResize = () => fitAddon.fit();
@@ -95,7 +93,15 @@ export default function SandboxTerminal({
       term.dispose();
       xtermRef.current = null;
     };
-  }, [theme.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Update terminal theme in-place without disposing
+  useEffect(() => {
+    if (!xtermRef.current) return;
+    const newTheme = buildTerminalTheme(theme.terminal);
+    xtermRef.current.options.theme = newTheme;
+    console.log(`[Terminal] theme updated to: ${theme.id} (${theme.kind})`);
+  }, [theme.id]);
 
   // PTY output polling
   useEffect(() => {
