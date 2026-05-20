@@ -132,18 +132,8 @@ fn main() {
         _ => None,
     };
 
-    let title = match &kind {
-        Some(InstanceKind::Cli { command, .. }) => format!("System Test Sandbox [{command}]"),
-        Some(InstanceKind::App { path }) => {
-            let name = std::path::Path::new(path)
-                .file_stem()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .to_string();
-            format!("System Test Sandbox [{name}]")
-        }
-        None => "System Test Sandbox".to_string(),
-    };
+    // Title is intentionally empty — command name is shown in the Dashboard header.
+    let title = String::new();
 
     let kind_for_setup = kind.clone();
     let sandbox_id_for_close = sandbox_id.clone();
