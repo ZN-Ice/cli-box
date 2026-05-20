@@ -11,11 +11,13 @@ export default function Sidebar({ command }: SidebarProps) {
   return (
     <aside
       className="flex flex-col h-full w-52 shrink-0 select-none"
+      data-tauri-drag-region
       style={{
         backgroundColor: "var(--sandbox-sidebar-bg)",
         color: "var(--sandbox-sidebar-fg)",
         borderRight: "1px solid var(--sandbox-sidebar-border)",
-      }}
+        WebkitAppRegion: "drag",
+      } as React.CSSProperties}
     >
       {/* Logo */}
       <div className="flex items-center gap-2.5 px-5 pt-10 pb-4">
@@ -40,7 +42,10 @@ export default function Sidebar({ command }: SidebarProps) {
       </div>
 
       {/* Instances */}
-      <div className="px-3 mt-1">
+      <div className="px-3 mt-1"
+        data-tauri-no-drag
+        style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
+      >
         <div
           className="text-[10px] font-medium uppercase tracking-wider px-2 mb-1"
           style={{ color: "var(--sandbox-fg-tertiary)" }}
@@ -75,7 +80,10 @@ export default function Sidebar({ command }: SidebarProps) {
       <div className="flex-1" />
 
       {/* Theme toggle */}
-      <div className="px-3 pb-4">
+      <div className="px-3 pb-4"
+        data-tauri-no-drag
+        style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
+      >
         <button
           onClick={toggleTheme}
           className="flex items-center gap-2 w-full px-2 py-1.5 rounded-md text-xs transition-colors"

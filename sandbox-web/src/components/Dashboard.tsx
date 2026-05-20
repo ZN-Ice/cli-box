@@ -23,10 +23,14 @@ export default function Dashboard({
       className="flex-1 flex flex-col min-w-0 h-full overflow-hidden"
       style={{ backgroundColor: "var(--sandbox-bg-primary)" }}
     >
-      {/* Header */}
+      {/* Header — draggable region */}
       <div
+        data-tauri-drag-region
         className="flex items-center justify-between px-6 py-3 shrink-0 border-b"
-        style={{ borderColor: "var(--sandbox-border)" }}
+        style={{
+          borderColor: "var(--sandbox-border)",
+          WebkitAppRegion: "drag",
+        } as React.CSSProperties}
       >
         <h1
           className="text-lg font-semibold"
@@ -34,7 +38,11 @@ export default function Dashboard({
         >
           Dashboard
         </h1>
-        <div className="flex items-center gap-2">
+        <div
+          data-tauri-no-drag
+          className="flex items-center gap-2"
+          style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
+        >
           <button
             onClick={onScreenshot}
             className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors"
