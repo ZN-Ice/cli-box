@@ -3,11 +3,13 @@ import ReactDOM from "react-dom/client";
 import { invoke } from "@tauri-apps/api/core";
 import Sidebar from "./components/Sidebar";
 import Dashboard from "./components/Dashboard";
-import DetailPanel from "./components/DetailPanel";
 import { ThemeProvider } from "./themes/ThemeContext";
 import * as api from "./api";
 import type { HealthResponse } from "./api";
 import "./index.css";
+
+const isMac =
+  typeof navigator !== "undefined" && navigator.platform.startsWith("Mac");
 
 function App() {
   const [activePid, setActivePid] = useState<number | null>(null);
@@ -112,7 +114,16 @@ function App() {
   const sandboxName = health?.sandbox_id ?? "Sandbox";
 
   return (
-    <div className="three-panel">
+    <div className="flex h-screen w-screen overflow-hidden bg-sandbox-bg-primary text-sandbox-fg-primary">
+      {/* macOS drag region — reserves space for traffic light buttons */}
+      {isMac && (
+        <div
+          className="fixed top-0 left-0 right-0 z-50 h-7"
+          data-tauri-drag-region
+          style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
+        />
+      )}
+
       <Sidebar command={command} />
       <Dashboard
         sandboxName={sandboxName}
@@ -169,7 +180,6 @@ function App() {
           </div>
         )}
       </Dashboard>
-      <DetailPanel health={health} connected={connected} />
     </div>
   );
 }

@@ -90,11 +90,18 @@ fn cmd_start(command: &str, args: &[String]) -> anyhow::Result<()> {
         tauri_args.extend(args.iter().cloned());
     }
 
+    tracing::info!("[start] bundle_path: {}", bundle_path.display());
+    tracing::info!("[start] app_binary: {}", app_binary.display());
+    tracing::info!("[start] tauri_args: {:?}", tauri_args);
+    tracing::info!("[start] app_binary exists: {}", app_binary.exists());
+
     // Run the binary directly (not via open -a) so arguments are passed correctly
-    Command::new(&app_binary)
+    let child = Command::new(&app_binary)
         .args(&tauri_args)
         .spawn()
         .context("Failed to launch Tauri sandbox app")?;
+
+    tracing::info!("[start] child pid: {:?}", child.id());
 
     let full_cmd = if args.is_empty() {
         command.to_string()

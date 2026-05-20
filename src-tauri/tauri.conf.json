@@ -16,9 +16,11 @@
         "title": "System Test Sandbox",
         "width": 1280,
         "height": 800,
+        "minWidth": 800,
+        "minHeight": 500,
         "resizable": true,
-        "transparent": true,
-        "decorations": false
+        "titleBarStyle": "Overlay",
+        "center": true
       }
     ],
     "security": {
