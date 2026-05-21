@@ -447,10 +447,7 @@ async fn cmd_processes(id: &str) -> anyhow::Result<()> {
         return Ok(());
     }
 
-    println!(
-        "{:<10}  {:<20}  {:<10}  PATH",
-        "PID", "NAME", "RUNNING"
-    );
+    println!("{:<10}  {:<20}  {:<10}  PATH", "PID", "NAME", "RUNNING");
     println!("{}", "-".repeat(70));
     for p in &processes {
         let running = if p.is_running { "yes" } else { "no" };
