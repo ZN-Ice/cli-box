@@ -1060,4 +1060,235 @@ mod tests {
             "unexpected status: {status}"
         );
     }
+
+    // ── Deserialization tests ─────────────────────────────────
+
+    #[test]
+    fn click_request_default_button() {
+        let req: ClickRequest = serde_json::from_str(r#"{"x": 1, "y": 2}"#).unwrap();
+        assert_eq!(req.button, "left");
+        assert_eq!(req.x, 1.0);
+        assert_eq!(req.y, 2.0);
+    }
+
+    #[test]
+    fn click_request_explicit_button() {
+        let req: ClickRequest =
+            serde_json::from_str(r#"{"x": 10, "y": 20, "button": "right"}"#).unwrap();
+        assert_eq!(req.button, "right");
+    }
+
+    #[test]
+    fn type_request_deserialize() {
+        let req: TypeRequest = serde_json::from_str(r#"{"text": "hello"}"#).unwrap();
+        assert_eq!(req.text, "hello");
+    }
+
+    #[test]
+    fn key_request_with_modifiers() {
+        let req: KeyRequest =
+            serde_json::from_str(r#"{"key": "a", "modifiers": ["cmd", "shift"]}"#).unwrap();
+        assert_eq!(req.key, "a");
+        assert_eq!(req.modifiers, vec!["cmd", "shift"]);
+    }
+
+    #[test]
+    fn key_request_without_modifiers() {
+        let req: KeyRequest = serde_json::from_str(r#"{"key": "return"}"#).unwrap();
+        assert!(req.modifiers.is_empty());
+    }
+
+    #[test]
+    fn scroll_request_deserialize() {
+        let req: ScrollRequest =
+            serde_json::from_str(r#"{"x": 100, "y": 200, "direction": "up", "amount": 5}"#)
+                .unwrap();
+        assert_eq!(req.x, 100.0);
+        assert_eq!(req.direction, "up");
+        assert_eq!(req.amount, 5);
+    }
+
+    #[test]
+    fn drag_request_deserialize() {
+        let req: DragRequest =
+            serde_json::from_str(r#"{"from_x": 0, "from_y": 0, "to_x": 100, "to_y": 200}"#)
+                .unwrap();
+        assert_eq!(req.from_x, 0.0);
+        assert_eq!(req.to_y, 200.0);
+    }
+
+    #[test]
+    fn spawn_app_request_deserialize() {
+        let req: SpawnAppRequest =
+            serde_json::from_str(r#"{"path": "/Applications/Safari.app"}"#).unwrap();
+        assert_eq!(req.path, "/Applications/Safari.app");
+    }
+
+    #[test]
+    fn spawn_cli_request_with_args() {
+        let req: SpawnCliRequest =
+            serde_json::from_str(r#"{"command": "echo", "args": ["hello"]}"#).unwrap();
+        assert_eq!(req.command, "echo");
+        assert_eq!(req.args, vec!["hello"]);
+    }
+
+    #[test]
+    fn spawn_cli_request_without_args() {
+        let req: SpawnCliRequest = serde_json::from_str(r#"{"command": "zsh"}"#).unwrap();
+        assert!(req.args.is_empty());
+    }
+
+    #[test]
+    fn kill_request_deserialize() {
+        let req: KillRequest = serde_json::from_str(r#"{"pid": 1234}"#).unwrap();
+        assert_eq!(req.pid, 1234);
+    }
+
+    #[test]
+    fn region_query_deserialize() {
+        let req: RegionQuery =
+            serde_json::from_str(r#"{"x": 10, "y": 20, "width": 100, "height": 200}"#).unwrap();
+        assert_eq!(req.x, 10);
+        assert_eq!(req.width, 100);
+    }
+
+    #[test]
+    fn pty_write_request_deserialize() {
+        let req: PtyWriteRequest =
+            serde_json::from_str(r#"{"pid": 42, "data": "hello\n"}"#).unwrap();
+        assert_eq!(req.pid, 42);
+        assert_eq!(req.data, "hello\n");
+    }
+
+    #[test]
+    fn ui_find_request_deserialize() {
+        let req: UiFindRequest =
+            serde_json::from_str(r#"{"window_id": 1, "role": "button"}"#).unwrap();
+        assert_eq!(req.window_id, 1);
+        assert_eq!(req.role, Some("button".to_string()));
+        assert!(req.title.is_none());
+    }
+
+    #[test]
+    fn ui_find_request_with_title() {
+        let req: UiFindRequest =
+            serde_json::from_str(r#"{"window_id": 1, "role": "button", "title": "OK"}"#).unwrap();
+        assert_eq!(req.title, Some("OK".to_string()));
+    }
+
+    #[test]
+    fn ui_value_query_deserialize() {
+        let req: UiValueQuery = serde_json::from_str(r#"{"element_id": "123:0:1"}"#).unwrap();
+        assert_eq!(req.element_id, "123:0:1");
+    }
+
+    #[test]
+    fn screenshot_query_deserialize_with_window_id() {
+        let req: ScreenshotQuery = serde_json::from_str(r#"{"window_id": 42}"#).unwrap();
+        assert_eq!(req.window_id, Some(42));
+    }
+
+    #[test]
+    fn screenshot_query_deserialize_without_window_id() {
+        let req: ScreenshotQuery = serde_json::from_str(r#"{}"#).unwrap();
+        assert!(req.window_id.is_none());
+    }
+
+    // ── require_target_pid ────────────────────────────────────
+
+    #[test]
+    fn require_target_pid_some() {
+        assert!(require_target_pid(Some(42)).is_ok());
+        assert_eq!(require_target_pid(Some(42)).unwrap(), 42);
+    }
+
+    #[test]
+    fn require_target_pid_none() {
+        assert!(require_target_pid(None).is_err());
+    }
+
+    // ── Default button function ───────────────────────────────
+
+    #[test]
+    fn default_button_returns_left() {
+        assert_eq!(default_button(), "left");
+    }
+
+    // ── Health response serialization ─────────────────────────
+
+    #[test]
+    fn health_response_serializes() {
+        let resp = HealthResponse {
+            status: "ok".to_string(),
+            version: "0.2.0".to_string(),
+            uptime_secs: 42,
+            sandbox_id: Some("test".to_string()),
+        };
+        let json = serde_json::to_string(&resp).unwrap();
+        assert!(json.contains("\"status\":\"ok\""));
+        assert!(json.contains("\"sandbox_id\":\"test\""));
+    }
+
+    #[test]
+    fn sandbox_info_response_serializes() {
+        let resp = SandboxInfoResponse {
+            sandbox_id: None,
+            window_id: Some(42),
+            uptime_secs: 60,
+        };
+        let json = serde_json::to_string(&resp).unwrap();
+        assert!(json.contains("\"window_id\":42"));
+        assert!(json.contains("\"sandbox_id\":null"));
+    }
+
+    // ── AppError all variants ─────────────────────────────────
+
+    #[tokio::test]
+    async fn app_error_window_not_found_status() {
+        let err = AppError::WindowNotFound("w1".into());
+        let resp = err.into_response();
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn app_error_screenshot_status() {
+        let err = AppError::Screenshot("failed".into());
+        let resp = err.into_response();
+        assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    #[tokio::test]
+    async fn app_error_input_status() {
+        let err = AppError::Input("bad key".into());
+        let resp = err.into_response();
+        assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    #[tokio::test]
+    async fn app_error_accessibility_status() {
+        let err = AppError::Accessibility("no perm".into());
+        let resp = err.into_response();
+        assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    #[tokio::test]
+    async fn app_error_process_status() {
+        let err = AppError::Process("died".into());
+        let resp = err.into_response();
+        assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    #[tokio::test]
+    async fn app_error_io_status() {
+        let err = AppError::Io(std::io::Error::new(std::io::ErrorKind::NotFound, "file"));
+        let resp = err.into_response();
+        assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    #[tokio::test]
+    async fn app_error_json_status() {
+        let err = AppError::Json(serde_json::from_str::<serde_json::Value>("bad").unwrap_err());
+        let resp = err.into_response();
+        assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    }
 }

@@ -6,11 +6,32 @@ pub struct ScreenCapture;
 #[cfg(all(target_os = "macos", feature = "screencapturekit"))]
 mod macos_impl {
     use super::*;
+    use core_foundation::array::{CFArray, CFArrayRef};
+    use core_foundation::base::TCFType;
+    use core_foundation::dictionary::CFDictionaryRef;
+    use core_foundation::number::CFNumber;
+    use core_foundation::number::CFNumberRef;
+    use core_foundation::string::CFString;
     use screencapturekit::screenshot_manager::SCScreenshotManager;
     use screencapturekit::shareable_content::SCShareableContent;
     use screencapturekit::stream::configuration::SCStreamConfiguration;
     use screencapturekit::stream::content_filter::SCContentFilter;
+    use std::os::raw::c_void;
     use std::sync::Once;
+
+    #[link(name = "CoreGraphics", kind = "framework")]
+    extern "C" {
+        fn CGWindowListCopyWindowInfo(option: u32, relative_to_window: u32) -> CFArrayRef;
+    }
+
+    #[link(name = "CoreFoundation", kind = "framework")]
+    extern "C" {
+        fn CFDictionaryGetValueIfPresent(
+            dict: CFDictionaryRef,
+            key: *const c_void,
+            value: *mut *const c_void,
+        ) -> bool;
+    }
 
     static CG_INIT: Once = Once::new();
 
@@ -165,6 +186,135 @@ mod macos_impl {
                 .ok_or_else(|| AppError::WindowNotFound(format!("Window '{title}' not found")))
         }
 
+        /// Find the main window owned by a specific PID using CGWindowListCopyWindowInfo.
+        /// Returns the CGWindowNumber, which matches SCWindow::window_id().
+        /// Picks the largest on-screen window with layer 0 (normal window layer).
+        pub fn find_window_by_pid(pid: u32) -> Result<u32> {
+            ensure_cg_initialized();
+            unsafe {
+                let arr_ref = CGWindowListCopyWindowInfo(0, 0);
+                if arr_ref.is_null() {
+                    return Err(AppError::WindowNotFound(
+                        "CGWindowListCopyWindowInfo returned null".into(),
+                    ));
+                }
+                let arr = CFArray::<*const c_void>::wrap_under_create_rule(arr_ref);
+
+                let mut best_id: Option<u32> = None;
+                let mut best_area: u64 = 0;
+
+                for i in 0..arr.len() {
+                    let item_ref = match arr.get(i) {
+                        Some(p) => p,
+                        None => continue,
+                    };
+                    let item_ptr: *const c_void = *item_ref;
+                    if item_ptr.is_null() {
+                        continue;
+                    }
+                    let dict = item_ptr as CFDictionaryRef;
+
+                    // Check kCGWindowOwnerPID
+                    let key_pid = CFString::new("kCGWindowOwnerPID");
+                    let mut val_ptr: *const c_void = std::ptr::null();
+                    if !CFDictionaryGetValueIfPresent(
+                        dict,
+                        key_pid.as_concrete_TypeRef() as *const c_void,
+                        &mut val_ptr as *mut _,
+                    ) || val_ptr.is_null()
+                    {
+                        continue;
+                    }
+                    let owner_pid = CFNumber::wrap_under_get_rule(val_ptr as CFNumberRef)
+                        .to_i64()
+                        .unwrap_or(-1) as u32;
+                    if owner_pid != pid {
+                        continue;
+                    }
+
+                    // Skip non-normal layers (layer 0 = normal window)
+                    let key_layer = CFString::new("kCGWindowLayer");
+                    let mut layer_ptr: *const c_void = std::ptr::null();
+                    if CFDictionaryGetValueIfPresent(
+                        dict,
+                        key_layer.as_concrete_TypeRef() as *const c_void,
+                        &mut layer_ptr as *mut _,
+                    ) && !layer_ptr.is_null()
+                    {
+                        let layer = CFNumber::wrap_under_get_rule(layer_ptr as CFNumberRef)
+                            .to_i64()
+                            .unwrap_or(0);
+                        if layer != 0 {
+                            continue;
+                        }
+                    }
+
+                    // Get kCGWindowNumber
+                    let key_num = CFString::new("kCGWindowNumber");
+                    let mut num_ptr: *const c_void = std::ptr::null();
+                    if !CFDictionaryGetValueIfPresent(
+                        dict,
+                        key_num.as_concrete_TypeRef() as *const c_void,
+                        &mut num_ptr as *mut _,
+                    ) || num_ptr.is_null()
+                    {
+                        continue;
+                    }
+                    let win_id = CFNumber::wrap_under_get_rule(num_ptr as CFNumberRef)
+                        .to_i64()
+                        .unwrap_or(0) as u32;
+
+                    // Compute area from kCGWindowBounds to pick the largest window
+                    let key_bounds = CFString::new("kCGWindowBounds");
+                    let mut bounds_ptr: *const c_void = std::ptr::null();
+                    if CFDictionaryGetValueIfPresent(
+                        dict,
+                        key_bounds.as_concrete_TypeRef() as *const c_void,
+                        &mut bounds_ptr as *mut _,
+                    ) && !bounds_ptr.is_null()
+                    {
+                        let bdict = bounds_ptr as CFDictionaryRef;
+                        let key_w = CFString::new("Width");
+                        let key_h = CFString::new("Height");
+                        let mut w_ptr: *const c_void = std::ptr::null();
+                        let mut h_ptr: *const c_void = std::ptr::null();
+                        if CFDictionaryGetValueIfPresent(
+                            bdict,
+                            key_w.as_concrete_TypeRef() as *const c_void,
+                            &mut w_ptr as *mut _,
+                        ) && CFDictionaryGetValueIfPresent(
+                            bdict,
+                            key_h.as_concrete_TypeRef() as *const c_void,
+                            &mut h_ptr as *mut _,
+                        ) && !w_ptr.is_null()
+                            && !h_ptr.is_null()
+                        {
+                            let w = CFNumber::wrap_under_get_rule(w_ptr as CFNumberRef)
+                                .to_i64()
+                                .unwrap_or(0) as u64;
+                            let h = CFNumber::wrap_under_get_rule(h_ptr as CFNumberRef)
+                                .to_i64()
+                                .unwrap_or(0) as u64;
+                            if w * h > best_area {
+                                best_area = w * h;
+                                best_id = Some(win_id);
+                            }
+                            continue;
+                        }
+                    }
+
+                    // No bounds — use as fallback if nothing better found
+                    if best_id.is_none() {
+                        best_id = Some(win_id);
+                    }
+                }
+
+                best_id.ok_or_else(|| {
+                    AppError::WindowNotFound(format!("No window found for PID {pid}"))
+                })
+            }
+        }
+
         /// List all available windows with their IDs and titles
         pub fn list_windows() -> Result<Vec<(u32, String)>> {
             ensure_cg_initialized();
@@ -271,6 +421,12 @@ mod non_macos_impl {
         }
 
         pub fn find_window_by_title(_title: &str) -> Result<u32> {
+            Err(AppError::Screenshot(
+                "ScreenCaptureKit only available on macOS".into(),
+            ))
+        }
+
+        pub fn find_window_by_pid(_pid: u32) -> Result<u32> {
             Err(AppError::Screenshot(
                 "ScreenCaptureKit only available on macOS".into(),
             ))

@@ -15,6 +15,7 @@ function App() {
   const [connected, setConnected] = useState(false);
   const [screenshotUrl, setScreenshotUrl] = useState<string | null>(null);
   const [showPreview, setShowPreview] = useState(false);
+  const [screenshotError, setScreenshotError] = useState<string | null>(null);
   const [command, setCommand] = useState("Sandbox");
   const hasConnectedRef = useRef(false);
 
@@ -76,12 +77,16 @@ function App() {
 
   // Screenshot
   const handleScreenshot = useCallback(async () => {
+    setScreenshotError(null);
     try {
       const url = await api.takeScreenshot();
       setScreenshotUrl(url);
       setShowPreview(true);
-    } catch {
-      // silent
+    } catch (err) {
+      setScreenshotError(
+        err instanceof Error ? err.message : "Screenshot failed",
+      );
+      setTimeout(() => setScreenshotError(null), 4000);
     }
   }, []);
 
@@ -112,6 +117,36 @@ function App() {
         onTerminalInput={handleTerminalInput}
         onScreenshot={handleScreenshot}
       >
+        {/* Screenshot error toast */}
+        {screenshotError && (
+          <div
+            className="absolute bottom-4 right-4 z-30 animate-[fadeIn_0.2s_ease-out]"
+            style={{
+              backgroundColor: "var(--sandbox-bg-secondary)",
+              color: "var(--sandbox-fg-primary)",
+              borderColor: "var(--sandbox-border)",
+            }}
+          >
+            <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl border shadow-lg text-xs">
+              <svg
+                className="w-4 h-4 shrink-0"
+                style={{ color: "var(--sandbox-error, #f7768e)" }}
+                fill="none"
+                viewBox="0 0 24 24"
+                strokeWidth={1.5}
+                stroke="currentColor"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z"
+                />
+              </svg>
+              <span>{screenshotError}</span>
+            </div>
+          </div>
+        )}
+
         {/* Screenshot preview floating panel */}
         {showPreview && screenshotUrl && (
           <div

@@ -27,10 +27,12 @@ export default function Dashboard({
       <div
         data-tauri-drag-region
         className="flex items-center justify-between px-6 py-3 shrink-0 border-b"
-        style={{
-          borderColor: "var(--sandbox-border)",
-          WebkitAppRegion: "drag",
-        } as React.CSSProperties}
+        style={
+          {
+            borderColor: "var(--sandbox-border)",
+            WebkitAppRegion: "drag",
+          } as React.CSSProperties
+        }
       >
         <h1
           className="text-lg font-semibold"
