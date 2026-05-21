@@ -894,5 +894,47 @@
     "finish_time": "2026-05-17 00:00:00",
     "check_result": "通过",
     "remark": "修改 process/mod.rs spawn_app 返回值增加 Option<u32> window_id"
+  },
+  {
+    "task_id": "P9-01",
+    "task_type": "设计文档",
+    "phase": "Phase 9",
+    "module": "cli",
+    "layer": "rust",
+    "task_desc": "键盘操作特性设计文档：分析输入投递策略（CGEvent vs PTY），定义 CLI 命令规范",
+    "executor": "Claude Code",
+    "status": "已完成",
+    "create_time": "2026-05-21 00:00:00",
+    "finish_time": "2026-05-21 00:00:00",
+    "check_result": "通过",
+    "remark": "docs/design/keyboard-ops.md"
+  },
+  {
+    "task_id": "P9-02",
+    "task_type": "功能开发",
+    "phase": "Phase 9",
+    "module": "cli",
+    "layer": "rust",
+    "task_desc": "HTTP 客户端模块：SandboxClient 封装 type_text/press_key/click/pty_write/screenshot/shutdown 等 HTTP 调用",
+    "executor": "Claude Code",
+    "status": "已完成",
+    "create_time": "2026-05-21 00:00:00",
+    "finish_time": "2026-05-21 00:00:00",
+    "check_result": "通过",
+    "remark": "新增 crates/sandbox-cli/src/client.rs，含 10 个单元测试"
+  },
+  {
+    "task_id": "P9-03",
+    "task_type": "功能开发",
+    "phase": "Phase 9",
+    "module": "cli",
+    "layer": "rust",
+    "task_desc": "CLI 键盘操作命令：type (--pty)、key (--pty)、click、list、inspect、close、processes",
+    "executor": "Claude Code",
+    "status": "已完成",
+    "create_time": "2026-05-21 00:00:00",
+    "finish_time": "2026-05-21 00:00:00",
+    "check_result": "通过",
+    "remark": "修改 main.rs，添加 7 个新子命令，支持 --pty PTY 直写模式"
   }
 ]

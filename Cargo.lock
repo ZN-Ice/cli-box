@@ -3658,6 +3658,8 @@ dependencies = [
  "clap",
  "reqwest 0.12.28",
  "sandbox-core",
+ "serde",
+ "serde_json",
  "tokio",
  "tracing",
  "tracing-subscriber",
