@@ -57,46 +57,8 @@ release/
 # 自动发现沙箱窗口并截图（保存为 PNG）
 ./sandbox screenshot -o screenshot.png
 
-# 通过沙箱 ID 截图
-./sandbox screenshot --id <id> -o screenshot.png
-
 # 指定窗口 ID 截图
 ./sandbox screenshot --window-id 12345 -o screenshot.png
-\`\`\`
-
-### 管理沙箱
-
-\`\`\`bash
-# 列出所有沙箱实例
-./sandbox list
-
-# 查看沙箱详情
-./sandbox inspect <id>
-
-# 列出沙箱内进程
-./sandbox processes --id <id>
-
-# 关闭沙箱
-./sandbox close <id>
-\`\`\`
-
-### 键盘与鼠标操作
-
-\`\`\`bash
-# 输入文本（CGEvent 模式）
-./sandbox type --id <id> "你好"
-
-# 输入文本（PTY 直写，更可靠，仅 CLI 沙箱）
-./sandbox type --id <id> --pty "你好"
-
-# 按键
-./sandbox key --id <id> Return
-./sandbox key --id <id> Return -m cmd       # Cmd+Return
-./sandbox key --id <id> --pty Return         # PTY 直写
-
-# 鼠标点击
-./sandbox click --id <id> 100 200
-./sandbox click --id <id> 100 200 --btn right
 \`\`\`
 
 ### 其他命令
@@ -105,7 +67,7 @@ release/
 # 列出所有可见窗口
 ./sandbox windows
 
-# 关闭沙箱（旧版）
+# 关闭沙箱
 ./sandbox shutdown
 \`\`\`
 
@@ -118,25 +80,19 @@ release/
 # 2. 等待 Claude 启动（约 10 秒）
 sleep 10
 
-# 3. 用 list 获取沙箱 ID
-./sandbox list
+# 3. 截图查看状态
+./sandbox screenshot -o screenshot.png
 
-# 4. 输入问题并发送
-./sandbox type --id <id> --pty "你是谁？"
-./sandbox key --id <id> --pty Return
-
-# 5. 截图查看回复
-./sandbox screenshot --id <id> -o claude_response.png
-
-# 6. 关闭沙箱
-./sandbox close <id>
+# 4. 关闭沙箱
+./sandbox shutdown
 \`\`\`
 
 \`\`\`bash
-# 在沙箱中运行 Shell 命令
-./sandbox start zsh
-./sandbox type --id <id> --pty 'echo "hello world"'
-./sandbox key --id <id> --pty Return
+# 非交互式快速提问
+./sandbox start claude -- -p "用 Python 写一个 hello world"
+sleep 30
+./sandbox screenshot -o claude_response.png
+./sandbox shutdown
 \`\`\`
 
 ## 三、架构
@@ -179,4 +135,4 @@ A: 等待几秒让 Claude 启动，终端会自动连接 PTY 输出。
 
 ---
 
-**版本**: v${VERSION} | **构建时间**: 2026-05-20 22:19
+**版本**: v${VERSION} | **构建时间**: 2026-05-22 21:07

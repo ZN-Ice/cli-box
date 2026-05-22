@@ -86,24 +86,78 @@ sandbox-cli close abc123
 
 ### 键盘与鼠标操作
 
-```bash
-# 输入文本（CGEvent 模式，适用于所有沙箱）
-sandbox-cli type --id abc123 "帮我写一个函数"
+> **CLI 沙箱（如 Claude Code、zsh）请始终使用 `--pty` 模式。** CGEvent 模式将键盘事件发送到 Tauri 窗口进程，而非 PTY 子进程，因此对 CLI 程序无效。
 
-# 输入文本（PTY 直写模式，更可靠，仅 CLI 沙箱）
+```bash
+# ─── 输入文本 ──────────────────────────────────────────
+
+# PTY 直写（推荐，CLI 沙箱专用）
 sandbox-cli type --id abc123 --pty "帮我写一个函数"
 
-# 按键（CGEvent 模式）
+# CGEvent 模式（仅适用于 GUI 应用沙箱，对 CLI 沙箱无效）
+sandbox-cli type --id abc123 "帮我写一个函数"
+
+# ─── 按键 ──────────────────────────────────────────────
+
+# PTY 按键（推荐，CLI 沙箱专用）
+sandbox-cli key --id abc123 --pty Return
+sandbox-cli key --id abc123 --pty Tab
+sandbox-cli key --id abc123 --pty Escape
+sandbox-cli key --id abc123 --pty ctrl+c      # 发送 Ctrl+C
+sandbox-cli key --id abc123 --pty ctrl+l      # 清屏
+sandbox-cli key --id abc123 --pty up          # 上箭头
+sandbox-cli key --id abc123 --pty down        # 下箭头
+sandbox-cli key --id abc123 --pty left        # 左箭头
+sandbox-cli key --id abc123 --pty right       # 右箭头（接受补全）
+sandbox-cli key --id abc123 --pty home        # Home
+sandbox-cli key --id abc123 --pty end         # End
+sandbox-cli key --id abc123 --pty f1          # F1~F12
+
+# PTY 带修饰符按键
+sandbox-cli key --id abc123 --pty c -m ctrl   # 等同 ctrl+c
+sandbox-cli key --id abc123 --pty up -m shift  # Shift+上（选择模式）
+sandbox-cli key --id abc123 --pty tab -m shift # Shift+Tab
+sandbox-cli key --id abc123 --pty a -m alt    # Alt+A（ESC 前缀）
+
+# CGEvent 按键（仅适用于 GUI 应用沙箱）
 sandbox-cli key --id abc123 Return
 sandbox-cli key --id abc123 Return --modifiers cmd
 
-# 按键（PTY 直写模式）
-sandbox-cli key --id abc123 --pty Return
+# ─── 鼠标点击（仅 CGEvent，适用于所有沙箱）──────────
 
-# 鼠标点击
 sandbox-cli click --id abc123 100 200
 sandbox-cli click --id abc123 100 200 --btn right
 ```
+
+#### PTY 支持的按键映射
+
+| 按键 | PTY 字节序列 | 说明 |
+|------|-------------|------|
+| Return / Enter | `\r` | 提交输入 |
+| Tab | `\t` | 自动补全 |
+| Escape / Esc | `\x1b` | 取消 |
+| Backspace / Delete | `\x7f` | 删除 |
+| Up / Down / Left / Right | `\x1b[A/B/C/D` | 方向键 |
+| Home / End | `\x1b[H` / `\x1b[F` | 行首/行尾 |
+| PageUp / PageDown | `\x1b[5~` / `\x1b[6~` | 翻页 |
+| F1~F12 | `\x1bOP`~`\x1b[24~` | 功能键 |
+| Ctrl+A ~ Ctrl+Z | `\x01`~`\x1a` | 控制组合键 |
+| Ctrl+C | `\x03` | 中断 |
+| Ctrl+D | `\x04` | EOF |
+| Ctrl+R | `\x12` | 历史搜索 |
+| Ctrl+L | `\x0c` | 清屏 |
+| Ctrl+W | `\x17` | 删除单词 |
+
+#### 输入路径说明
+
+CLI 沙箱有两种键盘输入路径：
+
+| 路径 | 机制 | 适用场景 | 可靠性 |
+|------|------|---------|--------|
+| **PTY 直写** (`--pty`) | 写入 PTY master → 子进程 stdin | CLI 沙箱 | 可靠 |
+| **CGEvent** (默认) | CGEvent → Tauri 窗口进程 | GUI 应用沙箱 | 依赖窗口焦点 |
+
+CGEvent 模式将键盘事件发送到 Tauri 进程（`target_pid = std::process::id()`），而非 CLI 子进程。WKWebView 不一定能将合成 CGEvent 正确转换为 xterm.js 能处理的 DOM 键盘事件，因此对 CLI 沙箱不可靠。
 
 ### 完整场景示例
 
@@ -113,11 +167,20 @@ sandbox-cli start claude
 # → 用 sandbox-cli list 获取 ID
 sandbox-cli type --id <id> --pty "你是谁？"
 sandbox-cli key --id <id> --pty Return
+# 等待回复后截图
+sandbox-cli screenshot --id <id> -o claude_response.png
 
 # 场景二：在沙箱中执行 Shell 命令
 sandbox-cli start zsh
 sandbox-cli type --id <id> --pty 'echo "hello world"'
 sandbox-cli key --id <id> --pty Return
+sandbox-cli screenshot --id <id> -o shell_output.png
+
+# 场景三：使用快捷键操作 Claude Code
+sandbox-cli key --id <id> --pty ctrl+c     # 中断当前操作
+sandbox-cli key --id <id> --pty up          # 查看上一条命令
+sandbox-cli key --id <id> --pty ctrl+l      # 清屏
+sandbox-cli key --id <id> --pty ctrl+r      # 搜索历史
 ```
 
 ### Agent 调用示例
@@ -179,6 +242,37 @@ close_sandbox("abc123") → 关闭沙箱
 
 1. **辅助功能** (Accessibility) → 输入模拟 + UI 检查
 2. **屏幕录制** (Screen Recording) → 窗口截图
+
+## 日志与调试
+
+CLI 和 Tauri 沙箱均使用 `tracing` 输出结构化日志。设置 `RUST_LOG` 环境变量控制日志级别：
+
+```bash
+# 查看详细输入管线日志
+RUST_LOG=info sandbox-cli type --id <id> --pty "hello"
+# → [cli] type: text_len=5, id=abc123, pty=true
+# → [pty] write: pid=1001, len=5, preview="hello"
+# → [pty] send_input: written and flushed to pid=1001
+
+# 不使用 --pty 时会看到警告
+RUST_LOG=info sandbox-cli type --id <id> "hello"
+# → [cli] type: using CGEvent path... Consider using --pty for CLI sandboxes.
+# → [input] type_text: len=5, target_pid=9999
+# → [cg_event] press_key: key=h, target_pid=Some(9999)
+
+# 更详细的 CGEvent 日志
+RUST_LOG=trace sandbox-cli key --id <id> "a"
+
+# 查看 Tauri 沙箱进程的日志（在沙箱启动的终端中可见）
+RUST_LOG=info ./System\ Test\ Sandbox.app/Contents/MacOS/system-test-sandbox --mode=cli --cmd=claude
+```
+
+关键日志前缀：
+- `[cli]` — CLI 命令入口，显示参数和路径选择
+- `[input]` — HTTP API 输入处理，显示 target_pid
+- `[cg_event]` — CGEvent 层，显示按键码和目标 PID
+- `[pty]` — PTY 层，显示写入数据和可用 PID 列表
+- `[setup]` — Tauri 启动初始化，显示沙箱配置和窗口发现
 
 ## 技术栈
 

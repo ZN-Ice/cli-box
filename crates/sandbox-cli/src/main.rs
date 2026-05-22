@@ -321,11 +321,18 @@ async fn cmd_close(id: &str) -> anyhow::Result<()> {
 /// Type text into a sandbox.
 async fn cmd_type(text: &str, id: &str, pty: bool) -> anyhow::Result<()> {
     let client = client::SandboxClient::from_instance_id(id)?;
+    tracing::info!(
+        "[cli] type: text_len={}, id={}, pty={}",
+        text.len(),
+        id,
+        pty
+    );
 
     if pty {
         client.pty_write_auto(text).await?;
         println!("Typed (PTY): {:?} → sandbox {}", text, id);
     } else {
+        tracing::warn!("[cli] type: using CGEvent path (not PTY). This targets the Tauri process, not the CLI child process. Consider using --pty for CLI sandboxes.");
         client.type_text(text).await?;
         println!("Typed (CGEvent): {:?} → sandbox {}", text, id);
     }
@@ -335,16 +342,29 @@ async fn cmd_type(text: &str, id: &str, pty: bool) -> anyhow::Result<()> {
 /// Press a key in a sandbox.
 async fn cmd_key(key: &str, id: &str, modifiers: &[String], pty: bool) -> anyhow::Result<()> {
     let client = client::SandboxClient::from_instance_id(id)?;
+    tracing::info!(
+        "[cli] key: key={}, modifiers={:?}, id={}, pty={}",
+        key,
+        modifiers,
+        id,
+        pty
+    );
 
     if pty {
-        let data = client::key_to_pty_bytes(key);
+        let data = client::key_to_pty_bytes_with_modifiers(key, modifiers);
         if data.is_empty() {
-            anyhow::bail!(
-                "Key '{}' cannot be mapped to PTY bytes. Use CGEvent mode (remove --pty).",
-                key
-            );
+            // Try plain key mapping as fallback
+            let plain = client::key_to_pty_bytes(key);
+            if plain.is_empty() {
+                anyhow::bail!(
+                    "Key '{}' with modifiers {:?} cannot be mapped to PTY bytes. Use CGEvent mode (remove --pty).",
+                    key, modifiers
+                );
+            }
+            client.pty_write_auto(&plain).await?;
+        } else {
+            client.pty_write_auto(&data).await?;
         }
-        client.pty_write_auto(&data).await?;
         println!(
             "Pressed (PTY): {} {} → sandbox {}",
             if modifiers.is_empty() {
@@ -356,6 +376,7 @@ async fn cmd_key(key: &str, id: &str, modifiers: &[String], pty: bool) -> anyhow
             id
         );
     } else {
+        tracing::warn!("[cli] key: using CGEvent path (not PTY). This targets the Tauri process, not the CLI child process. Consider using --pty for CLI sandboxes.");
         client.press_key(key, modifiers).await?;
         println!(
             "Pressed (CGEvent): {} {} → sandbox {}",

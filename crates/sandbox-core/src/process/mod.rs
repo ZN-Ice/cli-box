@@ -237,6 +237,16 @@ impl ProcessManager {
     /// Send input to a PTY process
     #[cfg(target_os = "macos")]
     pub fn send_input(pid: u32, data: &[u8]) -> Result<()> {
+        info!(
+            "[pty] send_input: pid={}, len={}, preview={:?}",
+            pid,
+            data.len(),
+            if data.len() > 40 {
+                String::from_utf8_lossy(&data[..40]).to_string()
+            } else {
+                String::from_utf8_lossy(data).to_string()
+            }
+        );
         let mut sessions = SESSIONS
             .lock()
             .map_err(|e| AppError::Process(e.to_string()))?;
@@ -249,8 +259,14 @@ impl ProcessManager {
                 .writer
                 .flush()
                 .map_err(|e| AppError::Process(format!("Failed to flush PTY: {e}")))?;
+            info!("[pty] send_input: written and flushed to pid={}", pid);
             Ok(())
         } else {
+            let available: Vec<u32> = sessions.keys().copied().collect();
+            warn!(
+                "[pty] send_input: pid={} not found. Available PIDs: {:?}",
+                pid, available
+            );
             Err(AppError::Process(format!("Process {pid} not found")))
         }
     }

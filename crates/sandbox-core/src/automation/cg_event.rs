@@ -45,8 +45,8 @@ impl InputSimulator {
         mouse_event(&source, down_type, position, button, target_pid)?;
         mouse_event(&source, up_type, position, button, target_pid)?;
 
-        tracing::debug!(
-            "Click at ({}, {}), button={:?}, target_pid={:?}",
+        tracing::info!(
+            "[cg_event] click at ({}, {}), button={:?}, target_pid={:?}",
             x,
             y,
             button,
@@ -127,8 +127,8 @@ impl InputSimulator {
         }
         post_event(&key_up, target_pid);
 
-        tracing::debug!(
-            "Press key={}, modifiers={:?}, target_pid={:?}",
+        tracing::info!(
+            "[cg_event] press_key: key={}, modifiers={:?}, target_pid={:?}",
             key,
             modifiers,
             target_pid
@@ -316,6 +316,15 @@ fn type_character(c: char, target_pid: Option<u32>) -> Result<()> {
         .ok_or_else(|| AppError::Input(format!("Cannot type character: '{c}'")))?;
     let key_code = keycodes::key_name_to_code(key_name)
         .ok_or_else(|| AppError::Input(format!("No keycode for: '{key_name}'")))?;
+
+    tracing::trace!(
+        "[cg_event] type_char: '{}', key_name={}, key_code={}, needs_shift={}, target_pid={:?}",
+        c,
+        key_name,
+        key_code,
+        needs_shift,
+        target_pid
+    );
 
     let source =
         CGEventSource::new(core_graphics::event_source::CGEventSourceStateID::CombinedSessionState)

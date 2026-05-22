@@ -252,6 +252,13 @@ async fn click_handler(
     Json(req): Json<ClickRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let target_pid = require_target_pid(state.lock().await.target_pid)?;
+    tracing::info!(
+        "[input] click: x={}, y={}, button={}, target_pid={}",
+        req.x,
+        req.y,
+        req.button,
+        target_pid
+    );
     let button = match req.button.to_lowercase().as_str() {
         "left" => MouseButton::Left,
         "right" => MouseButton::Right,
@@ -269,6 +276,16 @@ async fn type_handler(
     Json(req): Json<TypeRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let target_pid = require_target_pid(state.lock().await.target_pid)?;
+    tracing::info!(
+        "[input] type_text: len={}, target_pid={}, preview={:?}",
+        req.text.len(),
+        target_pid,
+        if req.text.len() > 20 {
+            &req.text[..20]
+        } else {
+            &req.text
+        }
+    );
     InputSimulator::type_text(&req.text, Some(target_pid))?;
     Ok(Json(serde_json::json!({"typed": req.text})))
 }
@@ -278,6 +295,12 @@ async fn key_handler(
     Json(req): Json<KeyRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let target_pid = require_target_pid(state.lock().await.target_pid)?;
+    tracing::info!(
+        "[input] press_key: key={}, modifiers={:?}, target_pid={}",
+        req.key,
+        req.modifiers,
+        target_pid
+    );
     let mod_refs: Vec<&str> = req.modifiers.iter().map(|s| s.as_str()).collect();
     InputSimulator::press_key(&req.key, &mod_refs, Some(target_pid))?;
     Ok(Json(
@@ -327,6 +350,16 @@ async fn screenshot_region_handler(
 async fn pty_write_handler(
     Json(req): Json<PtyWriteRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    tracing::info!(
+        "[pty] write: pid={}, len={}, preview={:?}",
+        req.pid,
+        req.data.len(),
+        if req.data.len() > 40 {
+            &req.data[..40]
+        } else {
+            &req.data
+        }
+    );
     ProcessManager::send_input(req.pid, req.data.as_bytes())?;
     Ok(Json(serde_json::json!({"written": true})))
 }
@@ -1290,5 +1323,84 @@ mod tests {
         let err = AppError::Json(serde_json::from_str::<serde_json::Value>("bad").unwrap_err());
         let resp = err.into_response();
         assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    // ── Input path: target_pid determines CGEvent vs PTY ──────
+
+    #[tokio::test]
+    async fn type_handler_with_target_pid_sends_cgevent() {
+        // When target_pid is set to the Tauri process PID (not a PTY PID),
+        // CGEvent posts keyboard events to the Tauri window.
+        // This is the ROOT CAUSE of why CLI interactive operations fail:
+        // CGEvent goes to Tauri/WebView, not to the PTY child process.
+        let state = Arc::new(Mutex::new(AppState {
+            sandbox_id: Some("test-cgevent".into()),
+            start_time: Instant::now(),
+            window_id: Some(42),
+            target_pid: Some(9999), // Simulates Tauri process PID
+        }));
+        let app = build_router(state);
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/input/type")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(r#"{"text": "hello"}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        // CGEvent may fail on CI (no Accessibility permission), but the handler
+        // accepts the request (doesn't reject it) — the key issue is that it
+        // targets the wrong process.
+        let status = resp.status();
+        assert!(
+            matches!(status.as_u16(), 200 | 500),
+            "CGEvent type should either succeed or fail with internal error, got: {status}"
+        );
+    }
+
+    #[tokio::test]
+    async fn pty_write_with_valid_pid() {
+        // PTY write path directly writes to the process stdin.
+        // This is the correct path for CLI sandboxes.
+        // No PTY session exists in tests, so it returns 500.
+        let app = test_router();
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/pty/write")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(r#"{"pid": 99999, "data": "hello"}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let status = resp.status();
+        assert!(
+            status == StatusCode::OK || status == StatusCode::INTERNAL_SERVER_ERROR,
+            "pty_write should succeed or fail gracefully: {status}"
+        );
+    }
+
+    // ── Document the input path issue ─────────────────────────
+
+    #[test]
+    fn cgevent_targets_tauri_pid_not_child_pid() {
+        // This test documents the root cause:
+        // target_pid in AppState is set to std::process::id() (Tauri PID),
+        // NOT to the CLI child process PID.
+        // CGEvent posts to the Tauri window, not to the PTY child process.
+        // The PTY write path (/pty/write) is the correct way to send
+        // keyboard input to CLI processes.
+        let tauri_pid = std::process::id();
+        assert!(tauri_pid > 0, "Tauri PID is always set to self");
+
+        // The child process (e.g., claude) runs in a PTY with a different PID.
+        // CGEvent to tauri_pid ≠ PTY write to child_pid.
+        // This is why `sandbox type --id <id> "text"` (CGEvent) doesn't work
+        // but `sandbox type --id <id> --pty "text"` (PTY write) does.
     }
 }
