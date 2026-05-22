@@ -119,6 +119,13 @@ struct PtyWriteRequest {
 }
 
 #[derive(Deserialize)]
+struct PtyResizeRequest {
+    pid: u32,
+    rows: u16,
+    cols: u16,
+}
+
+#[derive(Deserialize)]
 struct UiFindRequest {
     window_id: u32,
     #[serde(default)]
@@ -156,6 +163,7 @@ pub fn build_router(state: Arc<Mutex<AppState>>) -> Router {
         .route("/screenshot", get(screenshot_handler))
         .route("/screenshot/region", get(screenshot_region_handler))
         .route("/pty/write", post(pty_write_handler))
+        .route("/pty/resize", post(pty_resize_handler))
         .route("/pty/output/{pid}", get(pty_output_handler))
         .route("/ui/inspect/{window_id}", get(ui_inspect_handler))
         .route("/ui/find", post(ui_find_handler))
@@ -362,6 +370,19 @@ async fn pty_write_handler(
     );
     ProcessManager::send_input(req.pid, req.data.as_bytes())?;
     Ok(Json(serde_json::json!({"written": true})))
+}
+
+async fn pty_resize_handler(
+    Json(req): Json<PtyResizeRequest>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    tracing::info!(
+        "[pty] resize: pid={}, rows={}, cols={}",
+        req.pid,
+        req.rows,
+        req.cols
+    );
+    ProcessManager::resize_pty(req.pid, req.rows, req.cols)?;
+    Ok(Json(serde_json::json!({"resized": true})))
 }
 
 async fn pty_output_handler(Path(pid): Path<u32>) -> Result<Json<serde_json::Value>, AppError> {

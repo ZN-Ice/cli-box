@@ -220,6 +220,17 @@ export async function ptyRead(pid: number): Promise<{ output: string | null }> {
   return res.json();
 }
 
+export async function ptyResize(
+  pid: number,
+  rows: number,
+  cols: number,
+): Promise<void> {
+  await request("/pty/resize", {
+    method: "POST",
+    body: JSON.stringify({ pid, rows, cols }),
+  });
+}
+
 // ── Windows ────────────────────────────────────────────
 
 export async function listWindows(): Promise<[number, string][]> {

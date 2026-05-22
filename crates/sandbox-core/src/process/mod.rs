@@ -9,7 +9,7 @@ use tracing::{debug, info, trace, warn};
 use {
     nix::sys::signal::{kill, Signal},
     nix::unistd::Pid,
-    portable_pty::{native_pty_system, CommandBuilder, PtySize},
+    portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize},
 };
 
 /// Process information
@@ -31,6 +31,7 @@ pub struct ProcessInfo {
 struct PtySession {
     reader: Option<Box<dyn std::io::Read + Send>>,
     writer: Box<dyn std::io::Write + Send>,
+    master: Box<dyn MasterPty + Send>,
     #[allow(dead_code)]
     child_pid: u32,
     command: String,
@@ -129,6 +130,7 @@ impl ProcessManager {
 
         let mut cmd = CommandBuilder::new(command);
         cmd.args(args);
+        cmd.env("TERM", "xterm-256color");
         let child = pty_pair
             .slave
             .spawn_command(cmd)
@@ -157,6 +159,7 @@ impl ProcessManager {
             PtySession {
                 reader: Some(reader),
                 writer,
+                master: pty_pair.master,
                 child_pid: child_pid.unwrap_or(0),
                 command: command.to_string(),
             },
@@ -275,6 +278,38 @@ impl ProcessManager {
     pub fn send_input(_pid: u32, _data: &[u8]) -> Result<()> {
         Err(AppError::Process(
             "send_input only supported on macOS".into(),
+        ))
+    }
+
+    /// Resize the PTY for a given tracked PID.
+    #[cfg(target_os = "macos")]
+    pub fn resize_pty(pid: u32, rows: u16, cols: u16) -> Result<()> {
+        let sessions = SESSIONS
+            .lock()
+            .map_err(|e| AppError::Process(e.to_string()))?;
+        if let Some(session) = sessions.get(&pid) {
+            session
+                .master
+                .resize(PtySize {
+                    rows,
+                    cols,
+                    pixel_width: 0,
+                    pixel_height: 0,
+                })
+                .map_err(|e| AppError::Process(format!("Failed to resize PTY: {e}")))?;
+            info!("[pty] resize: pid={}, rows={}, cols={}", pid, rows, cols);
+            Ok(())
+        } else {
+            Err(AppError::Process(format!(
+                "Process {pid} not found for resize"
+            )))
+        }
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    pub fn resize_pty(_pid: u32, _rows: u16, _cols: u16) -> Result<()> {
+        Err(AppError::Process(
+            "resize_pty only supported on macOS".into(),
         ))
     }
 

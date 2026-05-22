@@ -38,6 +38,18 @@ function buildTerminalTheme(t: TerminalTheme): Record<string, string> {
   };
 }
 
+function syncResize(
+  term: Terminal | null,
+  fitAddon: FitAddon | null,
+  pid: number | null,
+) {
+  if (!term || !fitAddon) return;
+  fitAddon.fit();
+  if (pid === null) return;
+  const { rows, cols } = term;
+  api.ptyResize(pid, rows, cols).catch(() => {});
+}
+
 export default function SandboxTerminal({
   onInput,
   activePid = null,
@@ -49,6 +61,10 @@ export default function SandboxTerminal({
   const { theme } = useTheme();
   const onInputRef = useRef(onInput);
   onInputRef.current = onInput;
+
+  // Keep activePid in a ref so event handlers see the latest value
+  const activePidRef = useRef(activePid);
+  activePidRef.current = activePid;
 
   // Initialize xterm.js once — theme updates in-place
   useEffect(() => {
@@ -82,7 +98,16 @@ export default function SandboxTerminal({
       onInputRef.current?.(data);
     });
 
-    const handleResize = () => fitAddon.fit();
+    // Notify backend PTY when xterm.js dimensions change
+    term.onResize(({ rows, cols }) => {
+      const pid = activePidRef.current;
+      if (pid === null) return;
+      api.ptyResize(pid, rows, cols).catch(() => {});
+    });
+
+    const handleResize = () => {
+      fitAddon.fit(); // fit triggers onResize → ptyResize
+    };
     window.addEventListener("resize", handleResize);
 
     xtermRef.current = term;
@@ -102,6 +127,14 @@ export default function SandboxTerminal({
     xtermRef.current.options.theme = newTheme;
     console.log(`[Terminal] theme updated to: ${theme.id} (${theme.kind})`);
   }, [theme.id]);
+
+  // Initial resize when activePid changes (sync PTY size to xterm.js)
+  useEffect(() => {
+    if (activePid === null || activePid === undefined) return;
+    requestAnimationFrame(() => {
+      syncResize(xtermRef.current, fitAddonRef.current, activePid);
+    });
+  }, [activePid]);
 
   // PTY output polling
   useEffect(() => {
@@ -136,7 +169,9 @@ export default function SandboxTerminal({
 
   const containerRef = useCallback((node: HTMLDivElement | null) => {
     if (node) {
-      requestAnimationFrame(() => fitAddonRef.current?.fit());
+      requestAnimationFrame(() =>
+        syncResize(xtermRef.current, fitAddonRef.current, activePidRef.current),
+      );
     }
   }, []);
 
