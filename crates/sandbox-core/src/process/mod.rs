@@ -1,8 +1,9 @@
 use crate::error::{AppError, Result};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::io::Write;
-use std::sync::Mutex;
+use std::sync::atomic::AtomicBool;
+use std::sync::{Arc, Mutex};
 use tracing::{debug, info, trace, warn};
 
 #[cfg(target_os = "macos")]
@@ -21,20 +22,28 @@ pub struct ProcessInfo {
     pub is_running: bool,
 }
 
-/// PTY session holding the reader/writer handles for I/O.
+/// PTY session holding the writer handle and a background reader thread.
 ///
-/// The reader is wrapped in `Option` so `read_output` can temporarily
-/// take it out of the session before performing a potentially-blocking
-/// read — this avoids holding the global `SESSIONS` lock across I/O,
-/// which would starve the tokio runtime.
+/// A dedicated reader thread continuously reads PTY output into a shared
+/// buffer (`Arc<Mutex<VecDeque<String>>>`).  `read_output` drains from
+/// this buffer non-blocking, eliminating the old take-read-put-back race
+/// condition where a blocking `read()` could hold the global `SESSIONS`
+/// lock and starve the tokio runtime.
 #[cfg(target_os = "macos")]
 struct PtySession {
+    #[allow(dead_code)]
     reader: Option<Box<dyn std::io::Read + Send>>,
     writer: Box<dyn std::io::Write + Send>,
     master: Box<dyn MasterPty>,
     #[allow(dead_code)]
     child_pid: u32,
     command: String,
+    /// Buffer for output from the dedicated reader thread
+    buffer: Arc<Mutex<VecDeque<String>>>,
+    /// Flag to signal the reader thread to stop
+    stop_flag: Arc<AtomicBool>,
+    /// Handle to the reader thread (for join on cleanup)
+    reader_thread: Option<std::thread::JoinHandle<()>>,
 }
 
 /// Track active PTY sessions by sandbox-tracked PID
@@ -150,17 +159,67 @@ impl ProcessManager {
 
         let tracked_id = NEXT_ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
+        // Create shared buffer and stop flag for the reader thread
+        let buffer: Arc<Mutex<VecDeque<String>>> = Arc::new(Mutex::new(VecDeque::new()));
+        let stop_flag: Arc<AtomicBool> = Arc::new(AtomicBool::new(false));
+
+        let thread_buffer = Arc::clone(&buffer);
+        let thread_stop = Arc::clone(&stop_flag);
+
+        // Spawn a dedicated reader thread that continuously reads PTY output
+        let reader_thread = std::thread::Builder::new()
+            .name(format!("pty-reader-{tracked_id}"))
+            .spawn(move || {
+                let mut reader = reader;
+                let mut read_buf = [0u8; 4096];
+                loop {
+                    if thread_stop.load(std::sync::atomic::Ordering::Relaxed) {
+                        debug!("PTY reader thread {tracked_id}: stop flag set, exiting");
+                        break;
+                    }
+                    match std::io::Read::read(&mut reader, &mut read_buf) {
+                        Ok(0) => {
+                            debug!("PTY reader thread {tracked_id}: EOF (process exited)");
+                            break;
+                        }
+                        Ok(n) => {
+                            let text = String::from_utf8_lossy(&read_buf[..n]).to_string();
+                            if let Ok(mut buf) = thread_buffer.lock() {
+                                // Cap buffer at 1000 entries to prevent unbounded growth
+                                if buf.len() >= 1000 {
+                                    buf.pop_front();
+                                }
+                                buf.push_back(text);
+                            }
+                        }
+                        Err(ref e) if e.kind() == std::io::ErrorKind::Interrupted => {
+                            trace!("PTY reader thread {tracked_id}: interrupted, retrying");
+                            continue;
+                        }
+                        Err(e) => {
+                            warn!("PTY reader thread {tracked_id}: read error: {e}");
+                            break;
+                        }
+                    }
+                }
+                debug!("PTY reader thread {tracked_id}: thread exiting");
+            })
+            .map_err(|e| AppError::Process(format!("Failed to spawn reader thread: {e}")))?;
+
         let mut sessions = SESSIONS
             .lock()
             .map_err(|e| AppError::Process(e.to_string()))?;
         sessions.insert(
             tracked_id,
             PtySession {
-                reader: Some(reader),
+                reader: None,
                 writer,
                 master: pty_pair.master,
                 child_pid: child_pid.unwrap_or(0),
                 command: command.to_string(),
+                buffer,
+                stop_flag,
+                reader_thread: Some(reader_thread),
             },
         );
 
@@ -204,26 +263,43 @@ impl ProcessManager {
     /// Kill a process by tracked PID
     #[cfg(target_os = "macos")]
     pub fn kill_process(pid: u32) -> Result<()> {
-        let mut sessions = SESSIONS
-            .lock()
-            .map_err(|e| AppError::Process(e.to_string()))?;
+        // Step 1: Remove session from SESSIONS (brief lock)
+        let mut session = {
+            let mut sessions = SESSIONS
+                .lock()
+                .map_err(|e| AppError::Process(e.to_string()))?;
+            sessions
+                .remove(&pid)
+                .ok_or_else(|| AppError::Process(format!("Process {pid} not found in sandbox")))?
+        };
 
-        if let Some(session) = sessions.remove(&pid) {
-            // Kill the actual OS child process
-            let os_pid = session.child_pid;
-            if os_pid > 0 {
-                kill(Pid::from_raw(os_pid as i32), Signal::SIGTERM).map_err(|e| {
-                    AppError::Process(format!("Failed to kill process {os_pid}: {e}"))
-                })?;
-            }
-            // Dropping the master closes the PTY
-            drop(session);
-            info!("Killed process: tracked_id={}, os_pid={}", pid, os_pid);
-        } else {
-            return Err(AppError::Process(format!(
-                "Process {pid} not found in sandbox"
-            )));
+        let os_pid = session.child_pid;
+
+        // Step 2: Signal the reader thread to stop
+        session
+            .stop_flag
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+
+        // Step 3: Kill the actual OS child process
+        if os_pid > 0 {
+            kill(Pid::from_raw(os_pid as i32), Signal::SIGTERM).map_err(|e| {
+                AppError::Process(format!("Failed to kill process {os_pid}: {e}"))
+            })?;
         }
+
+        // Step 4: Join the reader thread (take the handle before dropping session)
+        let reader_thread = session.reader_thread.take();
+        drop(session);
+
+        if let Some(handle) = reader_thread {
+            match handle.join() {
+                Ok(()) => debug!("PTY reader thread for pid={pid} joined successfully"),
+                Err(_) => warn!("PTY reader thread for pid={pid} panicked"),
+            }
+        }
+
+        // Step 5: Session already dropped above (closes PTY master, writer, etc.)
+        info!("Killed process: tracked_id={}, os_pid={}", pid, os_pid);
 
         Ok(())
     }
@@ -311,61 +387,32 @@ impl ProcessManager {
 
     /// Read output from a PTY process.
     ///
-    /// Takes the reader out of the session before reading so that the
-    /// global `SESSIONS` lock is NOT held across the potentially-blocking
-    /// `read()` call.  Without this, a PTY with no available data can
-    /// starve the tokio runtime by blocking a worker thread that holds
-    /// the lock.
+    /// Drains all available data from the shared buffer populated by the
+    /// dedicated reader thread.  Non-blocking: returns `Ok(None)` when
+    /// the buffer is empty.
     #[cfg(target_os = "macos")]
     pub fn read_output(pid: u32) -> Result<Option<String>> {
-        use std::io::Read;
+        let sessions = SESSIONS
+            .lock()
+            .map_err(|e| AppError::Process(e.to_string()))?;
+        let session = sessions
+            .get(&pid)
+            .ok_or_else(|| AppError::Process(format!("Process {pid} not found")))?;
 
-        // Step 1 – take the reader out (briefly hold the lock)
-        let mut reader = {
-            let mut sessions = SESSIONS
-                .lock()
-                .map_err(|e| AppError::Process(e.to_string()))?;
-            sessions
-                .get_mut(&pid)
-                .and_then(|s| s.reader.take())
-                .ok_or_else(|| {
-                    AppError::Process(format!("Process {pid} not found or reader busy"))
-                })?
-        };
+        let mut buffer = session
+            .buffer
+            .lock()
+            .map_err(|e| AppError::Process(e.to_string()))?;
 
-        // Step 2 – read WITHOUT holding the global lock
-        let mut buf = [0u8; 4096];
-        let result = match reader.read(&mut buf) {
-            Ok(0) => {
-                debug!("PTY pid={pid}: EOF (process exited)");
-                Ok(None)
-            }
-            Ok(n) => {
-                let text = String::from_utf8_lossy(&buf[..n]).to_string();
-                debug!("PTY pid={pid}: read {n} bytes");
-                Ok(Some(text))
-            }
-            Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                trace!("PTY pid={pid}: no data available (WouldBlock)");
-                Ok(None)
-            }
-            Err(e) => {
-                warn!("PTY pid={pid}: read error: {e}");
-                Err(AppError::Process(format!("Failed to read PTY: {e}")))
-            }
-        };
-
-        // Step 3 – put the reader back (briefly hold the lock)
-        {
-            let mut sessions = SESSIONS
-                .lock()
-                .map_err(|e| AppError::Process(e.to_string()))?;
-            if let Some(session) = sessions.get_mut(&pid) {
-                session.reader = Some(reader);
-            }
+        if buffer.is_empty() {
+            trace!("PTY pid={pid}: no output available");
+            return Ok(None);
         }
 
-        result
+        // Drain all entries and concatenate
+        let output: String = buffer.drain(..).collect();
+        debug!("PTY pid={pid}: drained {} chars from buffer", output.len());
+        Ok(Some(output))
     }
 
     #[cfg(not(target_os = "macos"))]
