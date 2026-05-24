@@ -95,6 +95,10 @@ struct SpawnCliRequest {
     command: String,
     #[serde(default)]
     args: Vec<String>,
+    #[serde(default)]
+    cols: Option<u16>,
+    #[serde(default)]
+    rows: Option<u16>,
 }
 
 #[derive(Deserialize)]
@@ -222,11 +226,14 @@ async fn spawn_cli_handler(
     Json(req): Json<SpawnCliRequest>,
 ) -> Result<Json<crate::process::ProcessInfo>, AppError> {
     let cmd = req.command.clone();
-    let info =
-        tokio::task::spawn_blocking(move || ProcessManager::spawn_cli(&req.command, &req.args))
-            .await
-            .map_err(|e| AppError::Process(format!("spawn_cli panicked: {e}")))??;
-    tracing::info!("spawned cli: {cmd}");
+    let cols = req.cols.unwrap_or(80);
+    let rows = req.rows.unwrap_or(24);
+    let info = tokio::task::spawn_blocking(move || {
+        ProcessManager::spawn_cli_with_size(&req.command, &req.args, cols, rows)
+    })
+    .await
+    .map_err(|e| AppError::Process(format!("spawn_cli panicked: {e}")))??;
+    tracing::info!("spawned cli: {cmd} ({cols}x{rows})");
     Ok(Json(info))
 }
 
