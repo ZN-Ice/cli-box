@@ -1,6 +1,7 @@
 use crate::error::{AppError, Result};
+use crate::pty_store::PtyStore;
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 use std::io::Write;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
@@ -26,10 +27,8 @@ pub struct ProcessInfo {
 /// PTY session holding the writer handle and a background reader thread.
 ///
 /// A dedicated reader thread continuously reads PTY output into a shared
-/// buffer (`Arc<Mutex<VecDeque<String>>>`).  `read_output` drains from
-/// this buffer non-blocking, eliminating the old take-read-put-back race
-/// condition where a blocking `read()` could hold the global `SESSIONS`
-/// lock and starve the tokio runtime.
+/// SQLite-backed PtyStore. Output persists across WebSocket reconnections
+/// and supports late-subscriber replay.
 #[cfg(target_os = "macos")]
 struct PtySession {
     writer: Box<dyn std::io::Write + Send>,
@@ -37,8 +36,8 @@ struct PtySession {
     #[allow(dead_code)]
     child_pid: u32,
     command: String,
-    /// Buffer for output from the dedicated reader thread
-    buffer: Arc<Mutex<VecDeque<String>>>,
+    /// SQLite-backed persistent output store (replaces VecDeque buffer)
+    store: Arc<PtyStore>,
     /// Flag to signal the reader thread to stop
     stop_flag: Arc<AtomicBool>,
     /// Handle to the reader thread (for join on cleanup)
@@ -181,15 +180,15 @@ impl ProcessManager {
 
         let tracked_id = NEXT_ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
-        // Create shared buffer and stop flag for the reader thread
-        let buffer: Arc<Mutex<VecDeque<String>>> = Arc::new(Mutex::new(VecDeque::new()));
+        // Create SQLite-backed persistent store and stop flag for the reader thread
+        let store = PtyStore::new_in_memory(&tracked_id.to_string())?;
         let stop_flag: Arc<AtomicBool> = Arc::new(AtomicBool::new(false));
 
         // Create broadcast channel for streaming output to WebSocket subscribers
         let (output_tx, _) = broadcast::channel::<String>(256);
         let thread_tx = output_tx.clone();
 
-        let thread_buffer = Arc::clone(&buffer);
+        let thread_store = Arc::clone(&store);
         let thread_stop = Arc::clone(&stop_flag);
 
         // Spawn a dedicated reader thread that continuously reads PTY output
@@ -210,15 +209,12 @@ impl ProcessManager {
                         }
                         Ok(n) => {
                             let text = String::from_utf8_lossy(&read_buf[..n]).to_string();
-                            // Broadcast to WebSocket subscribers
-                            let _ = thread_tx.send(text.clone());
-                            if let Ok(mut buf) = thread_buffer.lock() {
-                                // Cap buffer at 1000 entries to prevent unbounded growth
-                                if buf.len() >= 1000 {
-                                    buf.pop_front();
-                                }
-                                buf.push_back(text);
+                            // Persist to SQLite (survives reconnections)
+                            if let Err(e) = thread_store.append(&text) {
+                                warn!("PTY reader {tracked_id}: store append failed: {e}");
                             }
+                            // Real-time broadcast to current subscribers
+                            let _ = thread_tx.send(text);
                         }
                         Err(ref e) if e.kind() == std::io::ErrorKind::Interrupted => {
                             trace!("PTY reader thread {tracked_id}: interrupted, retrying");
@@ -244,7 +240,7 @@ impl ProcessManager {
                 master: pty_pair.master,
                 child_pid: child_pid.unwrap_or(0),
                 command: command.to_string(),
-                buffer,
+                store,
                 stop_flag,
                 reader_thread: Some(reader_thread),
                 output_tx,
@@ -428,37 +424,31 @@ impl ProcessManager {
 
     /// Read output from a PTY process.
     ///
-    /// Drains all available data from the shared buffer populated by the
-    /// dedicated reader thread.  Non-blocking: returns `Ok(None)` when
-    /// the buffer is empty.
-    ///
-    /// The SESSIONS lock is held only briefly to clone the buffer Arc,
-    /// then released before draining — avoiding a global bottleneck.
+    /// Reads all available data from the SQLite-backed PtyStore.
+    /// Non-blocking: returns `Ok(None)` when the store is empty.
     #[cfg(target_os = "macos")]
     pub fn read_output(pid: u32) -> Result<Option<String>> {
-        let buffer_arc = {
+        let store = {
             let sessions = SESSIONS
                 .lock()
                 .map_err(|e| AppError::Process(e.to_string()))?;
             let session = sessions
                 .get(&pid)
                 .ok_or_else(|| AppError::Process(format!("Process {pid} not found")))?;
-            Arc::clone(&session.buffer)
+            Arc::clone(&session.store)
         }; // SESSIONS lock released here
 
-        let mut buffer = buffer_arc
-            .lock()
-            .map_err(|e| AppError::Process(e.to_string()))?;
-
-        if buffer.is_empty() {
+        let chunks = store.read_all()?;
+        if chunks.is_empty() {
             trace!("PTY pid={pid}: no output available");
             return Ok(None);
         }
 
-        // Drain all entries and concatenate
-        let output: String = buffer.drain(..).collect();
-        debug!("PTY pid={pid}: drained {} chars from buffer", output.len());
-        Ok(Some(output))
+        let text: String = chunks.into_iter().map(|c| c.data).collect();
+        // Clear after reading (HTTP poll mode)
+        store.clear()?;
+        debug!("PTY pid={pid}: drained {} chars from store", text.len());
+        Ok(Some(text))
     }
 
     #[cfg(not(target_os = "macos"))]
@@ -485,6 +475,25 @@ impl ProcessManager {
     pub fn subscribe_output(_pid: u32) -> Result<broadcast::Receiver<String>> {
         Err(AppError::Process(
             "subscribe_output only supported on macOS".into(),
+        ))
+    }
+
+    /// Get the PtyStore for a session (for WebSocket replay).
+    #[cfg(target_os = "macos")]
+    pub fn get_store(pid: u32) -> Result<Arc<PtyStore>> {
+        let sessions = SESSIONS
+            .lock()
+            .map_err(|e| AppError::Process(e.to_string()))?;
+        let session = sessions
+            .get(&pid)
+            .ok_or_else(|| AppError::Process(format!("Process {pid} not found")))?;
+        Ok(Arc::clone(&session.store))
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    pub fn get_store(_pid: u32) -> Result<Arc<PtyStore>> {
+        Err(AppError::Process(
+            "get_store only supported on macOS".into(),
         ))
     }
 }
