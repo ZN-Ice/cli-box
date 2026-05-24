@@ -133,7 +133,12 @@ impl ProcessManager {
 
     /// Launch a CLI process with PTY support and custom terminal dimensions.
     #[cfg(target_os = "macos")]
-    pub fn spawn_cli_with_size(command: &str, args: &[String], cols: u16, rows: u16) -> Result<ProcessInfo> {
+    pub fn spawn_cli_with_size(
+        command: &str,
+        args: &[String],
+        cols: u16,
+        rows: u16,
+    ) -> Result<ProcessInfo> {
         let pty_system = native_pty_system();
         let pty_pair = pty_system
             .openpty(PtySize {
@@ -265,7 +270,12 @@ impl ProcessManager {
     }
 
     #[cfg(not(target_os = "macos"))]
-    pub fn spawn_cli_with_size(_command: &str, _args: &[String], _cols: u16, _rows: u16) -> Result<ProcessInfo> {
+    pub fn spawn_cli_with_size(
+        _command: &str,
+        _args: &[String],
+        _cols: u16,
+        _rows: u16,
+    ) -> Result<ProcessInfo> {
         Err(AppError::Process(
             "spawn_cli_with_size only supported on macOS".into(),
         ))

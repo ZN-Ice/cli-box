@@ -132,7 +132,9 @@ impl SandboxClient {
             .with_context(|| format!("Failed to connect to PTY WebSocket for pid={pid}"))?;
 
         ws_stream
-            .send(tokio_tungstenite::tungstenite::Message::Text(data.to_string().into()))
+            .send(tokio_tungstenite::tungstenite::Message::Text(
+                data.to_string().into(),
+            ))
             .await
             .with_context(|| "Failed to send data to PTY WebSocket")?;
 
