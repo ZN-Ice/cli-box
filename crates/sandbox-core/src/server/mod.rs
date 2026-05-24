@@ -403,7 +403,34 @@ async fn handle_pty_ws(pid: u32, socket: WebSocket) {
 
     let (mut ws_tx, mut ws_rx) = socket.split();
 
-    // Task 1: Broadcast PTY output → WebSocket
+    // Phase 1: Replay existing output from SQLite (late subscriber recovery)
+    match ProcessManager::get_store(pid) {
+        Ok(store) => {
+            match store.read_all() {
+                Ok(chunks) => {
+                    let total_chars: usize = chunks.iter().map(|c| c.data.len()).sum();
+                    let num_chunks = chunks.len();
+                    for chunk in chunks {
+                        if ws_tx.send(Message::Text(chunk.data.into())).await.is_err() {
+                            tracing::debug!("[pty_ws] pid={pid}: client disconnected during replay");
+                            return;
+                        }
+                    }
+                    tracing::debug!(
+                        "[pty_ws] pid={pid}: replayed {num_chunks} chunks ({total_chars} chars) from SQLite"
+                    );
+                }
+                Err(e) => {
+                    tracing::warn!("[pty_ws] pid={pid}: SQLite read failed: {e}");
+                }
+            }
+        }
+        Err(e) => {
+            tracing::warn!("[pty_ws] pid={pid}: get_store failed: {e}");
+        }
+    }
+
+    // Phase 2: Real-time streaming via broadcast
     let send_task = tokio::spawn(async move {
         while let Ok(msg) = rx.recv().await {
             if ws_tx.send(Message::Text(msg.into())).await.is_err() {

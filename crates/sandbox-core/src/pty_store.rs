@@ -94,7 +94,7 @@ impl PtyStore {
 
     /// Append PTY output data. Returns the starting byte offset of this chunk.
     pub fn append(&self, data: &str) -> Result<u64> {
-        let mut conn = self
+        let conn = self
             .conn
             .lock()
             .map_err(|e| AppError::Process(e.to_string()))?;
