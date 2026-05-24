@@ -8,6 +8,7 @@ import "@xterm/xterm/css/xterm.css";
 
 interface TerminalProps {
   activePid?: number | null;
+  onReady?: (cols: number, rows: number) => void;
 }
 
 function buildTerminalTheme(t: TerminalTheme): Record<string, string> {
@@ -37,12 +38,14 @@ function buildTerminalTheme(t: TerminalTheme): Record<string, string> {
   };
 }
 
-export default function SandboxTerminal({ activePid = null }: TerminalProps) {
+export default function SandboxTerminal({ activePid = null, onReady }: TerminalProps) {
   const terminalRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
   const wsConnRef = useRef<api.PtyWsConnection | null>(null);
   const activePidRef = useRef(activePid);
+  const onReadyRef = useRef(onReady);
+  onReadyRef.current = onReady;
   const { theme } = useTheme();
 
   // Keep activePidRef in sync so the resize handler (which closes over it)
@@ -78,6 +81,9 @@ export default function SandboxTerminal({ activePid = null }: TerminalProps) {
     term.loadAddon(fitAddon);
     term.open(terminalRef.current);
     fitAddon.fit();
+
+    // Notify parent of initial terminal size
+    onReadyRef.current?.(term.cols, term.rows);
 
     // Send keyboard input directly to the WebSocket connection
     term.onData((data) => {

@@ -65,6 +65,19 @@ function App() {
       .catch(() => {});
   }, []);
 
+  // Spawn pending CLI with correct terminal size
+  const handleSpawnReady = useCallback(async (cols: number, rows: number) => {
+    try {
+      const pending = await api.getPendingCli();
+      if (pending.command) {
+        console.log(`[App] spawning pending CLI: ${pending.command} (${cols}x${rows})`);
+        await api.spawnCli(pending.command, pending.args || [], cols, rows);
+      }
+    } catch (err) {
+      console.error("[App] failed to spawn pending CLI:", err);
+    }
+  }, []);
+
   // Screenshot
   const handleScreenshot = useCallback(async () => {
     setScreenshotError(null);
@@ -104,6 +117,7 @@ function App() {
         command={command}
         connected={connected}
         activePid={activePid}
+        onSpawnReady={handleSpawnReady}
         onScreenshot={handleScreenshot}
       >
         {/* Screenshot error toast */}

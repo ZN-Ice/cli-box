@@ -5,6 +5,7 @@ interface DashboardProps {
   command: string;
   connected: boolean;
   activePid: number | null;
+  onSpawnReady?: (cols: number, rows: number) => void;
   onScreenshot: () => void;
   children?: ReactNode;
 }
@@ -13,6 +14,7 @@ export default function Dashboard({
   command,
   connected,
   activePid,
+  onSpawnReady,
   onScreenshot,
   children,
 }: DashboardProps) {
@@ -112,7 +114,7 @@ export default function Dashboard({
 
           {/* Terminal — fills remaining space */}
           <div className="flex-1 min-h-0">
-            <SandboxTerminal activePid={activePid} />
+            <SandboxTerminal activePid={activePid} onReady={onSpawnReady} />
           </div>
         </div>
       </div>

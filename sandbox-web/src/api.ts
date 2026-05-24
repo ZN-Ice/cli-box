@@ -73,6 +73,19 @@ export async function sandboxInfo(): Promise<SandboxInfo> {
   return res.json();
 }
 
+// ── Pending CLI ──────────────────────────────────────
+
+export interface PendingCli {
+  command: string | null;
+  args?: string[];
+}
+
+export async function getPendingCli(): Promise<PendingCli> {
+  const res = await fetch(`${BASE()}/sandbox/pending-cli`);
+  if (!res.ok) return { command: null };
+  return res.json();
+}
+
 // ── Screenshot ─────────────────────────────────────────
 
 /** Capture the sandbox window. Returns a Blob URL. */
@@ -181,15 +194,20 @@ export async function spawnApp(path: string): Promise<ProcessInfo> {
 export async function spawnCli(
   command: string,
   args: string[],
+  cols?: number,
+  rows?: number,
 ): Promise<ProcessInfo> {
+  const body: Record<string, unknown> = { command, args };
+  if (cols !== undefined) body.cols = cols;
+  if (rows !== undefined) body.rows = rows;
   const res = await fetch(`${BASE()}/cli/spawn`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ command, args }),
+    body: JSON.stringify(body),
   });
   if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`spawnCli failed: ${body}`);
+    const text = await res.text();
+    throw new Error(`spawnCli failed: ${text}`);
   }
   return res.json();
 }

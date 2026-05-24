@@ -14,6 +14,7 @@ describe("Dashboard", () => {
     command: "claude",
     connected: true,
     activePid: null as number | null,
+    onSpawnReady: vi.fn(),
     onScreenshot: vi.fn(),
   };
 

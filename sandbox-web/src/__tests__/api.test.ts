@@ -108,6 +108,43 @@ describe("API client", () => {
     });
   });
 
+  // ── Pending CLI ─────────────────────────────────────
+
+  describe("getPendingCli()", () => {
+    it("returns pending CLI info on success", async () => {
+      mockFetch.mockResolvedValueOnce(
+        mockResponse(
+          true,
+          200,
+          '{"command":"claude","args":["--help"]}',
+        ),
+      );
+      const result = await api.getPendingCli();
+      expect(result.command).toBe("claude");
+      expect(result.args).toEqual(["--help"]);
+      expect(mockFetch).toHaveBeenCalledWith(
+        "http://127.0.0.1:5801/sandbox/pending-cli",
+      );
+    });
+
+    it("returns { command: null } on non-ok response", async () => {
+      mockFetch.mockResolvedValueOnce(
+        mockResponse(false, 500, "not found"),
+      );
+      const result = await api.getPendingCli();
+      expect(result).toEqual({ command: null });
+    });
+
+    it("returns pending CLI with no args", async () => {
+      mockFetch.mockResolvedValueOnce(
+        mockResponse(true, 200, '{"command":"zsh"}'),
+      );
+      const result = await api.getPendingCli();
+      expect(result.command).toBe("zsh");
+      expect(result.args).toBeUndefined();
+    });
+  });
+
   // ── request() helper error handling ──────────────────
 
   describe("request() error handling", () => {
