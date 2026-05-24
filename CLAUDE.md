@@ -12,11 +12,11 @@
 ┌──────────────────────────────────────────────────────────────┐
 │                  Agent / 用户 (CLI / MCP / HTTP)              │
 │                                                              │
-│  sandbox-cli start                       → 返回 sandbox-id   │
-│  sandbox-cli list                        → 列出所有实例       │
-│  sandbox-cli screenshot <id>             → 截取沙箱截图       │
-│  sandbox-cli click <id> 100 200          → 模拟点击           │
-│  sandbox-cli close <id>                  → 关闭沙箱           │
+│  sandbox start                          → 返回 sandbox-id   │
+│  sandbox list                           → 列出所有实例       │
+│  sandbox screenshot <id>                → 截取沙箱截图       │
+│  sandbox click <id> 100 200             → 模拟点击           │
+│  sandbox close <id>                     → 关闭沙箱           │
 └──────────────────────┬───────────────────────────────────────┘
                        │ CLI (子进程启动) / MCP stdio / HTTP
                        ▼
@@ -128,30 +128,28 @@ system-test-sandbox/
 
 ```bash
 # 多实例管理
-sandbox-cli start                             # 启动沙箱，打开 zsh 终端（默认）
-sandbox-cli start --cli "claude"              # 启动沙箱，直接运行 Claude Code
-sandbox-cli start --shell                     # 等同于 sandbox start（快捷方式）
-sandbox-cli start --app "/path/to/App.app"    # 启动沙箱，运行 macOS 应用
-sandbox-cli list                              # 列出所有活跃沙箱及其状态
-sandbox-cli close <sandbox-id>                # 关闭指定沙箱
-sandbox-cli inspect <sandbox-id>              # 查看沙箱详情
+sandbox start                                # 启动沙箱，打开 zsh 终端（默认）
+sandbox start claude                         # 启动沙箱，直接运行 Claude Code
+sandbox start --shell                        # 等同于 sandbox start（快捷方式）
+sandbox start /path/to/App.app               # 启动沙箱，运行 macOS 应用
+sandbox list                                 # 列出所有活跃沙箱及其状态
+sandbox close <sandbox-id>                   # 关闭指定沙箱
+sandbox inspect <sandbox-id>                 # 查看沙箱详情
 
 # 沙箱作用域操作 (通过 --id 指定目标沙箱)
-sandbox-cli screenshot --id <id>              # 截取沙箱截图
-sandbox-cli screenshot --id <id> -o result.png  # 截图并指定输出路径
-sandbox-cli click --id <id> 100 200           # 在沙箱内模拟点击
-sandbox-cli type --id <id> "hello world"      # 在沙箱内模拟输入
-sandbox-cli key --id <id> Return --modifiers cmd  # 在沙箱内模拟按键
+sandbox screenshot --id <id>                 # 截取沙箱截图
+sandbox screenshot --id <id> -o result.png   # 截图并指定输出路径
+sandbox click --id <id> 100 200              # 在沙箱内模拟点击
+sandbox type --id <id> "hello world"         # 在沙箱内模拟输入
+sandbox key --id <id> Return --modifiers cmd # 在沙箱内模拟按键
 
 # 进程管理 (沙箱内)
-sandbox-cli windows --id <id>                 # 列出沙箱内窗口
-sandbox-cli processes --id <id>               # 列出沙箱内进程
-sandbox-cli spawn-cli --id <id> "npm" -- "test"  # 在沙箱内启动新的 CLI
-sandbox-cli kill --id <id> <pid>              # 终止沙箱内进程
+sandbox windows --id <id>                    # 列出沙箱内窗口
+sandbox processes --id <id>                  # 列出沙箱内进程
 
 # 独立模式 (无多实例，向后兼容)
-sandbox-cli serve --port 5801                 # 启动独立 HTTP + MCP 服务器
-sandbox-cli mcp-serve                         # MCP stdio 模式
+sandbox serve --port 5801                    # 启动独立 HTTP + MCP 服务器
+sandbox mcp-serve                            # MCP stdio 模式
 ```
 
 ### 实例注册中心 (文件系统)
@@ -225,8 +223,7 @@ POST /record/stop                停止录制
 POST /playback/actions           回放操作
 POST /scenario/run               运行测试场景
 POST /diff                       截图差异对比
-POST /pty/write                  写入 PTY
-GET  /pty/output/:pid            读取 PTY 输出
+WS   /pty/ws/{pid}               PTY WebSocket (文本=输入, JSON=resize)
 ```
 
 ### Rust API (sandbox-core)
@@ -312,32 +309,32 @@ fix(server): 修复 HTTP API 端口冲突
 
 ```bash
 # 1. 启动沙箱（默认打开 zsh 终端）
-sandbox-cli start
+sandbox start
 # → 自动打开沙箱窗口，xterm.js 中运行 zsh
 # → 可在终端中输入 claude、opencode 等命令
 
 # 2. 启动沙箱（直接运行指定命令）
-sandbox-cli start --cli "claude"
+sandbox start claude
 # → 自动打开沙箱窗口，直接运行 claude
 
 # 3. 启动沙箱（运行 macOS 应用）
-sandbox-cli start --app "/Applications/cc-switch.app"
+sandbox start /Applications/cc-switch.app
 # → 打开沙箱窗口，启动 cc-switch，关联其窗口
 
-# 3. 查看所有沙箱
-sandbox-cli list
+# 4. 查看所有沙箱
+sandbox list
 # → ID      TITLE              KIND  STATUS   PORT   CREATED
 # → abc123  "claude"           CLI   Running  15801  2026-05-16 10:30
 # → def456  "cc-switch"        APP   Running  15802  2026-05-16 10:31
 
-# 4. 操作指定沙箱
-sandbox-cli screenshot --id abc123 -o sandbox.png  # 截图
-sandbox-cli click --id abc123 100 200               # 点击
-sandbox-cli type --id abc123 "帮我写一个函数"        # 输入文本
-sandbox-cli key --id abc123 Return                  # 按键
+# 5. 操作指定沙箱
+sandbox screenshot --id abc123 -o sandbox.png  # 截图
+sandbox click --id abc123 100 200               # 点击
+sandbox type --id abc123 --pty "帮我写一个函数"  # PTY 输入
+sandbox key --id abc123 --pty Return            # PTY 按键
 
-# 5. 关闭沙箱
-sandbox-cli close abc123
+# 6. 关闭沙箱
+sandbox close abc123
 # → 关闭沙箱窗口，清理注册信息，终止关联进程
 ```
 

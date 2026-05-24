@@ -36,52 +36,55 @@ sandbox-cli close <id>
 
 ```bash
 # 克隆项目
-git clone https://github.com/your-org/system-test-sandbox.git
+git clone https://github.com/ZN-Ice/system-test-sandbox.git
 cd system-test-sandbox
 
-# 构建 Tauri 应用 + CLI
+# 构建 Release（推荐）
+./release.sh
+
+# 或手动构建
 cd sandbox-web && pnpm install && pnpm build && cd ..
-cargo build --release
+cargo build --release -p sandbox-cli
 ```
 
 ### 启动沙箱
 
 ```bash
 # 启动沙箱，运行 Claude Code
-sandbox-cli start --cli "claude"
+sandbox start claude
 # → 打开 "System Test Sandbox" 窗口
 # → xterm.js 终端中运行 claude
 # → 输出: Sandbox started: abc123
 
 # 启动沙箱，运行 macOS 应用
-sandbox-cli start --app "/Applications/cc-switch.app"
+sandbox start /Applications/cc-switch.app
 # → 打开沙箱窗口，启动 cc-switch
 # → 输出: Sandbox started: def456
 
 # 启动沙箱，运行带参数的 CLI
-sandbox-cli start --cli "npm" --args "run" "test"
+sandbox start npm -- run test
 ```
 
 ### 管理沙箱
 
 ```bash
 # 查看所有活跃沙箱
-sandbox-cli list
+sandbox list
 # → ID      TITLE              KIND  STATUS   PORT   CREATED
 # → abc123  "claude"           CLI   Running  15801  2026-05-16 10:30
 # → def456  "cc-switch"        APP   Running  15802  2026-05-16 10:31
 
 # 查看沙箱详情
-sandbox-cli inspect abc123
+sandbox inspect abc123
 
 # 截取沙箱截图
-sandbox-cli screenshot --id abc123 -o sandbox.png
+sandbox screenshot --id abc123 -o sandbox.png
 
 # 列出沙箱内进程
-sandbox-cli processes --id abc123
+sandbox processes --id abc123
 
 # 关闭沙箱
-sandbox-cli close abc123
+sandbox close abc123
 ```
 
 ### 键盘与鼠标操作
@@ -92,41 +95,41 @@ sandbox-cli close abc123
 # ─── 输入文本 ──────────────────────────────────────────
 
 # PTY 直写（推荐，CLI 沙箱专用）
-sandbox-cli type --id abc123 --pty "帮我写一个函数"
+sandbox type --id abc123 --pty "帮我写一个函数"
 
 # CGEvent 模式（仅适用于 GUI 应用沙箱，对 CLI 沙箱无效）
-sandbox-cli type --id abc123 "帮我写一个函数"
+sandbox type --id abc123 "帮我写一个函数"
 
 # ─── 按键 ──────────────────────────────────────────────
 
 # PTY 按键（推荐，CLI 沙箱专用）
-sandbox-cli key --id abc123 --pty Return
-sandbox-cli key --id abc123 --pty Tab
-sandbox-cli key --id abc123 --pty Escape
-sandbox-cli key --id abc123 --pty ctrl+c      # 发送 Ctrl+C
-sandbox-cli key --id abc123 --pty ctrl+l      # 清屏
-sandbox-cli key --id abc123 --pty up          # 上箭头
-sandbox-cli key --id abc123 --pty down        # 下箭头
-sandbox-cli key --id abc123 --pty left        # 左箭头
-sandbox-cli key --id abc123 --pty right       # 右箭头（接受补全）
-sandbox-cli key --id abc123 --pty home        # Home
-sandbox-cli key --id abc123 --pty end         # End
-sandbox-cli key --id abc123 --pty f1          # F1~F12
+sandbox key --id abc123 --pty Return
+sandbox key --id abc123 --pty Tab
+sandbox key --id abc123 --pty Escape
+sandbox key --id abc123 --pty ctrl+c      # 发送 Ctrl+C
+sandbox key --id abc123 --pty ctrl+l      # 清屏
+sandbox key --id abc123 --pty up          # 上箭头
+sandbox key --id abc123 --pty down        # 下箭头
+sandbox key --id abc123 --pty left        # 左箭头
+sandbox key --id abc123 --pty right       # 右箭头（接受补全）
+sandbox key --id abc123 --pty home        # Home
+sandbox key --id abc123 --pty end         # End
+sandbox key --id abc123 --pty f1          # F1~F12
 
 # PTY 带修饰符按键
-sandbox-cli key --id abc123 --pty c -m ctrl   # 等同 ctrl+c
-sandbox-cli key --id abc123 --pty up -m shift  # Shift+上（选择模式）
-sandbox-cli key --id abc123 --pty tab -m shift # Shift+Tab
-sandbox-cli key --id abc123 --pty a -m alt    # Alt+A（ESC 前缀）
+sandbox key --id abc123 --pty c -m ctrl   # 等同 ctrl+c
+sandbox key --id abc123 --pty up -m shift  # Shift+上（选择模式）
+sandbox key --id abc123 --pty tab -m shift # Shift+Tab
+sandbox key --id abc123 --pty a -m alt    # Alt+A（ESC 前缀）
 
 # CGEvent 按键（仅适用于 GUI 应用沙箱）
-sandbox-cli key --id abc123 Return
-sandbox-cli key --id abc123 Return --modifiers cmd
+sandbox key --id abc123 Return
+sandbox key --id abc123 Return --modifiers cmd
 
 # ─── 鼠标点击（仅 CGEvent，适用于所有沙箱）──────────
 
-sandbox-cli click --id abc123 100 200
-sandbox-cli click --id abc123 100 200 --btn right
+sandbox click --id abc123 100 200
+sandbox click --id abc123 100 200 --button right
 ```
 
 #### PTY 支持的按键映射
@@ -163,24 +166,24 @@ CGEvent 模式将键盘事件发送到 Tauri 进程（`target_pid = std::process
 
 ```bash
 # 场景一：在沙箱中与 Claude Code 交互
-sandbox-cli start claude
-# → 用 sandbox-cli list 获取 ID
-sandbox-cli type --id <id> --pty "你是谁？"
-sandbox-cli key --id <id> --pty Return
+sandbox start claude
+# → 用 sandbox list 获取 ID
+sandbox type --id <id> --pty "你是谁？"
+sandbox key --id <id> --pty Return
 # 等待回复后截图
-sandbox-cli screenshot --id <id> -o claude_response.png
+sandbox screenshot --id <id> -o claude_response.png
 
 # 场景二：在沙箱中执行 Shell 命令
-sandbox-cli start zsh
-sandbox-cli type --id <id> --pty 'echo "hello world"'
-sandbox-cli key --id <id> --pty Return
-sandbox-cli screenshot --id <id> -o shell_output.png
+sandbox start zsh
+sandbox type --id <id> --pty 'echo "hello world"'
+sandbox key --id <id> --pty Return
+sandbox screenshot --id <id> -o shell_output.png
 
 # 场景三：使用快捷键操作 Claude Code
-sandbox-cli key --id <id> --pty ctrl+c     # 中断当前操作
-sandbox-cli key --id <id> --pty up          # 查看上一条命令
-sandbox-cli key --id <id> --pty ctrl+l      # 清屏
-sandbox-cli key --id <id> --pty ctrl+r      # 搜索历史
+sandbox key --id <id> --pty ctrl+c     # 中断当前操作
+sandbox key --id <id> --pty up          # 查看上一条命令
+sandbox key --id <id> --pty ctrl+l      # 清屏
+sandbox key --id <id> --pty ctrl+r      # 搜索历史
 ```
 
 ### Agent 调用示例
@@ -249,19 +252,19 @@ CLI 和 Tauri 沙箱均使用 `tracing` 输出结构化日志。设置 `RUST_LOG
 
 ```bash
 # 查看详细输入管线日志
-RUST_LOG=info sandbox-cli type --id <id> --pty "hello"
+RUST_LOG=info sandbox type --id <id> --pty "hello"
 # → [cli] type: text_len=5, id=abc123, pty=true
 # → [pty] write: pid=1001, len=5, preview="hello"
 # → [pty] send_input: written and flushed to pid=1001
 
 # 不使用 --pty 时会看到警告
-RUST_LOG=info sandbox-cli type --id <id> "hello"
+RUST_LOG=info sandbox type --id <id> "hello"
 # → [cli] type: using CGEvent path... Consider using --pty for CLI sandboxes.
 # → [input] type_text: len=5, target_pid=9999
 # → [cg_event] press_key: key=h, target_pid=Some(9999)
 
 # 更详细的 CGEvent 日志
-RUST_LOG=trace sandbox-cli key --id <id> "a"
+RUST_LOG=trace sandbox key --id <id> "a"
 
 # 查看 Tauri 沙箱进程的日志（在沙箱启动的终端中可见）
 RUST_LOG=info ./System\ Test\ Sandbox.app/Contents/MacOS/system-test-sandbox --mode=cli --cmd=claude

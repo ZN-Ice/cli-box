@@ -25,20 +25,17 @@ release/
 1. **辅助功能 (Accessibility)**：用于 CGEvent 输入模拟 + AXUIElement UI 读取
 2. **屏幕录制 (Screen Recording)**：用于 ScreenCaptureKit 截图
 
-授予方式：\`系统设置 → 隐私与安全性 → 辅助功能 / 屏幕录制\`。
+授予方式：`系统设置 → 隐私与安全性 → 辅助功能 / 屏幕录制`。
 
-将 \`sandbox\` 和 \`System Test Sandbox.app\` 添加进去并勾选。
+将 `sandbox` 和 `System Test Sandbox.app` 添加进去并勾选。
 
 ## 二、使用方法
 
 ### 启动沙箱
 
-\`\`\`bash
+```bash
 # 在沙箱中启动 Claude Code（交互模式）
 ./sandbox start claude
-
-# 非交互式：直接向 Claude 提问（约 30 秒响应）
-./sandbox start claude -- -p "你的问题"
 
 # 启动交互式 Shell
 ./sandbox start zsh
@@ -47,33 +44,44 @@ release/
 # 启动其他 CLI 工具
 ./sandbox start node
 ./sandbox start npm -- test
-\`\`\`
+```
 
-> **注意**：命令与参数之间用 \`--\` 分隔，如 \`./sandbox start <command> -- <args>\`。
+> **注意**：命令与参数之间用 `--` 分隔，如 `./sandbox start <command> -- <args>`。
 
-### 截图
+### 输入操作
 
-\`\`\`bash
-# 自动发现沙箱窗口并截图（保存为 PNG）
-./sandbox screenshot -o screenshot.png
+```bash
+# 获取沙箱 ID
+./sandbox list
 
-# 指定窗口 ID 截图
-./sandbox screenshot --window-id 12345 -o screenshot.png
-\`\`\`
+# PTY 输入文本（推荐用于 CLI 沙箱）
+./sandbox type --id <id> --pty "你好世界"
 
-### 其他命令
+# PTY 按键
+./sandbox key --id <id> --pty Return       # 回车
+./sandbox key --id <id> --pty ctrl+c       # Ctrl+C
+./sandbox key --id <id> --pty ctrl+l       # 清屏
 
-\`\`\`bash
-# 列出所有可见窗口
-./sandbox windows
+# 截图
+./sandbox screenshot --id <id> -o screenshot.png
+```
+
+### 管理沙箱
+
+```bash
+# 查看所有活跃沙箱
+./sandbox list
+
+# 查看沙箱详情
+./sandbox inspect <id>
 
 # 关闭沙箱
-./sandbox shutdown
-\`\`\`
+./sandbox close <id>
+```
 
 ### 示例工作流
 
-\`\`\`bash
+```bash
 # 1. 启动 Claude Code
 ./sandbox start claude
 
@@ -81,23 +89,21 @@ release/
 sleep 10
 
 # 3. 截图查看状态
-./sandbox screenshot -o screenshot.png
+./sandbox screenshot --id <id> -o screenshot.png
 
-# 4. 关闭沙箱
-./sandbox shutdown
-\`\`\`
+# 4. 通过 PTY 与 Claude 交互
+./sandbox type --id <id> --pty "你好"
+./sandbox key --id <id> --pty Return
+sleep 5
+./sandbox screenshot --id <id> -o claude_response.png
 
-\`\`\`bash
-# 非交互式快速提问
-./sandbox start claude -- -p "用 Python 写一个 hello world"
-sleep 30
-./sandbox screenshot -o claude_response.png
-./sandbox shutdown
-\`\`\`
+# 5. 关闭沙箱
+./sandbox close <id>
+```
 
 ## 三、架构
 
-\`\`\`
+```
 sandbox start claude
        │
        ▼
@@ -116,8 +122,8 @@ Tauri 沙箱窗口
        │ HTTP :5801
        ▼
   内嵌 HTTP API (axum)
-  - /screenshot, /input/click, /pty/write, ...
-\`\`\`
+  - /screenshot, /input/click, /pty/ws/{pid}, ...
+```
 
 ## 四、常见问题
 
@@ -128,10 +134,13 @@ A: 检查「屏幕录制」权限是否已授予。
 A: 检查「辅助功能」权限是否已授予。
 
 **Q: 无法启动沙箱？**
-A: 确保 \`System Test Sandbox.app\` 与 \`sandbox\` 在同一目录下。
+A: 确保 `System Test Sandbox.app` 与 `sandbox` 在同一目录下。
 
 **Q: 沙箱窗口内终端空白？**
-A: 等待几秒让 Claude 启动，终端会自动连接 PTY 输出。
+A: 等待几秒让应用启动，终端会自动连接 PTY 输出。
+
+**Q: CLI `type` / `key` 命令无效？**
+A: CLI 沙箱请始终使用 `--pty` 模式。不带 `--pty` 时使用 CGEvent，对 CLI 进程无效。
 
 ---
 
