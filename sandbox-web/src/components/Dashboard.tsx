@@ -5,7 +5,6 @@ interface DashboardProps {
   command: string;
   connected: boolean;
   activePid: number | null;
-  onTerminalInput: (data: string) => void;
   onScreenshot: () => void;
   children?: ReactNode;
 }
@@ -14,7 +13,6 @@ export default function Dashboard({
   command,
   connected,
   activePid,
-  onTerminalInput,
   onScreenshot,
   children,
 }: DashboardProps) {
@@ -114,7 +112,7 @@ export default function Dashboard({
 
           {/* Terminal — fills remaining space */}
           <div className="flex-1 min-h-0">
-            <SandboxTerminal onInput={onTerminalInput} activePid={activePid} />
+            <SandboxTerminal activePid={activePid} />
           </div>
         </div>
       </div>

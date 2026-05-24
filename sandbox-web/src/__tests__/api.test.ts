@@ -344,34 +344,33 @@ describe("API client", () => {
     });
   });
 
-  // ── PTY ───────────────────────────────────────────────
+  // ── PTY WebSocket ─────────────────────────────────────
 
-  describe("ptyWrite()", () => {
-    it("sends POST with pid and data", async () => {
-      mockFetch.mockResolvedValueOnce(
-        mockResponse(true, 200, '{"written":true}'),
+  describe("ptyConnectWs()", () => {
+    it("returns connection object with expected methods", () => {
+      // Mock WebSocket globally (without affecting fetch)
+      const mockWs = {
+        readyState: 1, // OPEN
+        send: vi.fn(),
+        close: vi.fn(),
+        onmessage: null as ((e: { data: string }) => void) | null,
+      };
+      const realFetch = globalThis.fetch;
+      vi.stubGlobal(
+        "WebSocket",
+        vi.fn().mockImplementation(() => mockWs),
       );
-      await api.ptyWrite(42, "hello\n");
-      const body = JSON.parse(mockFetch.mock.calls[0][1]?.body as string);
-      expect(body).toEqual({ pid: 42, data: "hello\n" });
-    });
-  });
 
-  describe("ptyRead()", () => {
-    it("returns output on success", async () => {
-      mockFetch.mockResolvedValueOnce(
-        mockResponse(true, 200, '{"output":"hello world"}'),
-      );
-      const result = await api.ptyRead(42);
-      expect(result.output).toBe("hello world");
-    });
+      const conn = api.ptyConnectWs(42);
+      expect(conn).toHaveProperty("ws");
+      expect(typeof conn.sendInput).toBe("function");
+      expect(typeof conn.resize).toBe("function");
+      expect(typeof conn.onOutput).toBe("function");
+      expect(typeof conn.close).toBe("function");
 
-    it("returns null output", async () => {
-      mockFetch.mockResolvedValueOnce(
-        mockResponse(true, 200, '{"output":null}'),
-      );
-      const result = await api.ptyRead(42);
-      expect(result.output).toBeNull();
+      vi.unstubAllGlobals();
+      // Restore fetch mock that unstubAllGlobals removed
+      vi.stubGlobal("fetch", mockFetch);
     });
   });
 

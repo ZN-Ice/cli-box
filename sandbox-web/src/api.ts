@@ -206,29 +206,51 @@ export async function killProcess(pid: number): Promise<void> {
   });
 }
 
-// ── PTY ────────────────────────────────────────────────
+// ── PTY WebSocket ──────────────────────────────────────
 
-export async function ptyWrite(pid: number, data: string): Promise<void> {
-  await request("/pty/write", {
-    method: "POST",
-    body: JSON.stringify({ pid, data }),
-  });
+function wsBaseUrl(): string {
+  const port = getPort();
+  return `ws://127.0.0.1:${port}`;
 }
 
-export async function ptyResize(
-  pid: number,
-  cols: number,
-  rows: number,
-): Promise<void> {
-  await request("/pty/resize", {
-    method: "POST",
-    body: JSON.stringify({ pid, cols, rows }),
-  });
+export interface PtyWsConnection {
+  ws: WebSocket;
+  onOutput: (cb: (data: string) => void) => () => void;
+  sendInput: (data: string) => void;
+  resize: (cols: number, rows: number) => void;
+  close: () => void;
 }
 
-export async function ptyRead(pid: number): Promise<{ output: string | null }> {
-  const res = await fetch(`${BASE()}/pty/output/${pid}`);
-  return res.json();
+export function ptyConnectWs(pid: number): PtyWsConnection {
+  const ws = new WebSocket(`${wsBaseUrl()}/pty/ws/${pid}`);
+  const listeners: ((data: string) => void)[] = [];
+
+  ws.onmessage = (e) => {
+    if (typeof e.data === "string") {
+      for (const cb of listeners) cb(e.data);
+    }
+  };
+
+  return {
+    ws,
+    onOutput(cb) {
+      listeners.push(cb);
+      return () => {
+        const idx = listeners.indexOf(cb);
+        if (idx >= 0) listeners.splice(idx, 1);
+      };
+    },
+    sendInput(data) {
+      if (ws.readyState === WebSocket.OPEN) ws.send(data);
+    },
+    resize(cols, rows) {
+      if (ws.readyState === WebSocket.OPEN)
+        ws.send(JSON.stringify({ type: "resize", cols, rows }));
+    },
+    close() {
+      ws.close();
+    },
+  };
 }
 
 // ── Windows ────────────────────────────────────────────

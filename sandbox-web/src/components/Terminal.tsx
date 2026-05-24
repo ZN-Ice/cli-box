@@ -7,7 +7,6 @@ import type { TerminalTheme } from "../themes/types";
 import "@xterm/xterm/css/xterm.css";
 
 interface TerminalProps {
-  onInput?: (data: string) => void;
   activePid?: number | null;
 }
 
@@ -38,18 +37,13 @@ function buildTerminalTheme(t: TerminalTheme): Record<string, string> {
   };
 }
 
-export default function SandboxTerminal({
-  onInput,
-  activePid = null,
-}: TerminalProps) {
+export default function SandboxTerminal({ activePid = null }: TerminalProps) {
   const terminalRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const wsConnRef = useRef<api.PtyWsConnection | null>(null);
   const activePidRef = useRef(activePid);
   const { theme } = useTheme();
-  const onInputRef = useRef(onInput);
-  onInputRef.current = onInput;
 
   // Keep activePidRef in sync so the resize handler (which closes over it)
   // always reads the latest value without recreating the init effect.
@@ -85,17 +79,17 @@ export default function SandboxTerminal({
     term.open(terminalRef.current);
     fitAddon.fit();
 
+    // Send keyboard input directly to the WebSocket connection
     term.onData((data) => {
-      onInputRef.current?.(data);
+      wsConnRef.current?.sendInput(data);
     });
 
     const handleResize = () => {
       fitAddon.fit();
       const pid = activePidRef.current;
-      if (pid && xtermRef.current) {
-        const cols = xtermRef.current.cols;
-        const rows = xtermRef.current.rows;
-        api.ptyResize(pid, cols, rows).catch(() => {});
+      const conn = wsConnRef.current;
+      if (pid && conn) {
+        conn.resize(term.cols, term.rows);
       }
     };
     window.addEventListener("resize", handleResize);
@@ -118,40 +112,31 @@ export default function SandboxTerminal({
     console.log(`[Terminal] theme updated to: ${theme.id} (${theme.kind})`);
   }, [theme.id]);
 
-  // PTY output polling
+  // PTY WebSocket connection
   useEffect(() => {
-    if (pollRef.current) {
-      clearInterval(pollRef.current);
-      pollRef.current = null;
-    }
+    // Clean up previous connection
+    wsConnRef.current?.close();
+    wsConnRef.current = null;
 
     if (activePid === null || activePid === undefined) return;
+
+    const conn = api.ptyConnectWs(activePid);
+    wsConnRef.current = conn;
+
+    // Pipe PTY output → xterm.js
+    conn.onOutput((data) => {
+      xtermRef.current?.write(data);
+    });
 
     // Send initial resize so PTY matches xterm container size
     const term = xtermRef.current;
     if (term) {
-      api.ptyResize(activePid, term.cols, term.rows).catch(() => {});
+      conn.resize(term.cols, term.rows);
     }
 
-    pollRef.current = setInterval(async () => {
-      try {
-        const result = await api.ptyRead(activePid);
-        if (result.output) {
-          xtermRef.current?.write(result.output);
-        }
-      } catch {
-        if (pollRef.current) {
-          clearInterval(pollRef.current);
-          pollRef.current = null;
-        }
-      }
-    }, 50);
-
     return () => {
-      if (pollRef.current) {
-        clearInterval(pollRef.current);
-        pollRef.current = null;
-      }
+      conn.close();
+      wsConnRef.current = null;
     };
   }, [activePid]);
 

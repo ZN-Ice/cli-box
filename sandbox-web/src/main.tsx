@@ -65,16 +65,6 @@ function App() {
       .catch(() => {});
   }, []);
 
-  // Terminal input -> PTY
-  const handleTerminalInput = useCallback(
-    (data: string) => {
-      if (activePid !== null) {
-        api.ptyWrite(activePid, data).catch(() => {});
-      }
-    },
-    [activePid],
-  );
-
   // Screenshot
   const handleScreenshot = useCallback(async () => {
     setScreenshotError(null);
@@ -114,7 +104,6 @@ function App() {
         command={command}
         connected={connected}
         activePid={activePid}
-        onTerminalInput={handleTerminalInput}
         onScreenshot={handleScreenshot}
       >
         {/* Screenshot error toast */}
