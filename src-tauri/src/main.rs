@@ -174,23 +174,21 @@ fn main() {
 
             // Start embedded HTTP server if in managed mode
             if let (Some(id), Some(port)) = (&sandbox_id, sandbox_port) {
-                let pending_cli_arc = Arc::new(tokio::sync::Mutex::new(
-                    if let Some(InstanceKind::Cli { command, args }) = &kind {
-                        Some(PendingCli {
-                            command: command.clone(),
-                            args: args.clone(),
-                        })
-                    } else {
-                        None
-                    },
-                ));
+                let pending_cli = if let Some(InstanceKind::Cli { command, args }) = &kind {
+                    Some(PendingCli {
+                        command: command.clone(),
+                        args: args.clone(),
+                    })
+                } else {
+                    None
+                };
 
                 let state = Arc::new(tokio::sync::Mutex::new(sandbox_core::server::AppState {
                     sandbox_id: Some(id.clone()),
                     start_time: Instant::now(),
                     window_id: None,
                     target_pid: Some(std::process::id()),
-                    pending_cli: Some(pending_cli_arc),
+                    pending_cli,
                 }));
 
                 // Clone for window discovery task

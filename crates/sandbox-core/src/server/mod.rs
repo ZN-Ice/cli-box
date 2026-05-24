@@ -34,7 +34,7 @@ pub struct AppState {
     pub window_id: Option<u32>,
     pub target_pid: Option<u32>,
     /// CLI config pending spawn — consumed by frontend after xterm.js init
-    pub pending_cli: Option<Arc<Mutex<Option<PendingCli>>>>,
+    pub pending_cli: Option<PendingCli>,
 }
 
 /// Health check response
@@ -203,16 +203,10 @@ async fn pending_cli_handler(
 ) -> Result<Json<serde_json::Value>, AppError> {
     let s = state.lock().await;
     match &s.pending_cli {
-        Some(pending) => {
-            let cli = pending.lock().await;
-            match cli.as_ref() {
-                Some(config) => Ok(Json(serde_json::json!({
-                    "command": config.command,
-                    "args": config.args,
-                }))),
-                None => Ok(Json(serde_json::json!({ "command": null }))),
-            }
-        }
+        Some(config) => Ok(Json(serde_json::json!({
+            "command": config.command,
+            "args": config.args,
+        }))),
         None => Ok(Json(serde_json::json!({ "command": null }))),
     }
 }
@@ -266,11 +260,8 @@ async fn spawn_cli_handler(
 
     // Clear pending CLI after successful spawn
     {
-        let s = state.lock().await;
-        if let Some(pending) = &s.pending_cli {
-            let mut cli = pending.lock().await;
-            *cli = None;
-        }
+        let mut s = state.lock().await;
+        s.pending_cli = None;
     }
 
     tracing::info!("spawned cli: {cmd} ({cols}x{rows})");
@@ -580,6 +571,53 @@ mod tests {
         let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(json["sandbox_id"], "test-sandbox-01");
         assert_eq!(json["window_id"], 42);
+    }
+
+    #[tokio::test]
+    async fn pending_cli_returns_null_when_none() {
+        let app = test_router();
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .uri("/sandbox/pending-cli")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), 1024).await.unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert!(json["command"].is_null());
+    }
+
+    #[tokio::test]
+    async fn pending_cli_returns_config_when_set() {
+        let state = Arc::new(Mutex::new(AppState {
+            sandbox_id: Some("test".into()),
+            start_time: Instant::now(),
+            window_id: None,
+            target_pid: None,
+            pending_cli: Some(PendingCli {
+                command: "opencode".into(),
+                args: vec!["--verbose".into()],
+            }),
+        }));
+        let app = build_router(state);
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .uri("/sandbox/pending-cli")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), 1024).await.unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["command"], "opencode");
+        assert_eq!(json["args"], serde_json::json!(["--verbose"]));
     }
 
     // ── Input handlers ─────────────────────────────────────────
