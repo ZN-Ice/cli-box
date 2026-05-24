@@ -17,14 +17,18 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Start a sandbox with a CLI command in a Tauri window
+    /// Start a sandbox with a shell or CLI command in a Tauri window
     Start {
-        /// Command to run (e.g., "claude", "zsh", "echo")
-        command: String,
+        /// Command to run (e.g., "claude", "zsh", "echo"). Defaults to zsh if omitted.
+        command: Option<String>,
 
         /// Additional arguments passed to the command
         #[arg(trailing_var_arg = true)]
         args: Vec<String>,
+
+        /// Start with a zsh shell (shorthand for `sandbox start zsh`)
+        #[arg(long, default_value_t = false)]
+        shell: bool,
     },
 
     /// List all sandbox instances
@@ -132,8 +136,20 @@ async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Start { command, args } => {
-            cmd_start(&command, &args)?;
+        Commands::Start {
+            command,
+            args,
+            shell,
+        } => {
+            let (cmd, cmd_args) = if shell {
+                ("zsh".to_string(), vec![])
+            } else {
+                match command {
+                    Some(c) => (c, args),
+                    None => ("zsh".to_string(), vec![]),
+                }
+            };
+            cmd_start(&cmd, &cmd_args)?;
         }
         Commands::List => {
             cmd_list()?;
@@ -209,7 +225,6 @@ fn cmd_start(command: &str, args: &[String]) -> anyhow::Result<()> {
     };
     println!("Sandbox started: {}", full_cmd);
     println!("Use 'sandbox list' to find the sandbox ID");
-    println!("Then 'sandbox type --id <id> \"text\"' and 'sandbox key --id <id> Return'");
     Ok(())
 }
 
@@ -220,7 +235,8 @@ fn cmd_list() -> anyhow::Result<()> {
 
     if instances.is_empty() {
         println!("No sandbox instances found.");
-        println!("Start one with: sandbox start <command>");
+        println!("Start one with: sandbox start  (opens zsh by default)");
+        println!("Or: sandbox start <command>  (e.g., sandbox start claude)");
         return Ok(());
     }
 
