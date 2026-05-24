@@ -28,6 +28,7 @@ pub struct ProcessInfo {
 
 pub struct SandboxClient {
     base_url: String,
+    port: u16,
     client: reqwest::Client,
 }
 
@@ -52,6 +53,7 @@ impl SandboxClient {
             .unwrap_or_else(|_| reqwest::Client::new());
         Self {
             base_url: format!("http://127.0.0.1:{port}"),
+            port,
             client,
         }
     }
@@ -121,14 +123,22 @@ impl SandboxClient {
     // ── Input (PTY) ───────────────────────────────────────
 
     pub async fn pty_write(&self, pid: u32, data: &str) -> Result<()> {
-        self.client
-            .post(format!("{}/pty/write", self.base_url))
-            .json(&serde_json::json!({ "pid": pid, "data": data }))
-            .send()
+        use futures_util::SinkExt;
+        use tokio_tungstenite::connect_async;
+
+        let url = format!("ws://127.0.0.1:{}/pty/ws/{}", self.port, pid);
+        let (mut ws_stream, _) = connect_async(&url)
             .await
-            .with_context(|| "pty_write request failed")?
-            .error_for_status()
-            .with_context(|| "pty_write failed")?;
+            .with_context(|| format!("Failed to connect to PTY WebSocket for pid={pid}"))?;
+
+        ws_stream
+            .send(tokio_tungstenite::tungstenite::Message::Text(data.to_string().into()))
+            .await
+            .with_context(|| "Failed to send data to PTY WebSocket")?;
+
+        // Close the connection after sending
+        ws_stream.close(None).await.ok();
+
         Ok(())
     }
 
