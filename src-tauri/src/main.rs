@@ -114,16 +114,19 @@ fn main() {
         .or_else(|| Some(uuid::Uuid::new_v4().to_string()[..8].to_string()));
     let sandbox_port = launch_args.sandbox_port.or(Some(5801));
 
+    let mode = launch_args.mode.clone().or_else(|| Some("cli".to_string()));
+    let cmd = launch_args.cmd.clone().or_else(|| Some("zsh".to_string()));
+
     let config = SandboxConfig {
         id: launch_args.sandbox_id.clone(),
         port: launch_args.sandbox_port,
-        mode: launch_args.mode.clone(),
-        command: launch_args.cmd.clone(),
+        mode: mode.clone(),
+        command: cmd.clone(),
         args: launch_args.args.clone(),
         ..SandboxConfig::default()
     };
 
-    let kind = match (launch_args.mode.as_deref(), &launch_args.cmd) {
+    let kind = match (mode.as_deref(), &cmd) {
         (Some("cli"), Some(cmd)) => Some(InstanceKind::Cli {
             command: cmd.clone(),
             args: launch_args.args.clone(),
