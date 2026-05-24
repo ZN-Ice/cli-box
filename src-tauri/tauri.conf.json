@@ -6,8 +6,8 @@
   "build": {
     "frontendDist": "../sandbox-web/dist",
     "devUrl": "http://localhost:5173",
-    "beforeDevCommand": "cd sandbox-web && pnpm dev",
-    "beforeBuildCommand": "cd sandbox-web && pnpm build"
+    "beforeDevCommand": "cd ../sandbox-web && pnpm dev",
+    "beforeBuildCommand": "cd ../sandbox-web && pnpm build"
   },
   "app": {
     "windows": [
