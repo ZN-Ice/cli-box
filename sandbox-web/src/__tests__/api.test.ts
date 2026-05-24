@@ -355,7 +355,6 @@ describe("API client", () => {
         close: vi.fn(),
         onmessage: null as ((e: { data: string }) => void) | null,
       };
-      const realFetch = globalThis.fetch;
       vi.stubGlobal(
         "WebSocket",
         vi.fn().mockImplementation(() => mockWs),
