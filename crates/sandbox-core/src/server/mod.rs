@@ -4,12 +4,16 @@ use crate::capture::ScreenCapture;
 use crate::error::AppError;
 use crate::process::ProcessManager;
 use axum::{
-    extract::{Path, Query, State},
+    extract::{
+        ws::{Message, WebSocket, WebSocketUpgrade},
+        Path, Query, State,
+    },
     http::StatusCode,
     response::IntoResponse,
     routing::{get, post},
     Json, Router,
 };
+use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::Instant;
@@ -113,19 +117,6 @@ struct ScreenshotQuery {
 }
 
 #[derive(Deserialize)]
-struct PtyWriteRequest {
-    pid: u32,
-    data: String,
-}
-
-#[derive(Deserialize)]
-struct PtyResizeRequest {
-    pid: u32,
-    cols: u16,
-    rows: u16,
-}
-
-#[derive(Deserialize)]
 struct UiFindRequest {
     window_id: u32,
     #[serde(default)]
@@ -162,9 +153,7 @@ pub fn build_router(state: Arc<Mutex<AppState>>) -> Router {
         .route("/input/drag", post(drag_handler))
         .route("/screenshot", get(screenshot_handler))
         .route("/screenshot/region", get(screenshot_region_handler))
-        .route("/pty/write", post(pty_write_handler))
-        .route("/pty/resize", post(pty_resize_handler))
-        .route("/pty/output/{pid}", get(pty_output_handler))
+        .route("/pty/ws/{pid}", get(pty_ws_handler))
         .route("/ui/inspect/{window_id}", get(ui_inspect_handler))
         .route("/ui/find", post(ui_find_handler))
         .route("/ui/value", get(ui_value_handler))
@@ -355,43 +344,90 @@ async fn screenshot_region_handler(
     Ok((StatusCode::OK, [("content-type", "image/png")], png_data))
 }
 
-async fn pty_write_handler(
-    Json(req): Json<PtyWriteRequest>,
-) -> Result<Json<serde_json::Value>, AppError> {
-    tracing::info!(
-        "[pty] write: pid={}, len={}, preview={:?}",
-        req.pid,
-        req.data.len(),
-        if req.data.len() > 40 {
-            &req.data[..40]
-        } else {
-            &req.data
+async fn pty_ws_handler(
+    Path(pid): Path<u32>,
+    ws: WebSocketUpgrade,
+) -> Result<impl IntoResponse, AppError> {
+    // Validate that the PTY session exists before upgrading
+    ProcessManager::subscribe_output(pid)
+        .map_err(|e| AppError::Process(format!("PTY session {pid} not found: {e}")))?;
+    Ok(ws.on_upgrade(move |socket| handle_pty_ws(pid, socket)))
+}
+
+async fn handle_pty_ws(pid: u32, socket: WebSocket) {
+    let mut rx = match ProcessManager::subscribe_output(pid) {
+        Ok(rx) => rx,
+        Err(e) => {
+            tracing::warn!("[pty_ws] pid={pid}: subscribe failed: {e}");
+            return;
         }
-    );
-    ProcessManager::send_input(req.pid, req.data.as_bytes())?;
-    Ok(Json(serde_json::json!({"written": true})))
-}
+    };
 
-async fn pty_resize_handler(
-    Json(req): Json<PtyResizeRequest>,
-) -> Result<Json<serde_json::Value>, AppError> {
-    tracing::info!(
-        "[pty] resize: pid={}, cols={}, rows={}",
-        req.pid,
-        req.cols,
-        req.rows
-    );
-    tokio::task::spawn_blocking(move || ProcessManager::resize_pty(req.pid, req.cols, req.rows))
-        .await
-        .map_err(|e| AppError::Process(format!("pty_resize panicked: {e}")))??;
-    Ok(Json(serde_json::json!({"ok": true})))
-}
+    let (mut ws_tx, mut ws_rx) = socket.split();
 
-async fn pty_output_handler(Path(pid): Path<u32>) -> Result<Json<serde_json::Value>, AppError> {
-    let output = tokio::task::spawn_blocking(move || ProcessManager::read_output(pid))
-        .await
-        .map_err(|e| AppError::Process(format!("pty_output panicked: {e}")))??;
-    Ok(Json(serde_json::json!({"output": output})))
+    // Task 1: Broadcast PTY output → WebSocket
+    let send_task = tokio::spawn(async move {
+        while let Ok(msg) = rx.recv().await {
+            if ws_tx.send(Message::Text(msg.into())).await.is_err() {
+                break;
+            }
+        }
+    });
+
+    // Task 2: WebSocket input → PTY, with control message parsing
+    let recv_task = tokio::spawn(async move {
+        while let Some(Ok(msg)) = ws_rx.next().await {
+            match msg {
+                Message::Text(text) => {
+                    if let Ok(control) = serde_json::from_str::<serde_json::Value>(&text) {
+                        if let Some(msg_type) = control.get("type").and_then(|v| v.as_str()) {
+                            match msg_type {
+                                "resize" => {
+                                    let cols =
+                                        control.get("cols").and_then(|v| v.as_u64()).unwrap_or(80)
+                                            as u16;
+                                    let rows =
+                                        control.get("rows").and_then(|v| v.as_u64()).unwrap_or(24)
+                                            as u16;
+                                    let _ = tokio::task::spawn_blocking(move || {
+                                        ProcessManager::resize_pty(pid, cols, rows)
+                                    })
+                                    .await;
+                                    continue;
+                                }
+                                _ => {
+                                    tracing::trace!(
+                                        "[pty_ws] pid={pid}: unknown control type: {msg_type}"
+                                    );
+                                }
+                            }
+                        }
+                    }
+                    // Plain text: send as PTY input
+                    let _ = tokio::task::spawn_blocking(move || {
+                        ProcessManager::send_input(pid, text.as_bytes())
+                    })
+                    .await;
+                }
+                Message::Binary(data) => {
+                    let bytes = data.to_vec();
+                    let _ = tokio::task::spawn_blocking(move || {
+                        ProcessManager::send_input(pid, &bytes)
+                    })
+                    .await;
+                }
+                Message::Close(_) => break,
+                _ => {}
+            }
+        }
+    });
+
+    tokio::select! {
+        _ = send_task => {},
+        _ = recv_task => {},
+    }
+
+    tracing::debug!("[pty_ws] pid={pid}: connection closed");
 }
 
 async fn ui_inspect_handler(Path(window_id): Path<u32>) -> Result<Json<UiElement>, AppError> {
@@ -814,40 +850,35 @@ mod tests {
         );
     }
 
-    // ── PTY ────────────────────────────────────────────────────
+    // ── PTY WebSocket ──────────────────────────────────────────
 
     #[tokio::test]
-    async fn pty_write_nonexistent() {
+    async fn pty_ws_nonexistent_pid() {
+        // WebSocket upgrade for nonexistent PTY should return an error
         let app = test_router();
         let resp = app
             .oneshot(
                 Request::builder()
-                    .method("POST")
-                    .uri("/pty/write")
-                    .header(header::CONTENT_TYPE, "application/json")
-                    .body(Body::from(r#"{"pid": 99999, "data": "test"}"#))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        let status = resp.status();
-        assert!(status == StatusCode::OK || status == StatusCode::INTERNAL_SERVER_ERROR);
-    }
-
-    #[tokio::test]
-    async fn pty_output_nonexistent() {
-        let app = test_router();
-        let resp = app
-            .oneshot(
-                Request::builder()
-                    .uri("/pty/output/99999")
+                    .uri("/pty/ws/99999")
+                    .header("Upgrade", "websocket")
+                    .header("Connection", "Upgrade")
+                    .header("Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ==")
+                    .header("Sec-WebSocket-Version", "13")
                     .body(Body::empty())
                     .unwrap(),
             )
             .await
             .unwrap();
+        // Should be 500 (PTY not found), 400, or 426 (Upgrade Required - expected
+        // when oneshot doesn't complete the WebSocket handshake)
         let status = resp.status();
-        assert!(status == StatusCode::OK || status == StatusCode::INTERNAL_SERVER_ERROR);
+        assert!(
+            status == StatusCode::OK
+                || status == StatusCode::INTERNAL_SERVER_ERROR
+                || status == StatusCode::BAD_REQUEST
+                || status == StatusCode::UPGRADE_REQUIRED,
+            "Expected OK/500/400/426 for nonexistent PTY WebSocket, got: {status}"
+        );
     }
 
     // ── UI ─────────────────────────────────────────────────────
@@ -1209,14 +1240,6 @@ mod tests {
     }
 
     #[test]
-    fn pty_write_request_deserialize() {
-        let req: PtyWriteRequest =
-            serde_json::from_str(r#"{"pid": 42, "data": "hello\n"}"#).unwrap();
-        assert_eq!(req.pid, 42);
-        assert_eq!(req.data, "hello\n");
-    }
-
-    #[test]
     fn ui_find_request_deserialize() {
         let req: UiFindRequest =
             serde_json::from_str(r#"{"window_id": 1, "role": "button"}"#).unwrap();
@@ -1381,30 +1404,6 @@ mod tests {
         assert!(
             matches!(status.as_u16(), 200 | 500),
             "CGEvent type should either succeed or fail with internal error, got: {status}"
-        );
-    }
-
-    #[tokio::test]
-    async fn pty_write_with_valid_pid() {
-        // PTY write path directly writes to the process stdin.
-        // This is the correct path for CLI sandboxes.
-        // No PTY session exists in tests, so it returns 500.
-        let app = test_router();
-        let resp = app
-            .oneshot(
-                Request::builder()
-                    .method("POST")
-                    .uri("/pty/write")
-                    .header(header::CONTENT_TYPE, "application/json")
-                    .body(Body::from(r#"{"pid": 99999, "data": "hello"}"#))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        let status = resp.status();
-        assert!(
-            status == StatusCode::OK || status == StatusCode::INTERNAL_SERVER_ERROR,
-            "pty_write should succeed or fail gracefully: {status}"
         );
     }
 
