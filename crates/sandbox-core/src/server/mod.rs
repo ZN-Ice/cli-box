@@ -20,12 +20,21 @@ use std::time::Instant;
 use tokio::sync::Mutex;
 use tower_http::cors::{Any, CorsLayer};
 
+/// CLI configuration pending spawn — stored until frontend requests it.
+#[derive(Clone, Debug)]
+pub struct PendingCli {
+    pub command: String,
+    pub args: Vec<String>,
+}
+
 /// Shared application state for the HTTP server
 pub struct AppState {
     pub sandbox_id: Option<String>,
     pub start_time: Instant,
     pub window_id: Option<u32>,
     pub target_pid: Option<u32>,
+    /// CLI config pending spawn — consumed by frontend after xterm.js init
+    pub pending_cli: Option<Arc<Mutex<Option<PendingCli>>>>,
 }
 
 /// Health check response
@@ -144,6 +153,7 @@ pub fn build_router(state: Arc<Mutex<AppState>>) -> Router {
     Router::new()
         .route("/health", get(health_handler))
         .route("/sandbox/info", get(sandbox_info_handler))
+        .route("/sandbox/pending-cli", get(pending_cli_handler))
         .route("/shutdown", post(shutdown_handler))
         .route("/windows", get(list_windows_handler))
         .route("/processes", get(list_processes_handler))
@@ -188,6 +198,25 @@ async fn sandbox_info_handler(
     })
 }
 
+async fn pending_cli_handler(
+    State(state): State<Arc<Mutex<AppState>>>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let s = state.lock().await;
+    match &s.pending_cli {
+        Some(pending) => {
+            let cli = pending.lock().await;
+            match cli.as_ref() {
+                Some(config) => Ok(Json(serde_json::json!({
+                    "command": config.command,
+                    "args": config.args,
+                }))),
+                None => Ok(Json(serde_json::json!({ "command": null }))),
+            }
+        }
+        None => Ok(Json(serde_json::json!({ "command": null }))),
+    }
+}
+
 async fn shutdown_handler() -> Json<serde_json::Value> {
     tracing::info!("Shutdown requested via HTTP");
     std::thread::spawn(|| {
@@ -223,6 +252,7 @@ async fn spawn_app_handler(
 }
 
 async fn spawn_cli_handler(
+    State(state): State<Arc<Mutex<AppState>>>,
     Json(req): Json<SpawnCliRequest>,
 ) -> Result<Json<crate::process::ProcessInfo>, AppError> {
     let cmd = req.command.clone();
@@ -233,6 +263,16 @@ async fn spawn_cli_handler(
     })
     .await
     .map_err(|e| AppError::Process(format!("spawn_cli panicked: {e}")))??;
+
+    // Clear pending CLI after successful spawn
+    {
+        let s = state.lock().await;
+        if let Some(pending) = &s.pending_cli {
+            let mut cli = pending.lock().await;
+            *cli = None;
+        }
+    }
+
     tracing::info!("spawned cli: {cmd} ({cols}x{rows})");
     Ok(Json(info))
 }
@@ -492,6 +532,7 @@ mod tests {
             start_time: Instant::now(),
             window_id: Some(42),
             target_pid: None,
+            pending_cli: None,
         }))
     }
 
@@ -1113,6 +1154,7 @@ mod tests {
             start_time: Instant::now(),
             window_id: None,
             target_pid: None,
+            pending_cli: None,
         }));
         let app = build_router(state);
         let resp = app
@@ -1406,6 +1448,7 @@ mod tests {
             start_time: Instant::now(),
             window_id: Some(42),
             target_pid: Some(9999), // Simulates Tauri process PID
+            pending_cli: None,
         }));
         let app = build_router(state);
         let resp = app
