@@ -215,6 +215,17 @@ export async function ptyWrite(pid: number, data: string): Promise<void> {
   });
 }
 
+export async function ptyResize(
+  pid: number,
+  cols: number,
+  rows: number,
+): Promise<void> {
+  await request("/pty/resize", {
+    method: "POST",
+    body: JSON.stringify({ pid, cols, rows }),
+  });
+}
+
 export async function ptyRead(pid: number): Promise<{ output: string | null }> {
   const res = await fetch(`${BASE()}/pty/output/${pid}`);
   return res.json();

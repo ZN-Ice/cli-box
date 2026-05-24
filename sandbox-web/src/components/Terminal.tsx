@@ -46,9 +46,16 @@ export default function SandboxTerminal({
   const xtermRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const activePidRef = useRef(activePid);
   const { theme } = useTheme();
   const onInputRef = useRef(onInput);
   onInputRef.current = onInput;
+
+  // Keep activePidRef in sync so the resize handler (which closes over it)
+  // always reads the latest value without recreating the init effect.
+  useEffect(() => {
+    activePidRef.current = activePid;
+  }, [activePid]);
 
   // Initialize xterm.js once — theme updates in-place
   useEffect(() => {
@@ -82,7 +89,15 @@ export default function SandboxTerminal({
       onInputRef.current?.(data);
     });
 
-    const handleResize = () => fitAddon.fit();
+    const handleResize = () => {
+      fitAddon.fit();
+      const pid = activePidRef.current;
+      if (pid && xtermRef.current) {
+        const cols = xtermRef.current.cols;
+        const rows = xtermRef.current.rows;
+        api.ptyResize(pid, cols, rows).catch(() => {});
+      }
+    };
     window.addEventListener("resize", handleResize);
 
     xtermRef.current = term;
