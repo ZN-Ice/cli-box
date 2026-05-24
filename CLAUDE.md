@@ -64,6 +64,8 @@
 4. **双协议**：MCP (Agent CLI 原生) + HTTP (通用调用)
 5. **文件系统注册中心**：沙箱实例通过 `~/.sandbox/instances/<id>.json` 注册和发现
 
+**PTY Reader Thread**: Each PTY session spawns a dedicated background thread that continuously reads output into a shared buffer. The HTTP `/pty/output/:pid` endpoint drains from this buffer non-blocking. This replaces the earlier take/read/put-back pattern that blocked on idle TUI apps (opencode, vim, etc.).
+
 ## 二、技术栈
 
 | 项目属性 | 规范值 |
