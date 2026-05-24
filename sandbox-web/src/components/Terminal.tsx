@@ -127,6 +127,12 @@ export default function SandboxTerminal({
 
     if (activePid === null || activePid === undefined) return;
 
+    // Send initial resize so PTY matches xterm container size
+    const term = xtermRef.current;
+    if (term) {
+      api.ptyResize(activePid, term.cols, term.rows).catch(() => {});
+    }
+
     pollRef.current = setInterval(async () => {
       try {
         const result = await api.ptyRead(activePid);
