@@ -4,6 +4,7 @@ pub mod automation;
 pub mod capture;
 pub mod instance;
 pub mod process;
+pub mod pty_store;
 pub mod sandbox;
 pub mod server;
 
