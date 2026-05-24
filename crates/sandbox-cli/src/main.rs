@@ -27,7 +27,7 @@ enum Commands {
         args: Vec<String>,
 
         /// Start with a zsh shell (shorthand for `sandbox start zsh`)
-        #[arg(long, default_value_t = false)]
+        #[arg(long)]
         shell: bool,
     },
 
@@ -141,13 +141,9 @@ async fn main() -> anyhow::Result<()> {
             args,
             shell,
         } => {
-            let (cmd, cmd_args) = if shell {
-                ("zsh".to_string(), vec![])
-            } else {
-                match command {
-                    Some(c) => (c, args),
-                    None => ("zsh".to_string(), vec![]),
-                }
+            let (cmd, cmd_args) = match (shell, command) {
+                (true, _) | (false, None) => ("zsh".to_string(), args),
+                (false, Some(c)) => (c, args),
             };
             cmd_start(&cmd, &cmd_args)?;
         }
