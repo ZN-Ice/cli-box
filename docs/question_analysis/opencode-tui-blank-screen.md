@@ -1,140 +1,178 @@
 # opencode TUI 空白屏幕问题分析
 
 > 分析日期：2026-05-24
-> 状态：根因已定位，方案待实施
+> 状态：Phase 1 已完成（专用 Reader 线程），opencode 在 Tauri 应用中仍空白
 
 ## 一、问题描述
 
-在沙箱中启动 opencode（一个 TUI 终端应用）后，终端一直显示空白。PTY 写入成功（`{"written":true}`），但 PTY 读取持续报错：`"Process 1000 not found or reader busy"`。截图显示空终端。
+在沙箱中启动 opencode（一个 TUI 终端应用）后，终端一直显示空白。PTY Reader 线程已在 cargo test 中验证可用（32103+ chars），但在 Tauri 应用中 HTTP `/pty/output/1000` 返回 `null`。
 
-## 二、复现步骤
+## 二、测试结果汇总
 
-```bash
-# 1. 构建 release
-./release.sh
+| 测试场景 | 结果 |
+|---------|------|
+| `cargo test pty_reader` — cat 命令 | 14 chars (PASS) |
+| `cargo test pty_reader` — opencode 无 resize | 32103 chars (PASS) |
+| `cargo test pty_reader` — opencode 有 resize | 50737 chars (PASS) |
+| Tauri 应用：zsh 终端 | 正常渲染 |
+| Tauri 应用：opencode 终端 | 空白 |
+| Tauri 应用：curl `/pty/output/1000` | `{"output": null}` |
+| Tauri 应用：curl `/pty/write/1000` + data | `{"written": true}` |
 
-# 2. 启动沙箱（运行 opencode）
-./target/release/bundle/macos/System\ Test\ Sandbox.app/Contents/MacOS/system-test-sandbox --mode=cli --cmd=opencode
+## 三、根因分析
 
-# 3. 通过 HTTP 写入输入
-curl -X POST http://127.0.0.1:<port>/pty/write/1000 -d '{"data":"你是谁？"}'
+### 3.1 Reader 线程架构（已完成）
 
-# 4. 截图 — 终端空白
-curl http://127.0.0.1:<port>/screenshot -o screenshot.png
+```
+spawn_cli("opencode")
+  ├─ 创建 PTY (80x24)
+  ├─ 启动 opencode 子进程
+  ├─ 克隆 reader → 移入专用线程
+  ├─ 创建 Arc<Mutex<VecDeque<String>>> buffer
+  ├─ 启动 reader thread: 持续 read() → push_back(text)
+  └─ 注册 PtySession { buffer, stop_flag, reader_thread }
+
+read_output(pid)
+  ├─ 从 SESSIONS 获取 buffer Arc
+  ├─ 释放 SESSIONS 锁
+  └─ drain buffer → Ok(Some(text)) 或 Ok(None)
 ```
 
-## 三、关键现象
+### 3.2 为什么 cargo test 通过但 Tauri 应用失败
 
-| 现象 | 证据 |
-|------|------|
-| opencode 进程正常启动 | PID 1000，status: running |
-| PTY 写入成功 | `{"written":true}` |
-| PTY 读取持续失败 | `"Process 1000 not found or reader busy"` |
-| 截图全部空白 | 61079 bytes，内容一致 |
-| zsh/claude 正常工作 | 同一沙箱基础设施，渲染正常 |
-| `less` 渲染正常 | 证明 alternate screen buffer 不是问题 |
+**关键差异：进程环境**
 
-## 四、根因分析
+| 维度 | cargo test | Tauri 应用 |
+|------|-----------|-----------|
+| 运行方式 | `cargo test` (终端) | `sandbox start` → CLI → Tauri app |
+| 进程环境 | 完整 shell 环境 | 继承 CLI 环境 |
+| TERM | xterm-256color | 取决于启动方式 |
+| PATH | 完整 | 取决于启动方式 |
+| PTY 子进程环境 | 继承 test 进程 | 继承 Tauri 进程 |
 
-### 4.1 直接原因：阻塞式 `read()` 无限期占用 reader
-
-`read_output`（`crates/sandbox-core/src/process/mod.rs:320-369`）的 take-read-put-back 模式：
+**`portable-pty` 环境继承机制：**
 
 ```rust
-// Step 1 — 取出 reader（短暂持有锁）
-let mut reader = {
-    let mut sessions = SESSIONS.lock()...;
-    sessions.get_mut(&pid).and_then(|s| s.reader.take())
-        .ok_or_else(|| AppError::Process("reader busy"))?
-};
-
-// Step 2 — 读取（不持有全局锁，但可能阻塞）
-let mut buf = [0u8; 4096];
-let result = match reader.read(&mut buf) { ... };
-
-// Step 3 — 放回 reader（短暂持有锁）
-{ sessions.get_mut(&pid).session.reader = Some(reader); }
-```
-
-**关键问题**：reader 从未被设置为非阻塞模式。`portable_pty 0.9` 不暴露 `set_nonblocking` API。当 PTY 无数据时，`read()` 阻塞调用线程**无限期**。reader 一直被占用不放。
-
-`WouldBlock` 处理器（第 348 行）是死代码 — reader 永远不会返回 `WouldBlock`。
-
-### 4.2 加剧因素：前端错误处理是致命的
-
-```typescript
-// sandbox-web/src/components/Terminal.tsx:142-146
-} catch {
-    if (pollRef.current) {
-        clearInterval(pollRef.current);  // 一次性错误，永久停止轮询
-        pollRef.current = null;
-    }
+// portable-pty 源码: cmdbuilder.rs:215
+CommandBuilder::new(command) {
+    // 调用 get_base_env() 捕获 std::env::vars_os()
+    // 即捕获调用时父进程的全部环境变量
 }
 ```
 
-一次 `"reader busy"` 错误就杀死整个轮询循环。没有重试机制。
-
-### 4.3 事件时序
-
-```
-t=0ms    opencode 启动，渲染 TUI（大量 ANSI 输出，几百行）
-t=50ms   轮询 #1：read() 取出 reader，读到数据，放回 ✓
-t=100ms  轮询 #2：read() 取出 reader，没有新数据 → 阻塞！
-         reader 一直被占用
-t=150ms  轮询 #3：s.reader.take() = None → "reader busy"
-         前端 catch → 杀掉 setInterval → 终端永久沉默
+```rust
+// portable-pty 源码: cmdbuilder.rs:498
+as_command() {
+    cmd.env_clear();                    // 清空
+    cmd.env("SHELL", shell);           // 设置 SHELL
+    cmd.envs(self.envs.values());      // 重新应用捕获的所有环境变量
+}
 ```
 
-### 4.4 为什么 zsh/claude 不受影响
+**结论：PTY 子进程继承的是 `CommandBuilder::new()` 调用时父进程的环境。**
 
-zsh 和 claude 在启动后会持续产生输出（prompt、流式响应），`read()` 很快就能读到数据并返回。opencode 渲染完 TUI 后就阻塞等待用户输入 — 这是 TUI 应用的标准行为，和阻塞式轮询读取冲突。
+### 3.3 两种启动路径的环境差异
 
-## 五、架构对比：我们的方案 vs WaveTerm
+| 启动方式 | 环境 | opencode 能否工作 |
+|---------|------|------------------|
+| `sandbox start opencode` (CLI) | 完整 shell 环境 (PATH, TERM, HOME, ...) | 应该可以 |
+| 双击 `.app` / `open` | 最小 GUI 环境 (仅 /usr/bin:/bin:/usr/sbin:/sbin) | 可能不行 |
 
-| 维度 | system-test-sandbox | WaveTerm |
-|------|---------------------|----------|
-| PTY 读取方式 | HTTP 轮询（50ms 间隔） | 专用 goroutine 持续读取 |
-| 数据流 | 前端 poll → HTTP → `spawn_blocking` → `read()` | goroutine `read()` → buffer → WPS 事件推送 |
-| 阻塞处理 | `read()` 阻塞时 reader 被占用 | goroutine 阻塞只是挂起，不影响其他 goroutine |
-| 缓冲 | 无（每次 poll 读一次） | 2MB 循环 blockfile |
-| 前端接收 | 主动 poll（可能失败） | 被动接收 WPS 推送事件 |
-| 容错 | 单次错误终止轮询 | 无轮询概念，不会因错误停止 |
+**但用户是通过 CLI 启动的，理论上环境应该正确。**
 
-### WaveTerm 为什么不会有这个问题
+### 3.4 可能的环境问题
 
-1. **专用 reader goroutine**：Go 的 goroutine 阻塞只是挂起当前 goroutine，不阻塞线程。`read()` 无限期阻塞也没关系。
-2. **无 HTTP 轮询**：没有"reader busy"的概念 — reader 始终被专用 goroutine 持有，不存在竞争。
-3. **缓冲层**：数据写入 2MB 循环 blockfile，前端通过 WPS 事件推送接收。即使前端断开，数据也不丢失。
-4. **推送而非拉取**：前端不 poll，而是订阅事件。数据产生时主动推送。
+即使通过 CLI 启动，以下环境变量可能仍然缺失或不正确：
 
-## 六、可行解决方案
+1. **`TERM`** — opencode 可能检查此变量决定是否渲染 TUI
+2. **`HOME`** — opencode 可能需要此变量读取配置文件
+3. **`USER`** — 部分 TUI 应用依赖此变量
+4. **`LANG` / `LC_ALL`** — 字符编码相关
 
-### 方案 A：专用 Reader 线程（推荐，参照 WaveTerm）
+### 3.5 另一个可能：opencode 检查终端能力
 
-为每个 PTY session 启动一个后台线程，持续从 PTY 读取数据并写入共享缓冲区。HTTP 处理函数从缓冲区非阻塞读取。
+opencode 是一个 Go TUI 应用（基于 bubbletea/lipgloss）。它可能：
+1. 检查 `TERM` 环境变量
+2. 查询 terminfo 数据库
+3. 如果终端能力不足，拒绝渲染或输出为空
 
-**改动范围：**
-- `crates/sandbox-core/src/process/mod.rs`：`PtySession` 增加缓冲区，`spawn_cli` 启动 reader 线程
-- `crates/sandbox-core/src/server/mod.rs`：`read_output` 从缓冲区读取
-- 前端不需要改动
+在 cargo test 中，测试进程运行在终端里，`TERM=xterm-256color`。在 Tauri 应用中，即使通过 CLI 启动，`TERM` 的值可能不同。
 
-**优点：** 架构清晰，从根本上解决问题，参照 WaveTerm 已验证的模式
-**缺点：** 每个 PTY session 多一个线程（轻量级，可接受）
+## 四、解决方案
 
-### 方案 B：设置非阻塞 FD + poll/select
+### 方案 1：显式设置 PTY 环境变量（推荐，最可能的修复）
 
-从 PTY master 提取 raw file descriptor，调用 `fcntl(F_SETFL, O_NONBLOCK)`，用 `poll()` 加短超时。
+在 `spawn_cli` 中显式设置 `TERM=xterm-256color` 和其他必要的环境变量：
 
-**优点：** 不需要额外线程
-**缺点：** 需要 `libc::fcntl` + unsafe 代码，`portable_pty` 的 `MasterPty` 是 trait 对象不暴露 `RawFd`
+```rust
+// crates/sandbox-core/src/process/mod.rs
+let mut cmd = CommandBuilder::new(command);
+cmd.args(args);
+// 显式设置终端环境变量
+cmd.env("TERM", "xterm-256color");
+cmd.env("COLORTERM", "truecolor");
+cmd.env("LANG", "en_US.UTF-8");
+```
 
-### 方案 C：Tokio timeout 包装
+**优点：** 改动小（3 行），直接解决环境问题
+**缺点：** 需要测试确认是否是根因
 
-给 `read()` 包一层 `tokio::time::timeout(Duration::from_millis(100), ...)`。
+### 方案 2：添加文件日志调试
 
-**优点：** 改动最小（约 5 行代码）
-**缺点：** 每次空闲轮询仍浪费一个阻塞线程 100ms，不是真正的架构修复
+在 release 模式下，`tracing::debug!` 不可见。添加文件日志：
 
-## 七、建议
+```rust
+// crates/sandbox-core/src/process/mod.rs
+// 在 reader thread 中添加文件日志
+let log_path = std::env::temp_dir().format!("pty-reader-{}.log", tracked_id);
+if let Ok(mut f) = std::fs::File::create(&log_path) {
+    let _ = writeln!(f, "reader thread started, pid={}", tracked_id);
+}
+```
 
-采用**方案 A（专用 Reader 线程）**，参照 WaveTerm 的 `shellcontroller.go:529-569` 的 reader goroutine 模式。这是最健壮的方案，且有成熟的参考实现。
+**优点：** 能看到 reader thread 的实际运行状态
+**缺点：** 调试用，生产环境应移除
+
+### 方案 3：添加诊断 HTTP 端点
+
+添加一个端点返回 session 状态：
+
+```rust
+GET /pty/status/{pid}
+→ { "buffer_size": 42, "reader_alive": true, "stop_flag": false }
+```
+
+**优点：** 能远程诊断 session 状态
+**缺点：** 需要修改 server 和前端
+
+### 方案 4：测试其他 TUI 应用
+
+用 `vim`、`htop`、`nano` 等测试，确认是否是 opencode 特有问题：
+
+```bash
+./sandbox start vim
+./sandbox start htop
+```
+
+**优点：** 快速判断是 opencode 特有问题还是通用问题
+**缺点：** 需要手动测试
+
+## 五、建议的执行顺序
+
+1. **先测试方案 4**：用 vim/htop 测试，确认是否是 opencode 特有问题
+2. **实施方案 1**：添加 `TERM=xterm-256color` 等环境变量
+3. **实施方案 2**：添加文件日志，确认 reader thread 是否在运行
+4. **实施方案 3**：如果以上都不行，添加诊断端点
+
+## 六、已修复的问题（Phase 1）
+
+以下问题已在专用 Reader 线程实现中修复：
+
+1. ~~阻塞式 `read()` 无限期占用 reader~~ → 专用线程持续读取
+2. ~~SESSIONS 锁在 drain 期间持有~~ → Clone Arc 后释放锁
+3. ~~死代码 `reader` 字段~~ → 已移除
+4. ~~前端单次错误终止轮询~~ → 保留（但根本原因已修复）
+
+---
+
+**下一步：** 测试方案 4（其他 TUI 应用），然后实施方案 1（环境变量）。
