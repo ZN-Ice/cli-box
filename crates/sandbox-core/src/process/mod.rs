@@ -31,8 +31,6 @@ pub struct ProcessInfo {
 /// lock and starve the tokio runtime.
 #[cfg(target_os = "macos")]
 struct PtySession {
-    #[allow(dead_code)]
-    reader: Option<Box<dyn std::io::Read + Send>>,
     writer: Box<dyn std::io::Write + Send>,
     master: Box<dyn MasterPty>,
     #[allow(dead_code)]
@@ -212,7 +210,6 @@ impl ProcessManager {
         sessions.insert(
             tracked_id,
             PtySession {
-                reader: None,
                 writer,
                 master: pty_pair.master,
                 child_pid: child_pid.unwrap_or(0),
@@ -287,7 +284,11 @@ impl ProcessManager {
             })?;
         }
 
-        // Step 4: Join the reader thread (take the handle before dropping session)
+        // Step 4: Join the reader thread.
+        // drop(session) closes the PTY master fd, which causes the reader
+        // thread's blocking read() to return an error → thread exits.
+        // This ordering is critical — if join() ran before drop(), the
+        // reader thread could block forever on read().
         let reader_thread = session.reader_thread.take();
         drop(session);
 
@@ -390,17 +391,22 @@ impl ProcessManager {
     /// Drains all available data from the shared buffer populated by the
     /// dedicated reader thread.  Non-blocking: returns `Ok(None)` when
     /// the buffer is empty.
+    ///
+    /// The SESSIONS lock is held only briefly to clone the buffer Arc,
+    /// then released before draining — avoiding a global bottleneck.
     #[cfg(target_os = "macos")]
     pub fn read_output(pid: u32) -> Result<Option<String>> {
-        let sessions = SESSIONS
-            .lock()
-            .map_err(|e| AppError::Process(e.to_string()))?;
-        let session = sessions
-            .get(&pid)
-            .ok_or_else(|| AppError::Process(format!("Process {pid} not found")))?;
+        let buffer_arc = {
+            let sessions = SESSIONS
+                .lock()
+                .map_err(|e| AppError::Process(e.to_string()))?;
+            let session = sessions
+                .get(&pid)
+                .ok_or_else(|| AppError::Process(format!("Process {pid} not found")))?;
+            Arc::clone(&session.buffer)
+        }; // SESSIONS lock released here
 
-        let mut buffer = session
-            .buffer
+        let mut buffer = buffer_arc
             .lock()
             .map_err(|e| AppError::Process(e.to_string()))?;
 
