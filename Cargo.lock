@@ -3775,14 +3775,10 @@ dependencies = [
 name = "sandbox-daemon"
 version = "0.1.0"
 dependencies = [
- "axum",
  "sandbox-core",
- "serde",
- "serde_json",
  "tokio",
  "tracing",
  "tracing-subscriber",
- "uuid",
 ]
 
 [[package]]

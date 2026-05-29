@@ -64,11 +64,11 @@ struct ReadyzResponse {
 }
 
 #[derive(Deserialize)]
-struct ClickRequest {
-    x: f64,
-    y: f64,
+pub struct ClickRequest {
+    pub x: f64,
+    pub y: f64,
     #[serde(default = "default_button")]
-    button: String,
+    pub button: String,
 }
 
 fn default_button() -> String {
@@ -76,23 +76,23 @@ fn default_button() -> String {
 }
 
 #[derive(Deserialize)]
-struct TypeRequest {
-    text: String,
+pub struct TypeRequest {
+    pub text: String,
 }
 
 #[derive(Deserialize)]
-struct KeyRequest {
-    key: String,
+pub struct KeyRequest {
+    pub key: String,
     #[serde(default)]
-    modifiers: Vec<String>,
+    pub modifiers: Vec<String>,
 }
 
 #[derive(Deserialize)]
-struct ScrollRequest {
-    x: f64,
-    y: f64,
-    direction: String,
-    amount: i32,
+pub struct ScrollRequest {
+    pub x: f64,
+    pub y: f64,
+    pub direction: String,
+    pub amount: i32,
 }
 
 #[derive(Deserialize)]
@@ -104,8 +104,8 @@ struct DragRequest {
 }
 
 #[derive(Deserialize)]
-struct SpawnAppRequest {
-    path: String,
+pub struct SpawnAppRequest {
+    pub path: String,
 }
 
 #[derive(Deserialize)]
@@ -429,7 +429,7 @@ async fn pty_ws_handler(
     Ok(ws.on_upgrade(move |socket| handle_pty_ws(pid, socket)))
 }
 
-async fn handle_pty_ws(pid: u32, socket: WebSocket) {
+pub async fn handle_pty_ws(pid: u32, socket: WebSocket) {
     let mut rx = match ProcessManager::subscribe_output(pid) {
         Ok(rx) => rx,
         Err(e) => {

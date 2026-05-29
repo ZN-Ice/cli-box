@@ -2,6 +2,7 @@
 
 pub mod automation;
 pub mod capture;
+pub mod daemon;
 pub mod instance;
 pub mod logging;
 pub mod process;
