@@ -8,8 +8,6 @@ import { ThemeProvider } from "../themes/ThemeContext";
 // We test Terminal indirectly through its exported behavior.
 // The buildTerminalTheme function is internal, so we test via component rendering.
 describe("Terminal component", () => {
-  const mockOnInput = vi.fn();
-
   beforeEach(() => {
     vi.clearAllMocks();
   });
@@ -22,7 +20,7 @@ describe("Terminal component", () => {
     const { default: SandboxTerminal } = await import("../components/Terminal");
     const container = render(
       <ThemeProvider>
-        <SandboxTerminal onInput={mockOnInput} />
+        <SandboxTerminal />
       </ThemeProvider>,
     );
     expect(container.container.querySelector(".xterm")).toBeTruthy();
@@ -32,7 +30,7 @@ describe("Terminal component", () => {
     const { default: SandboxTerminal } = await import("../components/Terminal");
     const container = render(
       <ThemeProvider>
-        <SandboxTerminal onInput={mockOnInput} activePid={1234} />
+        <SandboxTerminal activePid={1234} />
       </ThemeProvider>,
     );
     expect(container.container.querySelector(".xterm")).toBeTruthy();
@@ -42,17 +40,7 @@ describe("Terminal component", () => {
     const { default: SandboxTerminal } = await import("../components/Terminal");
     const container = render(
       <ThemeProvider>
-        <SandboxTerminal onInput={mockOnInput} activePid={null} />
-      </ThemeProvider>,
-    );
-    expect(container.container.querySelector(".xterm")).toBeTruthy();
-  });
-
-  it("renders without onInput callback", async () => {
-    const { default: SandboxTerminal } = await import("../components/Terminal");
-    const container = render(
-      <ThemeProvider>
-        <SandboxTerminal />
+        <SandboxTerminal activePid={null} />
       </ThemeProvider>,
     );
     expect(container.container.querySelector(".xterm")).toBeTruthy();
@@ -62,7 +50,7 @@ describe("Terminal component", () => {
     const { default: SandboxTerminal } = await import("../components/Terminal");
     render(
       <ThemeProvider>
-        <SandboxTerminal onInput={mockOnInput} />
+        <SandboxTerminal />
       </ThemeProvider>,
     );
     // xterm creates a .xterm element

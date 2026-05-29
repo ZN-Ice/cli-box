@@ -4,17 +4,28 @@ use crate::capture::ScreenCapture;
 use crate::error::AppError;
 use crate::process::ProcessManager;
 use axum::{
-    extract::{Path, Query, State},
+    extract::{
+        ws::{Message, WebSocket, WebSocketUpgrade},
+        Path, Query, State,
+    },
     http::StatusCode,
     response::IntoResponse,
     routing::{get, post},
     Json, Router,
 };
+use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::Mutex;
 use tower_http::cors::{Any, CorsLayer};
+
+/// CLI configuration pending spawn — stored until frontend requests it.
+#[derive(Clone, Debug)]
+pub struct PendingCli {
+    pub command: String,
+    pub args: Vec<String>,
+}
 
 /// Shared application state for the HTTP server
 pub struct AppState {
@@ -22,6 +33,8 @@ pub struct AppState {
     pub start_time: Instant,
     pub window_id: Option<u32>,
     pub target_pid: Option<u32>,
+    /// CLI config pending spawn — consumed by frontend after xterm.js init
+    pub pending_cli: Option<PendingCli>,
 }
 
 /// Health check response
@@ -39,6 +52,15 @@ struct SandboxInfoResponse {
     sandbox_id: Option<String>,
     window_id: Option<u32>,
     uptime_secs: u64,
+}
+
+/// Readiness check response
+#[derive(Serialize)]
+struct ReadyzResponse {
+    status: String,
+    http_server: bool,
+    pty_active: bool,
+    pending_cli: bool,
 }
 
 #[derive(Deserialize)]
@@ -91,6 +113,10 @@ struct SpawnCliRequest {
     command: String,
     #[serde(default)]
     args: Vec<String>,
+    #[serde(default)]
+    cols: Option<u16>,
+    #[serde(default)]
+    rows: Option<u16>,
 }
 
 #[derive(Deserialize)]
@@ -110,12 +136,6 @@ struct RegionQuery {
 struct ScreenshotQuery {
     #[serde(default)]
     window_id: Option<u32>,
-}
-
-#[derive(Deserialize)]
-struct PtyWriteRequest {
-    pid: u32,
-    data: String,
 }
 
 #[derive(Deserialize)]
@@ -141,7 +161,9 @@ pub fn build_router(state: Arc<Mutex<AppState>>) -> Router {
 
     Router::new()
         .route("/health", get(health_handler))
+        .route("/readyz", get(readyz_handler))
         .route("/sandbox/info", get(sandbox_info_handler))
+        .route("/sandbox/pending-cli", get(pending_cli_handler))
         .route("/shutdown", post(shutdown_handler))
         .route("/windows", get(list_windows_handler))
         .route("/processes", get(list_processes_handler))
@@ -155,8 +177,7 @@ pub fn build_router(state: Arc<Mutex<AppState>>) -> Router {
         .route("/input/drag", post(drag_handler))
         .route("/screenshot", get(screenshot_handler))
         .route("/screenshot/region", get(screenshot_region_handler))
-        .route("/pty/write", post(pty_write_handler))
-        .route("/pty/output/{pid}", get(pty_output_handler))
+        .route("/pty/ws/{pid}", get(pty_ws_handler))
         .route("/ui/inspect/{window_id}", get(ui_inspect_handler))
         .route("/ui/find", post(ui_find_handler))
         .route("/ui/value", get(ui_value_handler))
@@ -176,6 +197,27 @@ async fn health_handler(State(state): State<Arc<Mutex<AppState>>>) -> Json<Healt
     })
 }
 
+async fn readyz_handler(
+    State(state): State<Arc<Mutex<AppState>>>,
+) -> Result<Json<ReadyzResponse>, (StatusCode, Json<ReadyzResponse>)> {
+    let pending_cli = state.lock().await.pending_cli.is_some();
+    let pty_active = ProcessManager::list_processes()
+        .map(|procs| !procs.is_empty())
+        .unwrap_or(false);
+    let ready = pty_active || pending_cli;
+    let resp = ReadyzResponse {
+        status: if ready { "ready" } else { "not_ready" }.to_string(),
+        http_server: true,
+        pty_active,
+        pending_cli,
+    };
+    if ready {
+        Ok(Json(resp))
+    } else {
+        Err((StatusCode::SERVICE_UNAVAILABLE, Json(resp)))
+    }
+}
+
 async fn sandbox_info_handler(
     State(state): State<Arc<Mutex<AppState>>>,
 ) -> Json<SandboxInfoResponse> {
@@ -185,6 +227,19 @@ async fn sandbox_info_handler(
         window_id: s.window_id,
         uptime_secs: s.start_time.elapsed().as_secs(),
     })
+}
+
+async fn pending_cli_handler(
+    State(state): State<Arc<Mutex<AppState>>>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let s = state.lock().await;
+    match &s.pending_cli {
+        Some(config) => Ok(Json(serde_json::json!({
+            "command": config.command,
+            "args": config.args,
+        }))),
+        None => Ok(Json(serde_json::json!({ "command": null }))),
+    }
 }
 
 async fn shutdown_handler() -> Json<serde_json::Value> {
@@ -222,14 +277,31 @@ async fn spawn_app_handler(
 }
 
 async fn spawn_cli_handler(
+    State(state): State<Arc<Mutex<AppState>>>,
     Json(req): Json<SpawnCliRequest>,
 ) -> Result<Json<crate::process::ProcessInfo>, AppError> {
     let cmd = req.command.clone();
-    let info =
-        tokio::task::spawn_blocking(move || ProcessManager::spawn_cli(&req.command, &req.args))
-            .await
-            .map_err(|e| AppError::Process(format!("spawn_cli panicked: {e}")))??;
-    tracing::info!("spawned cli: {cmd}");
+    let cols = req.cols.unwrap_or(80);
+    let rows = req.rows.unwrap_or(24);
+    let info = tokio::task::spawn_blocking(move || {
+        ProcessManager::spawn_cli_with_size(&req.command, &req.args, cols, rows)
+    })
+    .await
+    .map_err(|e| AppError::Process(format!("spawn_cli panicked: {e}")))??;
+
+    // Clear pending CLI and update instance status after successful spawn
+    {
+        let mut s = state.lock().await;
+        s.pending_cli = None;
+        if let Some(ref id) = s.sandbox_id {
+            let registry = crate::instance::InstanceRegistry::default();
+            if let Err(e) = registry.update_status(id, crate::instance::InstanceStatus::Running) {
+                tracing::warn!("Failed to update instance status to Running: {e}");
+            }
+        }
+    }
+
+    tracing::info!("spawned cli: {cmd} ({cols}x{rows})");
     Ok(Json(info))
 }
 
@@ -347,28 +419,165 @@ async fn screenshot_region_handler(
     Ok((StatusCode::OK, [("content-type", "image/png")], png_data))
 }
 
-async fn pty_write_handler(
-    Json(req): Json<PtyWriteRequest>,
-) -> Result<Json<serde_json::Value>, AppError> {
-    tracing::info!(
-        "[pty] write: pid={}, len={}, preview={:?}",
-        req.pid,
-        req.data.len(),
-        if req.data.len() > 40 {
-            &req.data[..40]
-        } else {
-            &req.data
-        }
-    );
-    ProcessManager::send_input(req.pid, req.data.as_bytes())?;
-    Ok(Json(serde_json::json!({"written": true})))
+async fn pty_ws_handler(
+    Path(pid): Path<u32>,
+    ws: WebSocketUpgrade,
+) -> Result<impl IntoResponse, AppError> {
+    // Validate that the PTY session exists before upgrading
+    ProcessManager::subscribe_output(pid)
+        .map_err(|e| AppError::Process(format!("PTY session {pid} not found: {e}")))?;
+    Ok(ws.on_upgrade(move |socket| handle_pty_ws(pid, socket)))
 }
 
-async fn pty_output_handler(Path(pid): Path<u32>) -> Result<Json<serde_json::Value>, AppError> {
-    let output = tokio::task::spawn_blocking(move || ProcessManager::read_output(pid))
-        .await
-        .map_err(|e| AppError::Process(format!("pty_output panicked: {e}")))??;
-    Ok(Json(serde_json::json!({"output": output})))
+async fn handle_pty_ws(pid: u32, socket: WebSocket) {
+    let mut rx = match ProcessManager::subscribe_output(pid) {
+        Ok(rx) => rx,
+        Err(e) => {
+            tracing::warn!("[pty_ws] pid={pid}: subscribe failed: {e}");
+            return;
+        }
+    };
+
+    let (mut ws_tx, mut ws_rx) = socket.split();
+
+    // Phase 1: Replay existing output from SQLite (late subscriber recovery)
+    match ProcessManager::get_store(pid) {
+        Ok(store) => match store.read_all() {
+            Ok(chunks) => {
+                let total_chars: usize = chunks.iter().map(|c| c.data.len()).sum();
+                let num_chunks = chunks.len();
+                tracing::info!(
+                    "[pty_ws] pid={pid}: Phase 1 replaying {num_chunks} chunks ({total_chars} chars) from SQLite"
+                );
+                for chunk in chunks {
+                    if ws_tx
+                        .send(Message::Binary(chunk.data.into_bytes().into()))
+                        .await
+                        .is_err()
+                    {
+                        tracing::info!("[pty_ws] pid={pid}: client disconnected during replay");
+                        return;
+                    }
+                }
+                tracing::info!(
+                    "[pty_ws] pid={pid}: Phase 1 complete, replayed {num_chunks} chunks"
+                );
+            }
+            Err(e) => {
+                tracing::warn!("[pty_ws] pid={pid}: SQLite read failed: {e}");
+            }
+        },
+        Err(e) => {
+            tracing::warn!("[pty_ws] pid={pid}: get_store failed: {e}");
+        }
+    }
+
+    // Phase 2: Inline streaming loop — sends PTY output directly to WebSocket.
+    // Accumulates output and flushes in batches to reduce write overhead.
+    tracing::info!("[pty_ws] pid={pid}: Phase 2 starting inline streaming");
+    let mut msg_count = 0u64;
+    let mut buffer = String::with_capacity(8192);
+    let mut flush_interval = tokio::time::interval(std::time::Duration::from_millis(16));
+    flush_interval.tick().await; // consume the first immediate tick
+
+    loop {
+        tokio::select! {
+            // Branch 1: broadcast → buffer (PTY output)
+            result = rx.recv() => {
+                match result {
+                    Ok(msg) => {
+                        msg_count += 1;
+                        buffer.push_str(&msg);
+                        if msg_count <= 20 || msg_count.is_multiple_of(50) {
+                            tracing::info!(
+                                "[pty_ws] pid={pid}: Phase 2 buffered msg #{msg_count}, {} bytes (buf: {})",
+                                msg.len(), buffer.len()
+                            );
+                        }
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                        tracing::warn!("[pty_ws] pid={pid}: broadcast lagged, skipped {n}");
+                        continue;
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                        tracing::info!("[pty_ws] pid={pid}: broadcast closed after {msg_count} msgs");
+                        // Flush remaining buffer before exiting
+                        if !buffer.is_empty() {
+                            let _ = ws_tx.send(Message::Binary(std::mem::take(&mut buffer).into_bytes().into())).await;
+                        }
+                        break;
+                    }
+                }
+            }
+            // Branch 2: flush timer — send accumulated buffer to WS
+            _ = flush_interval.tick() => {
+                if buffer.is_empty() {
+                    continue;
+                }
+                let batch = std::mem::take(&mut buffer);
+                let batch_len = batch.len();
+                match ws_tx.send(Message::Binary(batch.into_bytes().into())).await {
+                    Ok(()) => {
+                        tracing::info!("[pty_ws] pid={pid}: flushed {} bytes to WS (msg #{msg_count})", batch_len);
+                    }
+                    Err(e) => {
+                        tracing::warn!("[pty_ws] pid={pid}: WS send failed: {e}");
+                        break;
+                    }
+                }
+            }
+            // Branch 3: WebSocket → PTY (frontend input → PTY)
+            maybe_msg = ws_rx.next() => {
+                match maybe_msg {
+                    Some(Ok(msg)) => {
+                        match msg {
+                            Message::Text(text) => {
+                                let text_str = text.to_string();
+                                if let Ok(control) = serde_json::from_str::<serde_json::Value>(&text_str) {
+                                    if let Some(msg_type) = control.get("type").and_then(|v| v.as_str()) {
+                                        if msg_type == "resize" {
+                                            let cols = control.get("cols").and_then(|v| v.as_u64()).unwrap_or(80) as u16;
+                                            let rows = control.get("rows").and_then(|v| v.as_u64()).unwrap_or(24) as u16;
+                                            let _ = tokio::task::spawn_blocking(move || {
+                                                ProcessManager::resize_pty(pid, cols, rows)
+                                            }).await;
+                                            continue;
+                                        }
+                                    }
+                                }
+                                let _ = tokio::task::spawn_blocking(move || {
+                                    ProcessManager::send_input(pid, text_str.as_bytes())
+                                }).await;
+                            }
+                            Message::Binary(data) => {
+                                let bytes = data.to_vec();
+                                let _ = tokio::task::spawn_blocking(move || {
+                                    ProcessManager::send_input(pid, &bytes)
+                                }).await;
+                            }
+                            Message::Close(_) => {
+                                tracing::info!("[pty_ws] pid={pid}: client sent Close frame");
+                                break;
+                            }
+                            _ => {}
+                        }
+                    }
+                    Some(Err(e)) => {
+                        tracing::warn!("[pty_ws] pid={pid}: recv error: {e}");
+                        break;
+                    }
+                    None => {
+                        tracing::info!("[pty_ws] pid={pid}: WebSocket stream ended");
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    tracing::info!("[pty_ws] pid={pid}: handle_pty_ws returning after {msg_count} msgs");
+
+    tracing::info!("[pty_ws] pid={pid}: handle_pty_ws returning after {msg_count} msgs");
 }
 
 async fn ui_inspect_handler(Path(window_id): Path<u32>) -> Result<Json<UiElement>, AppError> {
@@ -426,6 +635,7 @@ mod tests {
             start_time: Instant::now(),
             window_id: Some(42),
             target_pid: None,
+            pending_cli: None,
         }))
     }
 
@@ -454,6 +664,72 @@ mod tests {
         assert_eq!(json["sandbox_id"], "test-sandbox-01");
     }
 
+    // ── Readiness ─────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn readyz_with_pending_cli() {
+        let state = Arc::new(Mutex::new(AppState {
+            sandbox_id: Some("test-readyz".into()),
+            start_time: Instant::now(),
+            window_id: None,
+            target_pid: None,
+            pending_cli: Some(PendingCli {
+                command: "zsh".into(),
+                args: vec![],
+            }),
+        }));
+        let app = build_router(state);
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .uri("/readyz")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), 1024).await.unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["status"], "ready");
+        assert_eq!(json["http_server"], true);
+        assert_eq!(json["pending_cli"], true);
+    }
+
+    #[tokio::test]
+    async fn readyz_without_anything() {
+        // No pending_cli and no PTY sessions → not_ready
+        let app = test_router();
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .uri("/readyz")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
+        let body = axum::body::to_bytes(resp.into_body(), 1024).await.unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["status"], "not_ready");
+        assert_eq!(json["pty_active"], false);
+        assert_eq!(json["pending_cli"], false);
+    }
+
+    #[test]
+    fn readyz_response_serializes() {
+        let resp = ReadyzResponse {
+            status: "ready".to_string(),
+            http_server: true,
+            pty_active: false,
+            pending_cli: true,
+        };
+        let json = serde_json::to_string(&resp).unwrap();
+        assert!(json.contains("\"status\":\"ready\""));
+        assert!(json.contains("\"pending_cli\":true"));
+    }
+
     // ── Sandbox Info ───────────────────────────────────────────
 
     #[tokio::test]
@@ -473,6 +749,53 @@ mod tests {
         let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(json["sandbox_id"], "test-sandbox-01");
         assert_eq!(json["window_id"], 42);
+    }
+
+    #[tokio::test]
+    async fn pending_cli_returns_null_when_none() {
+        let app = test_router();
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .uri("/sandbox/pending-cli")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), 1024).await.unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert!(json["command"].is_null());
+    }
+
+    #[tokio::test]
+    async fn pending_cli_returns_config_when_set() {
+        let state = Arc::new(Mutex::new(AppState {
+            sandbox_id: Some("test".into()),
+            start_time: Instant::now(),
+            window_id: None,
+            target_pid: None,
+            pending_cli: Some(PendingCli {
+                command: "opencode".into(),
+                args: vec!["--verbose".into()],
+            }),
+        }));
+        let app = build_router(state);
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .uri("/sandbox/pending-cli")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), 1024).await.unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["command"], "opencode");
+        assert_eq!(json["args"], serde_json::json!(["--verbose"]));
     }
 
     // ── Input handlers ─────────────────────────────────────────
@@ -791,40 +1114,35 @@ mod tests {
         );
     }
 
-    // ── PTY ────────────────────────────────────────────────────
+    // ── PTY WebSocket ──────────────────────────────────────────
 
     #[tokio::test]
-    async fn pty_write_nonexistent() {
+    async fn pty_ws_nonexistent_pid() {
+        // WebSocket upgrade for nonexistent PTY should return an error
         let app = test_router();
         let resp = app
             .oneshot(
                 Request::builder()
-                    .method("POST")
-                    .uri("/pty/write")
-                    .header(header::CONTENT_TYPE, "application/json")
-                    .body(Body::from(r#"{"pid": 99999, "data": "test"}"#))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        let status = resp.status();
-        assert!(status == StatusCode::OK || status == StatusCode::INTERNAL_SERVER_ERROR);
-    }
-
-    #[tokio::test]
-    async fn pty_output_nonexistent() {
-        let app = test_router();
-        let resp = app
-            .oneshot(
-                Request::builder()
-                    .uri("/pty/output/99999")
+                    .uri("/pty/ws/99999")
+                    .header("Upgrade", "websocket")
+                    .header("Connection", "Upgrade")
+                    .header("Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ==")
+                    .header("Sec-WebSocket-Version", "13")
                     .body(Body::empty())
                     .unwrap(),
             )
             .await
             .unwrap();
+        // Should be 500 (PTY not found), 400, or 426 (Upgrade Required - expected
+        // when oneshot doesn't complete the WebSocket handshake)
         let status = resp.status();
-        assert!(status == StatusCode::OK || status == StatusCode::INTERNAL_SERVER_ERROR);
+        assert!(
+            status == StatusCode::OK
+                || status == StatusCode::INTERNAL_SERVER_ERROR
+                || status == StatusCode::BAD_REQUEST
+                || status == StatusCode::UPGRADE_REQUIRED,
+            "Expected OK/500/400/426 for nonexistent PTY WebSocket, got: {status}"
+        );
     }
 
     // ── UI ─────────────────────────────────────────────────────
@@ -1052,6 +1370,7 @@ mod tests {
             start_time: Instant::now(),
             window_id: None,
             target_pid: None,
+            pending_cli: None,
         }));
         let app = build_router(state);
         let resp = app
@@ -1172,6 +1491,21 @@ mod tests {
     }
 
     #[test]
+    fn spawn_cli_request_with_size() {
+        let req: SpawnCliRequest =
+            serde_json::from_str(r#"{"command": "zsh", "cols": 120, "rows": 40}"#).unwrap();
+        assert_eq!(req.cols, Some(120));
+        assert_eq!(req.rows, Some(40));
+    }
+
+    #[test]
+    fn spawn_cli_request_default_size() {
+        let req: SpawnCliRequest = serde_json::from_str(r#"{"command": "zsh"}"#).unwrap();
+        assert_eq!(req.cols, None);
+        assert_eq!(req.rows, None);
+    }
+
+    #[test]
     fn kill_request_deserialize() {
         let req: KillRequest = serde_json::from_str(r#"{"pid": 1234}"#).unwrap();
         assert_eq!(req.pid, 1234);
@@ -1183,14 +1517,6 @@ mod tests {
             serde_json::from_str(r#"{"x": 10, "y": 20, "width": 100, "height": 200}"#).unwrap();
         assert_eq!(req.x, 10);
         assert_eq!(req.width, 100);
-    }
-
-    #[test]
-    fn pty_write_request_deserialize() {
-        let req: PtyWriteRequest =
-            serde_json::from_str(r#"{"pid": 42, "data": "hello\n"}"#).unwrap();
-        assert_eq!(req.pid, 42);
-        assert_eq!(req.data, "hello\n");
     }
 
     #[test]
@@ -1338,6 +1664,7 @@ mod tests {
             start_time: Instant::now(),
             window_id: Some(42),
             target_pid: Some(9999), // Simulates Tauri process PID
+            pending_cli: None,
         }));
         let app = build_router(state);
         let resp = app
@@ -1358,30 +1685,6 @@ mod tests {
         assert!(
             matches!(status.as_u16(), 200 | 500),
             "CGEvent type should either succeed or fail with internal error, got: {status}"
-        );
-    }
-
-    #[tokio::test]
-    async fn pty_write_with_valid_pid() {
-        // PTY write path directly writes to the process stdin.
-        // This is the correct path for CLI sandboxes.
-        // No PTY session exists in tests, so it returns 500.
-        let app = test_router();
-        let resp = app
-            .oneshot(
-                Request::builder()
-                    .method("POST")
-                    .uri("/pty/write")
-                    .header(header::CONTENT_TYPE, "application/json")
-                    .body(Body::from(r#"{"pid": 99999, "data": "hello"}"#))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        let status = resp.status();
-        assert!(
-            status == StatusCode::OK || status == StatusCode::INTERNAL_SERVER_ERROR,
-            "pty_write should succeed or fail gracefully: {status}"
         );
     }
 

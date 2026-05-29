@@ -108,6 +108,43 @@ describe("API client", () => {
     });
   });
 
+  // ── Pending CLI ─────────────────────────────────────
+
+  describe("getPendingCli()", () => {
+    it("returns pending CLI info on success", async () => {
+      mockFetch.mockResolvedValueOnce(
+        mockResponse(
+          true,
+          200,
+          '{"command":"claude","args":["--help"]}',
+        ),
+      );
+      const result = await api.getPendingCli();
+      expect(result.command).toBe("claude");
+      expect(result.args).toEqual(["--help"]);
+      expect(mockFetch).toHaveBeenCalledWith(
+        "http://127.0.0.1:5801/sandbox/pending-cli",
+      );
+    });
+
+    it("returns { command: null } on non-ok response", async () => {
+      mockFetch.mockResolvedValueOnce(
+        mockResponse(false, 500, "not found"),
+      );
+      const result = await api.getPendingCli();
+      expect(result).toEqual({ command: null });
+    });
+
+    it("returns pending CLI with no args", async () => {
+      mockFetch.mockResolvedValueOnce(
+        mockResponse(true, 200, '{"command":"zsh"}'),
+      );
+      const result = await api.getPendingCli();
+      expect(result.command).toBe("zsh");
+      expect(result.args).toBeUndefined();
+    });
+  });
+
   // ── request() helper error handling ──────────────────
 
   describe("request() error handling", () => {
@@ -344,34 +381,92 @@ describe("API client", () => {
     });
   });
 
-  // ── PTY ───────────────────────────────────────────────
+  // ── PTY WebSocket ─────────────────────────────────────
 
-  describe("ptyWrite()", () => {
-    it("sends POST with pid and data", async () => {
-      mockFetch.mockResolvedValueOnce(
-        mockResponse(true, 200, '{"written":true}'),
+  describe("ptyConnectWs()", () => {
+    it("returns connection object with expected methods", () => {
+      // Mock WebSocket globally (without affecting fetch)
+      const mockWs = {
+        readyState: 1, // OPEN
+        send: vi.fn(),
+        close: vi.fn(),
+        onmessage: null as ((e: { data: string }) => void) | null,
+      };
+      vi.stubGlobal(
+        "WebSocket",
+        vi.fn().mockImplementation(() => mockWs),
       );
-      await api.ptyWrite(42, "hello\n");
-      const body = JSON.parse(mockFetch.mock.calls[0][1]?.body as string);
-      expect(body).toEqual({ pid: 42, data: "hello\n" });
+
+      const conn = api.ptyConnectWs(42);
+      expect(conn).toHaveProperty("ws");
+      expect(typeof conn.sendInput).toBe("function");
+      expect(typeof conn.resize).toBe("function");
+      expect(typeof conn.onOutput).toBe("function");
+      expect(typeof conn.onError).toBe("function");
+      expect(typeof conn.onClose).toBe("function");
+      expect(typeof conn.close).toBe("function");
+
+      vi.unstubAllGlobals();
+      // Restore fetch mock that unstubAllGlobals removed
+      vi.stubGlobal("fetch", mockFetch);
     });
-  });
 
-  describe("ptyRead()", () => {
-    it("returns output on success", async () => {
-      mockFetch.mockResolvedValueOnce(
-        mockResponse(true, 200, '{"output":"hello world"}'),
+    it("fires onError callback on WebSocket error", () => {
+      const mockWs = {
+        readyState: 1,
+        send: vi.fn(),
+        close: vi.fn(),
+        onopen: null as (() => void) | null,
+        onclose: null as ((e: { code: number; reason: string }) => void) | null,
+        onerror: null as ((e: Event) => void) | null,
+        onmessage: null as ((e: { data: string }) => void) | null,
+      };
+      vi.stubGlobal(
+        "WebSocket",
+        vi.fn().mockImplementation(() => mockWs),
       );
-      const result = await api.ptyRead(42);
-      expect(result.output).toBe("hello world");
+
+      const conn = api.ptyConnectWs(42);
+      const errorCb = vi.fn();
+      conn.onError(errorCb);
+
+      // Simulate WebSocket error
+      mockWs.onerror?.({} as Event);
+
+      expect(errorCb).toHaveBeenCalledOnce();
+      expect(errorCb.mock.calls[0][0]).toMatch(/WebSocket connection to PTY 42 failed/);
+
+      vi.unstubAllGlobals();
+      vi.stubGlobal("fetch", mockFetch);
     });
 
-    it("returns null output", async () => {
-      mockFetch.mockResolvedValueOnce(
-        mockResponse(true, 200, '{"output":null}'),
+    it("fires onClose callback on WebSocket close", () => {
+      const mockWs = {
+        readyState: 1,
+        send: vi.fn(),
+        close: vi.fn(),
+        onopen: null as (() => void) | null,
+        onclose: null as ((e: { code: number; reason: string }) => void) | null,
+        onerror: null as ((e: Event) => void) | null,
+        onmessage: null as ((e: { data: string }) => void) | null,
+      };
+      vi.stubGlobal(
+        "WebSocket",
+        vi.fn().mockImplementation(() => mockWs),
       );
-      const result = await api.ptyRead(42);
-      expect(result.output).toBeNull();
+
+      const conn = api.ptyConnectWs(42);
+      const closeCb = vi.fn();
+      conn.onClose(closeCb);
+
+      // Simulate WebSocket close
+      mockWs.onclose?.({ code: 1006, reason: "abnormal" });
+
+      expect(closeCb).toHaveBeenCalledOnce();
+      expect(closeCb.mock.calls[0]).toEqual([1006, "abnormal"]);
+
+      vi.unstubAllGlobals();
+      vi.stubGlobal("fetch", mockFetch);
     });
   });
 

@@ -1,3 +1,5 @@
+import { debugLog, debugError } from "./logger";
+
 /**
  * Sandbox HTTP API client.
  *
@@ -70,6 +72,19 @@ export async function health(): Promise<HealthResponse> {
 
 export async function sandboxInfo(): Promise<SandboxInfo> {
   const res = await fetch(`${BASE()}/sandbox/info`);
+  return res.json();
+}
+
+// ── Pending CLI ──────────────────────────────────────
+
+export interface PendingCli {
+  command: string | null;
+  args?: string[];
+}
+
+export async function getPendingCli(): Promise<PendingCli> {
+  const res = await fetch(`${BASE()}/sandbox/pending-cli`);
+  if (!res.ok) return { command: null };
   return res.json();
 }
 
@@ -181,15 +196,20 @@ export async function spawnApp(path: string): Promise<ProcessInfo> {
 export async function spawnCli(
   command: string,
   args: string[],
+  cols?: number,
+  rows?: number,
 ): Promise<ProcessInfo> {
+  const body: Record<string, unknown> = { command, args };
+  if (cols !== undefined) body.cols = cols;
+  if (rows !== undefined) body.rows = rows;
   const res = await fetch(`${BASE()}/cli/spawn`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ command, args }),
+    body: JSON.stringify(body),
   });
   if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`spawnCli failed: ${body}`);
+    const text = await res.text();
+    throw new Error(`spawnCli failed: ${text}`);
   }
   return res.json();
 }
@@ -206,18 +226,88 @@ export async function killProcess(pid: number): Promise<void> {
   });
 }
 
-// ── PTY ────────────────────────────────────────────────
+// ── PTY WebSocket ──────────────────────────────────────
 
-export async function ptyWrite(pid: number, data: string): Promise<void> {
-  await request("/pty/write", {
-    method: "POST",
-    body: JSON.stringify({ pid, data }),
-  });
+function wsBaseUrl(): string {
+  const port = getPort();
+  return `ws://127.0.0.1:${port}`;
 }
 
-export async function ptyRead(pid: number): Promise<{ output: string | null }> {
-  const res = await fetch(`${BASE()}/pty/output/${pid}`);
-  return res.json();
+export interface PtyWsConnection {
+  ws: WebSocket;
+  onOutput: (cb: (data: string | Uint8Array) => void) => () => void;
+  onError: (cb: (msg: string) => void) => () => void;
+  onClose: (cb: (code: number, reason: string) => void) => () => void;
+  sendInput: (data: string) => void;
+  resize: (cols: number, rows: number) => void;
+  close: () => void;
+}
+
+export function ptyConnectWs(pid: number): PtyWsConnection {
+  const ws = new WebSocket(`${wsBaseUrl()}/pty/ws/${pid}`);
+  ws.binaryType = "arraybuffer";
+  const outputListeners: ((data: string | Uint8Array) => void)[] = [];
+  const errorListeners: ((msg: string) => void)[] = [];
+  const closeListeners: ((code: number, reason: string) => void)[] = [];
+
+  ws.onopen = () => {
+    debugLog(`frontend: connected to /pty/ws/${pid}`);
+  };
+  ws.onclose = (e) => {
+    debugLog(`frontend: connection closed, code=${e.code}, reason=${e.reason}`);
+    for (const cb of closeListeners) cb(e.code, e.reason);
+  };
+  ws.onerror = () => {
+    const msg = `WebSocket connection to PTY ${pid} failed`;
+    debugError(`frontend: ${msg}`);
+    for (const cb of errorListeners) cb(msg);
+  };
+  ws.onmessage = (e) => {
+    if (e.data instanceof ArrayBuffer) {
+      const u8 = new Uint8Array(e.data);
+      debugLog(`frontend: received binary message, len=${u8.length}`);
+      for (const cb of outputListeners) cb(u8);
+    } else if (typeof e.data === "string") {
+      const preview = e.data.length > 80 ? e.data.substring(0, 80) : e.data;
+      debugLog(`frontend: received text message, len=${e.data.length}, preview=${JSON.stringify(preview)}`);
+      for (const cb of outputListeners) cb(e.data);
+    }
+  };
+
+  return {
+    ws,
+    onOutput(cb) {
+      outputListeners.push(cb);
+      return () => {
+        const idx = outputListeners.indexOf(cb);
+        if (idx >= 0) outputListeners.splice(idx, 1);
+      };
+    },
+    onError(cb) {
+      errorListeners.push(cb);
+      return () => {
+        const idx = errorListeners.indexOf(cb);
+        if (idx >= 0) errorListeners.splice(idx, 1);
+      };
+    },
+    onClose(cb) {
+      closeListeners.push(cb);
+      return () => {
+        const idx = closeListeners.indexOf(cb);
+        if (idx >= 0) closeListeners.splice(idx, 1);
+      };
+    },
+    sendInput(data) {
+      if (ws.readyState === WebSocket.OPEN) ws.send(data);
+    },
+    resize(cols, rows) {
+      if (ws.readyState === WebSocket.OPEN)
+        ws.send(JSON.stringify({ type: "resize", cols, rows }));
+    },
+    close() {
+      ws.close();
+    },
+  };
 }
 
 // ── Windows ────────────────────────────────────────────

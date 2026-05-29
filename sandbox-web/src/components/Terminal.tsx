@@ -7,8 +7,10 @@ import type { TerminalTheme } from "../themes/types";
 import "@xterm/xterm/css/xterm.css";
 
 interface TerminalProps {
-  onInput?: (data: string) => void;
   activePid?: number | null;
+  onReady?: (cols: number, rows: number) => void;
+  onWsError?: (msg: string) => void;
+  onWsClose?: (code: number, reason: string) => void;
 }
 
 function buildTerminalTheme(t: TerminalTheme): Record<string, string> {
@@ -38,39 +40,74 @@ function buildTerminalTheme(t: TerminalTheme): Record<string, string> {
   };
 }
 
-export default function SandboxTerminal({
-  onInput,
-  activePid = null,
-}: TerminalProps) {
+/**
+ * Bypass xterm.js WriteBuffer's setTimeout-based scheduling which stalls in
+ * Tauri's WKWebView. Instead, call InputHandler.parse() directly and then
+ * fire the write-parsed event to trigger rendering.
+ */
+function writeDirect(term: Terminal, data: string | Uint8Array): void {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const core = (term as any)._core ?? (term as any).core;
+  if (!core) return;
+  const ih = core._inputHandler;
+  if (!ih || typeof ih.parse !== "function") return;
+
+  // 防止单次解析过大数据导致主线程冻结
+  const CHUNK_SIZE = 32 * 1024; // 32KB
+  if (typeof data === "string" && data.length > CHUNK_SIZE) {
+    for (let i = 0; i < data.length; i += CHUNK_SIZE) {
+      ih.parse(data.slice(i, i + CHUNK_SIZE), true);
+    }
+  } else if (data instanceof Uint8Array && data.length > CHUNK_SIZE) {
+    for (let i = 0; i < data.length; i += CHUNK_SIZE) {
+      ih.parse(data.slice(i, i + CHUNK_SIZE), true);
+    }
+  } else {
+    ih.parse(data, true);
+  }
+
+  if (core._writeBuffer?._onWriteParsed) {
+    core._writeBuffer._onWriteParsed.fire();
+  }
+}
+
+export default function SandboxTerminal({ activePid = null, onReady, onWsError, onWsClose }: TerminalProps) {
   const terminalRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const wsConnRef = useRef<api.PtyWsConnection | null>(null);
+  const activePidRef = useRef(activePid);
+  const onReadyRef = useRef(onReady);
+  const onWsErrorRef = useRef(onWsError);
+  const onWsCloseRef = useRef(onWsClose);
+  onReadyRef.current = onReady;
+  onWsErrorRef.current = onWsError;
+  onWsCloseRef.current = onWsClose;
   const { theme } = useTheme();
-  const onInputRef = useRef(onInput);
-  onInputRef.current = onInput;
+
+  // Keep activePidRef in sync so the resize handler (which closes over it)
+  // always reads the latest value without recreating the init effect.
+  useEffect(() => {
+    activePidRef.current = activePid;
+  }, [activePid]);
 
   // Initialize xterm.js once — theme updates in-place
   useEffect(() => {
     if (!terminalRef.current) return;
     if (xtermRef.current) return; // already initialized
 
-    console.log("[Terminal] initializing xterm.js");
-
     const term = new Terminal({
       cursorBlink: true,
       cursorStyle: "bar",
       fontSize: 14,
-      lineHeight: 1.35,
       fontFamily:
         '"SF Mono", "Menlo", "Monaco", "Cascadia Code", "JetBrains Mono", monospace',
       fontWeight: "400",
       fontWeightBold: "600",
-      letterSpacing: 0,
       scrollback: 10000,
       theme: buildTerminalTheme(theme.terminal),
       allowProposedApi: true,
-      drawBoldTextInBrightColors: true,
+      allowTransparency: true,
     });
 
     const fitAddon = new FitAddon();
@@ -78,11 +115,22 @@ export default function SandboxTerminal({
     term.open(terminalRef.current);
     fitAddon.fit();
 
+    // Notify parent of initial terminal size
+    onReadyRef.current?.(term.cols, term.rows);
+
+    // Send keyboard input directly to the WebSocket connection
     term.onData((data) => {
-      onInputRef.current?.(data);
+      wsConnRef.current?.sendInput(data);
     });
 
-    const handleResize = () => fitAddon.fit();
+    const handleResize = () => {
+      fitAddon.fit();
+      const pid = activePidRef.current;
+      const conn = wsConnRef.current;
+      if (pid && conn) {
+        conn.resize(term.cols, term.rows);
+      }
+    };
     window.addEventListener("resize", handleResize);
 
     xtermRef.current = term;
@@ -100,37 +148,52 @@ export default function SandboxTerminal({
     if (!xtermRef.current) return;
     const newTheme = buildTerminalTheme(theme.terminal);
     xtermRef.current.options.theme = newTheme;
-    console.log(`[Terminal] theme updated to: ${theme.id} (${theme.kind})`);
   }, [theme.id]);
 
-  // PTY output polling
+  // PTY WebSocket connection
   useEffect(() => {
-    if (pollRef.current) {
-      clearInterval(pollRef.current);
-      pollRef.current = null;
-    }
+    // Clean up previous connection
+    wsConnRef.current?.close();
+    wsConnRef.current = null;
 
     if (activePid === null || activePid === undefined) return;
 
-    pollRef.current = setInterval(async () => {
-      try {
-        const result = await api.ptyRead(activePid);
-        if (result.output) {
-          xtermRef.current?.write(result.output);
+    const conn = api.ptyConnectWs(activePid);
+    wsConnRef.current = conn;
+
+    const decoder = new TextDecoder();
+    conn.onOutput((data) => {
+      const term = xtermRef.current;
+      if (!term) return;
+      const writeData = typeof data === "string" ? data : decoder.decode(data as Uint8Array);
+      writeDirect(term, writeData);
+    });
+
+    // Notify parent of WebSocket errors and closures
+    conn.onError((msg) => {
+      onWsErrorRef.current?.(msg);
+    });
+    conn.onClose((code, reason) => {
+      onWsCloseRef.current?.(code, reason);
+    });
+
+    // Send initial resize so PTY matches xterm container size
+    const term = xtermRef.current;
+    if (term) {
+      const ws = conn.ws;
+      const sendResize = () => {
+        if (ws.readyState === WebSocket.OPEN) {
+          conn.resize(term.cols, term.rows);
+        } else {
+          setTimeout(sendResize, 100);
         }
-      } catch {
-        if (pollRef.current) {
-          clearInterval(pollRef.current);
-          pollRef.current = null;
-        }
-      }
-    }, 100);
+      };
+      sendResize();
+    }
 
     return () => {
-      if (pollRef.current) {
-        clearInterval(pollRef.current);
-        pollRef.current = null;
-      }
+      conn.close();
+      wsConnRef.current = null;
     };
   }, [activePid]);
 
@@ -141,7 +204,7 @@ export default function SandboxTerminal({
   }, []);
 
   return (
-    <div ref={containerRef} className="w-full h-full">
+    <div ref={containerRef} className="w-full h-full relative">
       <div ref={terminalRef} className="w-full h-full" />
     </div>
   );

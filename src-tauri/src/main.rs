@@ -1,8 +1,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use sandbox_core::instance::{InstanceKind, InstanceRegistry, SandboxInstance};
-use sandbox_core::process::ProcessManager;
 use sandbox_core::sandbox::{Sandbox, SandboxConfig};
+use sandbox_core::server::PendingCli;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use tauri::Manager;
@@ -114,16 +114,23 @@ fn main() {
         .or_else(|| Some(uuid::Uuid::new_v4().to_string()[..8].to_string()));
     let sandbox_port = launch_args.sandbox_port.or(Some(5801));
 
+    // Initialize file logging after sandbox_id is known
+    let (_sandbox_guard, _server_guard) =
+        sandbox_core::logging::init_sandbox_logging(sandbox_id.as_deref().unwrap_or("unknown"));
+
+    let mode = launch_args.mode.clone().or_else(|| Some("cli".to_string()));
+    let cmd = launch_args.cmd.clone().or_else(|| Some("zsh".to_string()));
+
     let config = SandboxConfig {
         id: launch_args.sandbox_id.clone(),
         port: launch_args.sandbox_port,
-        mode: launch_args.mode.clone(),
-        command: launch_args.cmd.clone(),
+        mode: mode.clone(),
+        command: cmd.clone(),
         args: launch_args.args.clone(),
         ..SandboxConfig::default()
     };
 
-    let kind = match (launch_args.mode.as_deref(), &launch_args.cmd) {
+    let kind = match (mode.as_deref(), &cmd) {
         (Some("cli"), Some(cmd)) => Some(InstanceKind::Cli {
             command: cmd.clone(),
             args: launch_args.args.clone(),
@@ -171,11 +178,21 @@ fn main() {
 
             // Start embedded HTTP server if in managed mode
             if let (Some(id), Some(port)) = (&sandbox_id, sandbox_port) {
+                let pending_cli = if let Some(InstanceKind::Cli { command, args }) = &kind {
+                    Some(PendingCli {
+                        command: command.clone(),
+                        args: args.clone(),
+                    })
+                } else {
+                    None
+                };
+
                 let state = Arc::new(tokio::sync::Mutex::new(sandbox_core::server::AppState {
                     sandbox_id: Some(id.clone()),
                     start_time: Instant::now(),
                     window_id: None,
                     target_pid: Some(std::process::id()),
+                    pending_cli,
                 }));
 
                 // Clone for window discovery task
@@ -183,6 +200,7 @@ fn main() {
 
                 let router = sandbox_core::server::build_router(state);
                 let port_val = port;
+                let sandbox_id_for_server = sandbox_id.clone();
 
                 tauri::async_runtime::spawn(async move {
                     let addr = format!("127.0.0.1:{port_val}");
@@ -195,6 +213,16 @@ fn main() {
                         }
                         Err(e) => {
                             tracing::error!("Failed to bind HTTP server on port {port_val}: {e}");
+                            if let Some(ref id) = sandbox_id_for_server {
+                                let registry =
+                                    sandbox_core::instance::InstanceRegistry::default();
+                                let _ = registry.update_status(
+                                    id,
+                                    sandbox_core::instance::InstanceStatus::Error(format!(
+                                        "HTTP bind failed: {e}"
+                                    )),
+                                );
+                            }
                         }
                     }
                 });
@@ -214,34 +242,8 @@ fn main() {
                     tracing::error!("Failed to register instance: {e}");
                 }
 
-                // Auto-spawn CLI if in CLI mode
-                if let Some(InstanceKind::Cli { command, args }) = &kind {
-                    let cmd = command.clone();
-                    let cmd_args = args.clone();
-                    tracing::info!("[setup] auto-spawn CLI: cmd={:?}, args={:?}", cmd, cmd_args);
-                    tauri::async_runtime::spawn(async move {
-                        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-                        tracing::info!("[setup] spawning CLI now: {} {:?}", cmd, cmd_args);
-                        match ProcessManager::spawn_cli(&cmd, &cmd_args) {
-                            Ok(info) => {
-                                tracing::info!(
-                                    "[setup] auto-spawned CLI: {} (pid={})",
-                                    cmd,
-                                    info.pid
-                                );
-                            }
-                            Err(e) => {
-                                tracing::error!(
-                                    "[setup] failed to auto-spawn CLI '{}': {}",
-                                    cmd,
-                                    e
-                                );
-                            }
-                        }
-                    });
-                } else {
-                    tracing::info!("[setup] not CLI mode, skipping auto-spawn. kind={:?}", kind);
-                }
+                // CLI spawn is now deferred — frontend queries /sandbox/pending-cli
+                // and spawns with the correct terminal size.
 
                 // Auto-discover the Tauri window's SCWindow ID for screenshot support.
                 // The window needs time to render before ScreenCaptureKit can find it.

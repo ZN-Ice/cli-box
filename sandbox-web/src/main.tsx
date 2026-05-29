@@ -17,7 +17,9 @@ function App() {
   const [showPreview, setShowPreview] = useState(false);
   const [screenshotError, setScreenshotError] = useState<string | null>(null);
   const [command, setCommand] = useState("Sandbox");
+  const [startupError, setStartupError] = useState<string | null>(null);
   const hasConnectedRef = useRef(false);
+  const emptyCountRef = useRef(0);
 
   // Auto-connect to spawned processes
   useEffect(() => {
@@ -25,6 +27,8 @@ function App() {
       try {
         const list = await api.listProcesses();
         if (list.length > 0) {
+          emptyCountRef.current = 0;
+          setStartupError(null);
           setConnected(true);
           if (activePid === null && !hasConnectedRef.current) {
             const running = list.find((p) => p.is_running);
@@ -35,9 +39,17 @@ function App() {
           }
         } else {
           setConnected(false);
+          emptyCountRef.current++;
+          if (emptyCountRef.current >= 5) {
+            setStartupError("Waiting for process to start...");
+          }
         }
       } catch {
         setConnected(false);
+        emptyCountRef.current++;
+        if (emptyCountRef.current >= 5) {
+          setStartupError("Failed to connect to sandbox server");
+        }
       }
     };
 
@@ -65,15 +77,32 @@ function App() {
       .catch(() => {});
   }, []);
 
-  // Terminal input -> PTY
-  const handleTerminalInput = useCallback(
-    (data: string) => {
-      if (activePid !== null) {
-        api.ptyWrite(activePid, data).catch(() => {});
+  // Spawn pending CLI with correct terminal size
+  const handleSpawnReady = useCallback(async (cols: number, rows: number) => {
+    try {
+      const pending = await api.getPendingCli();
+      if (pending.command) {
+        console.log(`[App] spawning pending CLI: ${pending.command} (${cols}x${rows})`);
+        await api.spawnCli(pending.command, pending.args || [], cols, rows);
       }
-    },
-    [activePid],
-  );
+    } catch (err) {
+      console.error("[App] failed to spawn pending CLI:", err);
+      setStartupError(
+        `Failed to spawn process: ${err instanceof Error ? err.message : String(err)}`
+      );
+    }
+  }, []);
+
+  // WebSocket error/close handlers
+  const handleWsError = useCallback((msg: string) => {
+    setStartupError(msg);
+  }, []);
+
+  const handleWsClose = useCallback((code: number, reason: string) => {
+    if (code !== 1000) {
+      setStartupError(`Terminal connection closed (${code})${reason ? `: ${reason}` : ""}`);
+    }
+  }, []);
 
   // Screenshot
   const handleScreenshot = useCallback(async () => {
@@ -114,8 +143,11 @@ function App() {
         command={command}
         connected={connected}
         activePid={activePid}
-        onTerminalInput={handleTerminalInput}
+        error={startupError}
+        onSpawnReady={handleSpawnReady}
         onScreenshot={handleScreenshot}
+        onWsError={handleWsError}
+        onWsClose={handleWsClose}
       >
         {/* Screenshot error toast */}
         {screenshotError && (

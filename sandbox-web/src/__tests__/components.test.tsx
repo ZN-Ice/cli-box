@@ -14,7 +14,7 @@ describe("Dashboard", () => {
     command: "claude",
     connected: true,
     activePid: null as number | null,
-    onTerminalInput: vi.fn(),
+    onSpawnReady: vi.fn(),
     onScreenshot: vi.fn(),
   };
 
@@ -113,6 +113,25 @@ describe("Dashboard", () => {
       </ThemeProvider>,
     );
     expect(screen.getByTestId("child").textContent).toBe("Test Child");
+  });
+
+  it("renders error overlay when error prop is set", () => {
+    render(
+      <ThemeProvider>
+        <Dashboard {...defaultProps} error="Something went wrong" />
+      </ThemeProvider>,
+    );
+    expect(screen.getByText("Something went wrong")).toBeDefined();
+  });
+
+  it("does not render error overlay when error is null", () => {
+    render(
+      <ThemeProvider>
+        <Dashboard {...defaultProps} error={null} />
+      </ThemeProvider>,
+    );
+    // No warning triangle SVG with error text should be present
+    expect(screen.queryByText(/went wrong/)).toBeNull();
   });
 });
 

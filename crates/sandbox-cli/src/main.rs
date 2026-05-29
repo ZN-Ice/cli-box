@@ -17,14 +17,18 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Start a sandbox with a CLI command in a Tauri window
+    /// Start a sandbox with a shell or CLI command in a Tauri window
     Start {
-        /// Command to run (e.g., "claude", "zsh", "echo")
-        command: String,
+        /// Command to run (e.g., "claude", "zsh", "echo"). Defaults to zsh if omitted.
+        command: Option<String>,
 
         /// Additional arguments passed to the command
         #[arg(trailing_var_arg = true)]
         args: Vec<String>,
+
+        /// Start with a zsh shell (shorthand for `sandbox start zsh`)
+        #[arg(long)]
+        shell: bool,
     },
 
     /// List all sandbox instances
@@ -119,21 +123,31 @@ enum Commands {
 
     /// Shutdown the sandbox (legacy, closes first Terminal window)
     Shutdown,
+
+    /// Show log file paths for a sandbox or all sandboxes
+    Logs {
+        /// Sandbox instance ID (omit to show all log paths)
+        id: Option<String>,
+    },
 }
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
-        )
-        .init();
+    let _guard = sandbox_core::logging::init_cli_logging();
 
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Start { command, args } => {
-            cmd_start(&command, &args)?;
+        Commands::Start {
+            command,
+            args,
+            shell,
+        } => {
+            let (cmd, cmd_args) = match (shell, command) {
+                (true, _) | (false, None) => ("zsh".to_string(), args),
+                (false, Some(c)) => (c, args),
+            };
+            cmd_start(&cmd, &cmd_args).await?;
         }
         Commands::List => {
             cmd_list()?;
@@ -174,6 +188,9 @@ async fn main() -> anyhow::Result<()> {
         Commands::Shutdown => {
             cmd_shutdown()?;
         }
+        Commands::Logs { id } => {
+            cmd_logs(id.as_deref())?;
+        }
     }
 
     Ok(())
@@ -182,7 +199,10 @@ async fn main() -> anyhow::Result<()> {
 // ── Command Implementations ─────────────────────────────
 
 /// Launch the Tauri sandbox app with the given CLI command inside it.
-fn cmd_start(command: &str, args: &[String]) -> anyhow::Result<()> {
+///
+/// After spawning the Tauri process, polls the instance registry and `/readyz`
+/// endpoint to verify the sandbox is actually ready before returning.
+async fn cmd_start(command: &str, args: &[String]) -> anyhow::Result<()> {
     let bundle_path = find_tauri_bundle()?;
     let app_binary = bundle_path.join("Contents/MacOS/system-test-sandbox");
 
@@ -200,16 +220,98 @@ fn cmd_start(command: &str, args: &[String]) -> anyhow::Result<()> {
         .spawn()
         .context("Failed to launch Tauri sandbox app")?;
 
-    tracing::info!("[start] child pid: {:?}", child.id());
+    let child_pid = child.id();
+    tracing::info!("[start] child pid: {child_pid}");
 
     let full_cmd = if args.is_empty() {
         command.to_string()
     } else {
         format!("{} {}", command, args.join(" "))
     };
-    println!("Sandbox started: {}", full_cmd);
-    println!("Use 'sandbox list' to find the sandbox ID");
-    println!("Then 'sandbox type --id <id> \"text\"' and 'sandbox key --id <id> Return'");
+    println!("Sandbox starting: {full_cmd} ...");
+
+    let log_dir = sandbox_core::logging::log_base_dir();
+    let timeout = std::time::Duration::from_secs(30);
+    let start = std::time::Instant::now();
+    let poll_interval = std::time::Duration::from_millis(200);
+
+    // Phase 1: Wait for instance registry file to appear
+    let registry = sandbox_core::instance::InstanceRegistry::default();
+    let instance = loop {
+        if start.elapsed() > timeout {
+            anyhow::bail!(
+                "Timeout: sandbox instance did not appear after {}s.\n\
+                 The Tauri process (PID {child_pid}) may have failed to start.\n\
+                 Check logs at: {}",
+                timeout.as_secs(),
+                log_dir.display()
+            );
+        }
+        if let Ok(instances) = registry.list() {
+            if let Some(inst) = instances.iter().find(|i| i.pid == child_pid) {
+                break inst.clone();
+            }
+        }
+        tokio::time::sleep(poll_interval).await;
+    };
+
+    // Check if the instance reported an error during startup
+    if let sandbox_core::instance::InstanceStatus::Error(msg) = &instance.status {
+        anyhow::bail!(
+            "Sandbox failed to start: {msg}\n\
+             Instance ID: {}, Port: {}\n\
+             Check logs at: {}",
+            instance.id,
+            instance.port,
+            log_dir.display()
+        );
+    }
+
+    // Phase 2: Wait for HTTP server /readyz to respond
+    let client = crate::client::SandboxClient::from_port(instance.port);
+    let ready = loop {
+        if start.elapsed() > timeout {
+            anyhow::bail!(
+                "Timeout: sandbox HTTP server not ready after {}s.\n\
+                 Instance ID: {}, Port: {}\n\
+                 The server may be starting slowly or have encountered an error.\n\
+                 Check logs at: {}",
+                timeout.as_secs(),
+                instance.id,
+                instance.port,
+                log_dir.display()
+            );
+        }
+        match client.readyz().await {
+            Ok(resp) if resp.status == "ready" => break resp,
+            Ok(_) => {}  // not_ready, keep polling
+            Err(_) => {} // connection refused, keep polling
+        }
+        // Re-check instance status for errors between polls
+        if let Ok(inst) = registry.get(&instance.id) {
+            if let sandbox_core::instance::InstanceStatus::Error(msg) = &inst.status {
+                anyhow::bail!(
+                    "Sandbox failed during startup: {msg}\n\
+                     Instance ID: {}, Port: {}\n\
+                     Check logs at: {}",
+                    instance.id,
+                    instance.port,
+                    log_dir.display()
+                );
+            }
+        }
+        tokio::time::sleep(poll_interval).await;
+    };
+
+    println!(
+        "Sandbox ready: {} (id={}, port={})",
+        full_cmd, instance.id, instance.port
+    );
+    println!(
+        "  pty_active={}, pending_cli={}",
+        ready.pty_active, ready.pending_cli
+    );
+    println!("Log directory: {}", log_dir.display());
     Ok(())
 }
 
@@ -220,7 +322,8 @@ fn cmd_list() -> anyhow::Result<()> {
 
     if instances.is_empty() {
         println!("No sandbox instances found.");
-        println!("Start one with: sandbox start <command>");
+        println!("Start one with: sandbox start  (opens zsh by default)");
+        println!("Or: sandbox start <command>  (e.g., sandbox start claude)");
         return Ok(());
     }
 
@@ -509,6 +612,66 @@ end tell"#;
     }
 
     println!("Sandbox shutdown complete.");
+    Ok(())
+}
+
+/// Show log file paths.
+fn cmd_logs(id: Option<&str>) -> anyhow::Result<()> {
+    let base = sandbox_core::logging::log_base_dir();
+    println!("Log base: {}\n", base.display());
+
+    if let Some(sandbox_id) = id {
+        // Show logs for a specific sandbox
+        let path = sandbox_core::logging::sandbox_log_path(sandbox_id);
+        let server = sandbox_core::logging::server_log_path();
+        println!("  Sandbox [{sandbox_id}]:");
+        println!("    {}", path.display());
+        println!("  Server (shared):");
+        println!("    {}", server.display());
+    } else {
+        // Show all known sandboxes and their log paths
+        let registry = InstanceRegistry::default();
+        let instances = registry.list()?;
+
+        if instances.is_empty() {
+            println!("No sandbox instances found.");
+        } else {
+            for inst in &instances {
+                let path = sandbox_core::logging::sandbox_log_path(&inst.id);
+                println!("  [{}] {} → {}", inst.id, inst.title, path.display());
+            }
+        }
+
+        // Show shared logs
+        let server = sandbox_core::logging::server_log_path();
+        let cli = sandbox_core::logging::cli_log_path();
+        println!("\n  Shared logs:");
+        println!("    Server: {}", server.display());
+        println!("    CLI:    {}", cli.display());
+    }
+
+    // List existing log entries
+    if base.exists() {
+        println!("\n  Existing logs:");
+        let mut entries: Vec<String> = std::fs::read_dir(&base)
+            .into_iter()
+            .flatten()
+            .filter_map(|e| e.ok())
+            .map(|e| {
+                let name = e.file_name().to_string_lossy().to_string();
+                if e.path().is_dir() {
+                    format!("{}/", name)
+                } else {
+                    name
+                }
+            })
+            .collect();
+        entries.sort();
+        for d in &entries {
+            println!("    {}", d);
+        }
+    }
+
     Ok(())
 }
 

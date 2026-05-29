@@ -1,6 +1,21 @@
 use anyhow::{Context, Result};
 use serde::Deserialize;
 
+/// Check if debug logging is enabled via SANDBOX_LOGGER_LEVEL=debug
+fn debug_enabled() -> bool {
+    std::env::var("SANDBOX_LOGGER_LEVEL")
+        .map(|v| v.to_lowercase() == "debug")
+        .unwrap_or(false)
+}
+
+macro_rules! debug_log {
+    ($($arg:tt)*) => {
+        if debug_enabled() {
+            eprintln!($($arg)*);
+        }
+    };
+}
+
 #[derive(Debug, Deserialize)]
 #[allow(dead_code)]
 pub struct HealthResponse {
@@ -26,8 +41,18 @@ pub struct ProcessInfo {
     pub is_running: bool,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct ReadyzResponse {
+    pub status: String,
+    #[allow(dead_code)]
+    pub http_server: bool,
+    pub pty_active: bool,
+    pub pending_cli: bool,
+}
+
 pub struct SandboxClient {
     base_url: String,
+    port: u16,
     client: reqwest::Client,
 }
 
@@ -52,6 +77,7 @@ impl SandboxClient {
             .unwrap_or_else(|_| reqwest::Client::new());
         Self {
             base_url: format!("http://127.0.0.1:{port}"),
+            port,
             client,
         }
     }
@@ -78,6 +104,17 @@ impl SandboxClient {
             .with_context(|| "Failed to get sandbox info")?;
         let info: InfoResponse = resp.json().await?;
         Ok(info)
+    }
+
+    pub async fn readyz(&self) -> Result<ReadyzResponse> {
+        let resp = self
+            .client
+            .get(format!("{}/readyz", self.base_url))
+            .send()
+            .await
+            .with_context(|| "Failed to connect to sandbox readyz")?;
+        let readyz: ReadyzResponse = resp.json().await?;
+        Ok(readyz)
     }
 
     // ── Input (CGEvent) ───────────────────────────────────
@@ -121,14 +158,44 @@ impl SandboxClient {
     // ── Input (PTY) ───────────────────────────────────────
 
     pub async fn pty_write(&self, pid: u32, data: &str) -> Result<()> {
-        self.client
-            .post(format!("{}/pty/write", self.base_url))
-            .json(&serde_json::json!({ "pid": pid, "data": data }))
-            .send()
+        use futures_util::SinkExt;
+        use tokio_tungstenite::connect_async;
+
+        let url = format!("ws://127.0.0.1:{}/pty/ws/{}", self.port, pid);
+        debug_log!(
+            "[DEBUG-CLI] pty_write: connecting to {}, data_len={}, data_preview={:?}",
+            url,
+            data.len(),
+            if data.len() > 60 { &data[..60] } else { data }
+        );
+        debug_log!(
+            "[DEBUG-CLI] pty_write: data_hex={}",
+            data.bytes()
+                .map(|b| format!("{b:02x}"))
+                .collect::<Vec<_>>()
+                .join(" ")
+        );
+        let (mut ws_stream, _) = connect_async(&url)
             .await
-            .with_context(|| "pty_write request failed")?
-            .error_for_status()
-            .with_context(|| "pty_write failed")?;
+            .with_context(|| format!("Failed to connect to PTY WebSocket for pid={pid}"))?;
+        debug_log!("[DEBUG-CLI] pty_write: WebSocket connected, sending message...");
+
+        ws_stream
+            .send(tokio_tungstenite::tungstenite::Message::Text(
+                data.to_string().into(),
+            ))
+            .await
+            .with_context(|| "Failed to send data to PTY WebSocket")?;
+        debug_log!("[DEBUG-CLI] pty_write: message sent, waiting 100ms before close...");
+
+        // Wait for the message to be delivered before closing
+        // Without this delay, the WebSocket close handshake can race with
+        // the server's message processing, causing the data to be lost.
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+
+        ws_stream.close(None).await.ok();
+        debug_log!("[DEBUG-CLI] pty_write: done");
+
         Ok(())
     }
 
@@ -599,5 +666,35 @@ mod tests {
     fn test_from_instance_id_not_found() {
         let result = SandboxClient::from_instance_id("nonexistent_id_12345");
         assert!(result.is_err());
+    }
+
+    // ── ReadyzResponse deserialization ──────────────────────
+
+    #[test]
+    fn test_deserialize_readyz_ready() {
+        let json = r#"{"status":"ready","http_server":true,"pty_active":true,"pending_cli":false}"#;
+        let resp: ReadyzResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(resp.status, "ready");
+        assert!(resp.http_server);
+        assert!(resp.pty_active);
+        assert!(!resp.pending_cli);
+    }
+
+    #[test]
+    fn test_deserialize_readyz_not_ready() {
+        let json =
+            r#"{"status":"not_ready","http_server":true,"pty_active":false,"pending_cli":false}"#;
+        let resp: ReadyzResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(resp.status, "not_ready");
+        assert!(!resp.pty_active);
+        assert!(!resp.pending_cli);
+    }
+
+    #[test]
+    fn test_deserialize_readyz_pending_cli() {
+        let json = r#"{"status":"ready","http_server":true,"pty_active":false,"pending_cli":true}"#;
+        let resp: ReadyzResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(resp.status, "ready");
+        assert!(resp.pending_cli);
     }
 }
