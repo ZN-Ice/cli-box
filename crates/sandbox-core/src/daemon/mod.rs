@@ -10,7 +10,7 @@ use crate::capture::ScreenCapture;
 use crate::error::AppError;
 use crate::instance::{generate_instance_id, InstanceKind, InstanceRegistry, InstanceStatus};
 use crate::process::ProcessManager;
-use crate::server::handle_pty_ws;
+use crate::server::{handle_pty_ws, ClickRequest, KeyRequest, ScrollRequest, SpawnAppRequest, TypeRequest};
 use axum::extract::ws::WebSocketUpgrade;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
@@ -70,43 +70,6 @@ struct CreateSandboxRequest {
     rows: Option<u16>,
 }
 
-#[derive(Deserialize)]
-struct SpawnAppInSandboxRequest {
-    path: String,
-}
-
-#[derive(Deserialize)]
-struct ClickRequest {
-    x: f64,
-    y: f64,
-    #[serde(default = "default_button")]
-    button: String,
-}
-
-fn default_button() -> String {
-    "left".to_string()
-}
-
-#[derive(Deserialize)]
-struct TypeRequest {
-    text: String,
-}
-
-#[derive(Deserialize)]
-struct KeyRequest {
-    key: String,
-    #[serde(default)]
-    modifiers: Vec<String>,
-}
-
-#[derive(Deserialize)]
-struct ScrollRequest {
-    x: f64,
-    y: f64,
-    direction: String,
-    amount: i32,
-}
-
 #[derive(Serialize)]
 struct HealthResponse {
     status: String,
@@ -126,27 +89,22 @@ struct CreateSandboxResponse {
 
 /// Find the first available TCP port in `[start, end)`.
 pub fn find_available_port(start: u16, end: u16) -> Option<u16> {
-    for port in start..end {
-        if TcpListener::bind(("127.0.0.1", port)).is_ok() {
-            return Some(port);
-        }
-    }
-    None
+    (start..end).find(|&port| TcpListener::bind(("127.0.0.1", port)).is_ok())
 }
 
 /// Returns the path to `~/.sandbox/daemon.json`.
 pub fn daemon_json_path() -> PathBuf {
-    sandbox_home().join("daemon.json")
+    dirs_home().join(".sandbox").join("daemon.json")
 }
 
 /// Write daemon info to disk.
 pub fn write_daemon_info(port: u16) -> std::io::Result<()> {
-    let dir = sandbox_home();
+    let dir = dirs_home().join(".sandbox");
     std::fs::create_dir_all(&dir)?;
     let info = DaemonInfo {
         port,
         pid: std::process::id(),
-        started_at: timestamp_now(),
+        started_at: format_timestamp_now(),
     };
     let json = serde_json::to_string_pretty(&info)?;
     std::fs::write(daemon_json_path(), json)
@@ -192,15 +150,14 @@ pub fn cleanup_daemon_info() -> std::io::Result<()> {
 
 // ── Helpers ───────────────────────────────────────────────────
 
-fn sandbox_home() -> PathBuf {
+fn dirs_home() -> PathBuf {
     std::env::var("HOME")
         .or_else(|_| std::env::var("USERPROFILE"))
         .map(PathBuf::from)
         .unwrap_or_else(|_| PathBuf::from("/tmp"))
-        .join(".sandbox")
 }
 
-fn timestamp_now() -> String {
+fn format_timestamp_now() -> String {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default();
@@ -443,41 +400,77 @@ async fn screenshot_handler(
 }
 
 async fn click_handler(
+    State(state): State<Arc<Mutex<DaemonState>>>,
+    Path(id): Path<String>,
     Json(req): Json<ClickRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    let target_pid = {
+        let s = state.lock().await;
+        let sb = s.sandboxes.get(&id).ok_or_else(|| {
+            AppError::Instance(format!("Sandbox '{id}' not found"))
+        })?;
+        sb.pty_pid
+    };
     let button = match req.button.to_lowercase().as_str() {
         "left" => MouseButton::Left,
         "right" => MouseButton::Right,
         "middle" => MouseButton::Middle,
         other => return Err(AppError::BadRequest(format!("Unknown button: {other}"))),
     };
-    InputSimulator::click(req.x, req.y, button, None)?;
+    InputSimulator::click(req.x, req.y, button, target_pid)?;
     Ok(Json(
         serde_json::json!({"clicked": {"x": req.x, "y": req.y, "button": req.button}}),
     ))
 }
 
 async fn type_handler(
+    State(state): State<Arc<Mutex<DaemonState>>>,
+    Path(id): Path<String>,
     Json(req): Json<TypeRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    InputSimulator::type_text(&req.text, None)?;
+    let target_pid = {
+        let s = state.lock().await;
+        let sb = s.sandboxes.get(&id).ok_or_else(|| {
+            AppError::Instance(format!("Sandbox '{id}' not found"))
+        })?;
+        sb.pty_pid
+    };
+    InputSimulator::type_text(&req.text, target_pid)?;
     Ok(Json(serde_json::json!({"typed": req.text})))
 }
 
 async fn key_handler(
+    State(state): State<Arc<Mutex<DaemonState>>>,
+    Path(id): Path<String>,
     Json(req): Json<KeyRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    let target_pid = {
+        let s = state.lock().await;
+        let sb = s.sandboxes.get(&id).ok_or_else(|| {
+            AppError::Instance(format!("Sandbox '{id}' not found"))
+        })?;
+        sb.pty_pid
+    };
     let mod_refs: Vec<&str> = req.modifiers.iter().map(|s| s.as_str()).collect();
-    InputSimulator::press_key(&req.key, &mod_refs, None)?;
+    InputSimulator::press_key(&req.key, &mod_refs, target_pid)?;
     Ok(Json(
         serde_json::json!({"pressed": {"key": req.key, "modifiers": req.modifiers}}),
     ))
 }
 
 async fn scroll_handler(
+    State(state): State<Arc<Mutex<DaemonState>>>,
+    Path(id): Path<String>,
     Json(req): Json<ScrollRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    InputSimulator::scroll(req.x, req.y, &req.direction, req.amount, None)?;
+    let target_pid = {
+        let s = state.lock().await;
+        let sb = s.sandboxes.get(&id).ok_or_else(|| {
+            AppError::Instance(format!("Sandbox '{id}' not found"))
+        })?;
+        sb.pty_pid
+    };
+    InputSimulator::scroll(req.x, req.y, &req.direction, req.amount, target_pid)?;
     Ok(Json(serde_json::json!({"scrolled": true})))
 }
 
@@ -497,7 +490,7 @@ async fn pty_ws_upgrade_handler(
 async fn spawn_app_handler(
     State(state): State<Arc<Mutex<DaemonState>>>,
     Path(id): Path<String>,
-    Json(req): Json<SpawnAppInSandboxRequest>,
+    Json(req): Json<SpawnAppRequest>,
 ) -> Result<Json<crate::process::ProcessInfo>, AppError> {
     // Verify sandbox exists
     {
@@ -624,7 +617,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&tmp);
         // Override daemon_json_path is not possible directly,
         // so we test that read_daemon_info returns None when file is absent.
-        assert!(read_daemon_info().is_none() || daemon_json_path().exists() == false);
+        assert!(read_daemon_info().is_none() || !daemon_json_path().exists());
     }
 
     #[test]
@@ -727,8 +720,35 @@ mod tests {
         }))
     }
 
+    fn test_daemon_state_with_sandbox() -> Arc<Mutex<DaemonState>> {
+        let mut sandboxes = HashMap::new();
+        sandboxes.insert(
+            "test-sb".to_string(),
+            ManagedSandbox {
+                id: "test-sb".to_string(),
+                kind: InstanceKind::Cli {
+                    command: "zsh".to_string(),
+                    args: vec![],
+                },
+                status: InstanceStatus::Running,
+                port: 0,
+                pty_pid: None,
+                window_id: None,
+            },
+        );
+        Arc::new(Mutex::new(DaemonState {
+            port: 15999,
+            sandboxes,
+            started_at: Instant::now(),
+        }))
+    }
+
     fn test_daemon_router() -> Router {
         build_daemon_router(test_daemon_state())
+    }
+
+    fn test_daemon_router_with_sandbox() -> Router {
+        build_daemon_router(test_daemon_state_with_sandbox())
     }
 
     use axum::body::Body;
@@ -822,12 +842,12 @@ mod tests {
 
     #[tokio::test]
     async fn click_valid_request() {
-        let app = test_daemon_router();
+        let app = test_daemon_router_with_sandbox();
         let resp = app
             .oneshot(
                 Request::builder()
                     .method("POST")
-                    .uri("/sandbox/any/input/click")
+                    .uri("/sandbox/test-sb/input/click")
                     .header(http::header::CONTENT_TYPE, "application/json")
                     .body(Body::from(r#"{"x": 100, "y": 200, "button": "left"}"#))
                     .unwrap(),
@@ -844,12 +864,12 @@ mod tests {
 
     #[tokio::test]
     async fn click_bad_button() {
-        let app = test_daemon_router();
+        let app = test_daemon_router_with_sandbox();
         let resp = app
             .oneshot(
                 Request::builder()
                     .method("POST")
-                    .uri("/sandbox/any/input/click")
+                    .uri("/sandbox/test-sb/input/click")
                     .header(http::header::CONTENT_TYPE, "application/json")
                     .body(Body::from(r#"{"x": 100, "y": 200, "button": "turbo"}"#))
                     .unwrap(),
@@ -860,13 +880,30 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn type_text_handler() {
+    async fn click_nonexistent_sandbox() {
         let app = test_daemon_router();
         let resp = app
             .oneshot(
                 Request::builder()
                     .method("POST")
-                    .uri("/sandbox/any/input/type")
+                    .uri("/sandbox/ghost/input/click")
+                    .header(http::header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(r#"{"x": 100, "y": 200, "button": "left"}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn type_text_handler() {
+        let app = test_daemon_router_with_sandbox();
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/sandbox/test-sb/input/type")
                     .header(http::header::CONTENT_TYPE, "application/json")
                     .body(Body::from(r#"{"text": "hello"}"#))
                     .unwrap(),
@@ -881,13 +918,30 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn key_handler() {
+    async fn type_nonexistent_sandbox() {
         let app = test_daemon_router();
         let resp = app
             .oneshot(
                 Request::builder()
                     .method("POST")
-                    .uri("/sandbox/any/input/key")
+                    .uri("/sandbox/ghost/input/type")
+                    .header(http::header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(r#"{"text": "hello"}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn key_handler() {
+        let app = test_daemon_router_with_sandbox();
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/sandbox/test-sb/input/key")
                     .header(http::header::CONTENT_TYPE, "application/json")
                     .body(Body::from(r#"{"key": "return", "modifiers": ["cmd"]}"#))
                     .unwrap(),
@@ -902,13 +956,30 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn scroll_handler() {
+    async fn key_nonexistent_sandbox() {
         let app = test_daemon_router();
         let resp = app
             .oneshot(
                 Request::builder()
                     .method("POST")
-                    .uri("/sandbox/any/input/scroll")
+                    .uri("/sandbox/ghost/input/key")
+                    .header(http::header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(r#"{"key": "return", "modifiers": []}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn scroll_handler() {
+        let app = test_daemon_router_with_sandbox();
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/sandbox/test-sb/input/scroll")
                     .header(http::header::CONTENT_TYPE, "application/json")
                     .body(Body::from(
                         r#"{"x": 0, "y": 0, "direction": "down", "amount": 3}"#,
@@ -922,6 +993,25 @@ mod tests {
             matches!(status.as_u16(), 200 | 500),
             "scroll should be 200 or 500, got {status}"
         );
+    }
+
+    #[tokio::test]
+    async fn scroll_nonexistent_sandbox() {
+        let app = test_daemon_router();
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/sandbox/ghost/input/scroll")
+                    .header(http::header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(
+                        r#"{"x": 0, "y": 0, "direction": "down", "amount": 3}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
     }
 
     #[tokio::test]
