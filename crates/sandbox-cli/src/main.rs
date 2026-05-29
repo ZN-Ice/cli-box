@@ -147,7 +147,7 @@ async fn main() -> anyhow::Result<()> {
                 (true, _) | (false, None) => ("zsh".to_string(), args),
                 (false, Some(c)) => (c, args),
             };
-            cmd_start(&cmd, &cmd_args)?;
+            cmd_start(&cmd, &cmd_args).await?;
         }
         Commands::List => {
             cmd_list()?;
@@ -199,7 +199,10 @@ async fn main() -> anyhow::Result<()> {
 // ── Command Implementations ─────────────────────────────
 
 /// Launch the Tauri sandbox app with the given CLI command inside it.
-fn cmd_start(command: &str, args: &[String]) -> anyhow::Result<()> {
+///
+/// After spawning the Tauri process, polls the instance registry and `/readyz`
+/// endpoint to verify the sandbox is actually ready before returning.
+async fn cmd_start(command: &str, args: &[String]) -> anyhow::Result<()> {
     let bundle_path = find_tauri_bundle()?;
     let app_binary = bundle_path.join("Contents/MacOS/system-test-sandbox");
 
@@ -217,19 +220,101 @@ fn cmd_start(command: &str, args: &[String]) -> anyhow::Result<()> {
         .spawn()
         .context("Failed to launch Tauri sandbox app")?;
 
-    tracing::info!("[start] child pid: {:?}", child.id());
+    let child_pid = child.id();
+    tracing::info!("[start] child pid: {child_pid}");
 
     let full_cmd = if args.is_empty() {
         command.to_string()
     } else {
         format!("{} {}", command, args.join(" "))
     };
-    println!("Sandbox started: {}", full_cmd);
-    println!("Use 'sandbox list' to find the sandbox ID");
+    println!("Sandbox starting: {full_cmd} ...");
+
+    let log_dir = sandbox_core::logging::log_base_dir();
+    let timeout = std::time::Duration::from_secs(30);
+    let start = std::time::Instant::now();
+    let poll_interval = std::time::Duration::from_millis(200);
+
+    // Phase 1: Wait for instance registry file to appear
+    let registry = sandbox_core::instance::InstanceRegistry::default();
+    let instance = loop {
+        if start.elapsed() > timeout {
+            anyhow::bail!(
+                "Timeout: sandbox instance did not appear after {}s.\n\
+                 The Tauri process (PID {child_pid}) may have failed to start.\n\
+                 Check logs at: {}",
+                timeout.as_secs(),
+                log_dir.display()
+            );
+        }
+        if let Ok(instances) = registry.list() {
+            if let Some(inst) = instances.iter().find(|i| i.pid == child_pid) {
+                break inst.clone();
+            }
+        }
+        tokio::time::sleep(poll_interval).await;
+    };
+
+    // Check if the instance reported an error during startup
+    match &instance.status {
+        sandbox_core::instance::InstanceStatus::Error(msg) => {
+            anyhow::bail!(
+                "Sandbox failed to start: {msg}\n\
+                 Instance ID: {}, Port: {}\n\
+                 Check logs at: {}",
+                instance.id,
+                instance.port,
+                log_dir.display()
+            );
+        }
+        _ => {}
+    }
+
+    // Phase 2: Wait for HTTP server /readyz to respond
+    let client = crate::client::SandboxClient::from_port(instance.port);
+    let ready = loop {
+        if start.elapsed() > timeout {
+            anyhow::bail!(
+                "Timeout: sandbox HTTP server not ready after {}s.\n\
+                 Instance ID: {}, Port: {}\n\
+                 The server may be starting slowly or have encountered an error.\n\
+                 Check logs at: {}",
+                timeout.as_secs(),
+                instance.id,
+                instance.port,
+                log_dir.display()
+            );
+        }
+        match client.readyz().await {
+            Ok(resp) if resp.status == "ready" => break resp,
+            Ok(_) => {} // not_ready, keep polling
+            Err(_) => {} // connection refused, keep polling
+        }
+        // Re-check instance status for errors between polls
+        if let Ok(inst) = registry.get(&instance.id) {
+            if let sandbox_core::instance::InstanceStatus::Error(msg) = &inst.status {
+                anyhow::bail!(
+                    "Sandbox failed during startup: {msg}\n\
+                     Instance ID: {}, Port: {}\n\
+                     Check logs at: {}",
+                    instance.id,
+                    instance.port,
+                    log_dir.display()
+                );
+            }
+        }
+        tokio::time::sleep(poll_interval).await;
+    };
+
     println!(
-        "Log directory: {}",
-        sandbox_core::logging::log_base_dir().display()
+        "Sandbox ready: {} (id={}, port={})",
+        full_cmd, instance.id, instance.port
     );
+    println!(
+        "  pty_active={}, pending_cli={}",
+        ready.pty_active, ready.pending_cli
+    );
+    println!("Log directory: {}", log_dir.display());
     Ok(())
 }
 

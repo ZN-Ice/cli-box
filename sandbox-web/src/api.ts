@@ -235,7 +235,9 @@ function wsBaseUrl(): string {
 
 export interface PtyWsConnection {
   ws: WebSocket;
-  onOutput: (cb: (data: string) => void) => () => void;
+  onOutput: (cb: (data: string | Uint8Array) => void) => () => void;
+  onError: (cb: (msg: string) => void) => () => void;
+  onClose: (cb: (code: number, reason: string) => void) => () => void;
   sendInput: (data: string) => void;
   resize: (cols: number, rows: number) => void;
   close: () => void;
@@ -243,38 +245,59 @@ export interface PtyWsConnection {
 
 export function ptyConnectWs(pid: number): PtyWsConnection {
   const ws = new WebSocket(`${wsBaseUrl()}/pty/ws/${pid}`);
-  const listeners: ((data: string) => void)[] = [];
+  ws.binaryType = "arraybuffer";
+  const outputListeners: ((data: string | Uint8Array) => void)[] = [];
+  const errorListeners: ((msg: string) => void)[] = [];
+  const closeListeners: ((code: number, reason: string) => void)[] = [];
 
   ws.onopen = () => {
     debugLog(`frontend: connected to /pty/ws/${pid}`);
   };
   ws.onclose = (e) => {
     debugLog(`frontend: connection closed, code=${e.code}, reason=${e.reason}`);
+    for (const cb of closeListeners) cb(e.code, e.reason);
   };
-  ws.onerror = (e) => {
-    debugError(`frontend: connection error`, e);
+  ws.onerror = () => {
+    const msg = `WebSocket connection to PTY ${pid} failed`;
+    debugError(`frontend: ${msg}`);
+    for (const cb of errorListeners) cb(msg);
   };
   ws.onmessage = (e) => {
-    if (typeof e.data === "string") {
+    if (e.data instanceof ArrayBuffer) {
+      const u8 = new Uint8Array(e.data);
+      debugLog(`frontend: received binary message, len=${u8.length}`);
+      for (const cb of outputListeners) cb(u8);
+    } else if (typeof e.data === "string") {
       const preview = e.data.length > 80 ? e.data.substring(0, 80) : e.data;
-      debugLog(`frontend: received message, len=${e.data.length}, preview=${JSON.stringify(preview)}`);
-      for (const cb of listeners) cb(e.data);
+      debugLog(`frontend: received text message, len=${e.data.length}, preview=${JSON.stringify(preview)}`);
+      for (const cb of outputListeners) cb(e.data);
     }
   };
 
   return {
     ws,
     onOutput(cb) {
-      listeners.push(cb);
+      outputListeners.push(cb);
       return () => {
-        const idx = listeners.indexOf(cb);
-        if (idx >= 0) listeners.splice(idx, 1);
+        const idx = outputListeners.indexOf(cb);
+        if (idx >= 0) outputListeners.splice(idx, 1);
+      };
+    },
+    onError(cb) {
+      errorListeners.push(cb);
+      return () => {
+        const idx = errorListeners.indexOf(cb);
+        if (idx >= 0) errorListeners.splice(idx, 1);
+      };
+    },
+    onClose(cb) {
+      closeListeners.push(cb);
+      return () => {
+        const idx = closeListeners.indexOf(cb);
+        if (idx >= 0) closeListeners.splice(idx, 1);
       };
     },
     sendInput(data) {
-      const preview = data.length > 60 ? data.substring(0, 60) : data;
-      const hex = Array.from(data).map(c => c.charCodeAt(0).toString(16).padStart(2, '0')).join(' ');
-      debugLog(`frontend: sendInput, len=${data.length}, preview=${JSON.stringify(preview)}, hex=${hex}`);
       if (ws.readyState === WebSocket.OPEN) ws.send(data);
     },
     resize(cols, rows) {

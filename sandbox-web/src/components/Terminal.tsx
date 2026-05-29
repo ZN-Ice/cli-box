@@ -9,6 +9,8 @@ import "@xterm/xterm/css/xterm.css";
 interface TerminalProps {
   activePid?: number | null;
   onReady?: (cols: number, rows: number) => void;
+  onWsError?: (msg: string) => void;
+  onWsClose?: (code: number, reason: string) => void;
 }
 
 function buildTerminalTheme(t: TerminalTheme): Record<string, string> {
@@ -38,14 +40,37 @@ function buildTerminalTheme(t: TerminalTheme): Record<string, string> {
   };
 }
 
-export default function SandboxTerminal({ activePid = null, onReady }: TerminalProps) {
+/**
+ * Bypass xterm.js WriteBuffer's setTimeout-based scheduling which stalls in
+ * Tauri's WKWebView. Instead, call InputHandler.parse() directly and then
+ * fire the write-parsed event to trigger rendering.
+ */
+function writeDirect(term: Terminal, data: string | Uint8Array): void {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const core = (term as any)._core ?? (term as any).core;
+  if (!core) return;
+  const ih = core._inputHandler;
+  if (ih && typeof ih.parse === "function") {
+    ih.parse(data, true);
+  }
+  // Fire the write-parsed event to trigger renderer update
+  if (core._writeBuffer?._onWriteParsed) {
+    core._writeBuffer._onWriteParsed.fire();
+  }
+}
+
+export default function SandboxTerminal({ activePid = null, onReady, onWsError, onWsClose }: TerminalProps) {
   const terminalRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
   const wsConnRef = useRef<api.PtyWsConnection | null>(null);
   const activePidRef = useRef(activePid);
   const onReadyRef = useRef(onReady);
+  const onWsErrorRef = useRef(onWsError);
+  const onWsCloseRef = useRef(onWsClose);
   onReadyRef.current = onReady;
+  onWsErrorRef.current = onWsError;
+  onWsCloseRef.current = onWsClose;
   const { theme } = useTheme();
 
   // Keep activePidRef in sync so the resize handler (which closes over it)
@@ -59,22 +84,18 @@ export default function SandboxTerminal({ activePid = null, onReady }: TerminalP
     if (!terminalRef.current) return;
     if (xtermRef.current) return; // already initialized
 
-    console.log("[Terminal] initializing xterm.js");
-
     const term = new Terminal({
       cursorBlink: true,
       cursorStyle: "bar",
       fontSize: 14,
-      lineHeight: 1.35,
       fontFamily:
         '"SF Mono", "Menlo", "Monaco", "Cascadia Code", "JetBrains Mono", monospace',
       fontWeight: "400",
       fontWeightBold: "600",
-      letterSpacing: 0,
       scrollback: 10000,
       theme: buildTerminalTheme(theme.terminal),
       allowProposedApi: true,
-      drawBoldTextInBrightColors: true,
+      allowTransparency: true,
     });
 
     const fitAddon = new FitAddon();
@@ -115,7 +136,6 @@ export default function SandboxTerminal({ activePid = null, onReady }: TerminalP
     if (!xtermRef.current) return;
     const newTheme = buildTerminalTheme(theme.terminal);
     xtermRef.current.options.theme = newTheme;
-    console.log(`[Terminal] theme updated to: ${theme.id} (${theme.kind})`);
   }, [theme.id]);
 
   // PTY WebSocket connection
@@ -129,15 +149,34 @@ export default function SandboxTerminal({ activePid = null, onReady }: TerminalP
     const conn = api.ptyConnectWs(activePid);
     wsConnRef.current = conn;
 
-    // Pipe PTY output → xterm.js
+    const decoder = new TextDecoder();
     conn.onOutput((data) => {
-      xtermRef.current?.write(data);
+      const term = xtermRef.current;
+      if (!term) return;
+      const writeData = typeof data === "string" ? data : decoder.decode(data as Uint8Array);
+      writeDirect(term, writeData);
+    });
+
+    // Notify parent of WebSocket errors and closures
+    conn.onError((msg) => {
+      onWsErrorRef.current?.(msg);
+    });
+    conn.onClose((code, reason) => {
+      onWsCloseRef.current?.(code, reason);
     });
 
     // Send initial resize so PTY matches xterm container size
     const term = xtermRef.current;
     if (term) {
-      conn.resize(term.cols, term.rows);
+      const ws = conn.ws;
+      const sendResize = () => {
+        if (ws.readyState === WebSocket.OPEN) {
+          conn.resize(term.cols, term.rows);
+        } else {
+          setTimeout(sendResize, 100);
+        }
+      };
+      sendResize();
     }
 
     return () => {
@@ -153,7 +192,7 @@ export default function SandboxTerminal({ activePid = null, onReady }: TerminalP
   }, []);
 
   return (
-    <div ref={containerRef} className="w-full h-full">
+    <div ref={containerRef} className="w-full h-full relative">
       <div ref={terminalRef} className="w-full h-full" />
     </div>
   );

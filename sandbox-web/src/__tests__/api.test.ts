@@ -402,10 +402,70 @@ describe("API client", () => {
       expect(typeof conn.sendInput).toBe("function");
       expect(typeof conn.resize).toBe("function");
       expect(typeof conn.onOutput).toBe("function");
+      expect(typeof conn.onError).toBe("function");
+      expect(typeof conn.onClose).toBe("function");
       expect(typeof conn.close).toBe("function");
 
       vi.unstubAllGlobals();
       // Restore fetch mock that unstubAllGlobals removed
+      vi.stubGlobal("fetch", mockFetch);
+    });
+
+    it("fires onError callback on WebSocket error", () => {
+      const mockWs = {
+        readyState: 1,
+        send: vi.fn(),
+        close: vi.fn(),
+        onopen: null as (() => void) | null,
+        onclose: null as ((e: { code: number; reason: string }) => void) | null,
+        onerror: null as ((e: Event) => void) | null,
+        onmessage: null as ((e: { data: string }) => void) | null,
+      };
+      vi.stubGlobal(
+        "WebSocket",
+        vi.fn().mockImplementation(() => mockWs),
+      );
+
+      const conn = api.ptyConnectWs(42);
+      const errorCb = vi.fn();
+      conn.onError(errorCb);
+
+      // Simulate WebSocket error
+      mockWs.onerror?.({} as Event);
+
+      expect(errorCb).toHaveBeenCalledOnce();
+      expect(errorCb.mock.calls[0][0]).toMatch(/WebSocket connection to PTY 42 failed/);
+
+      vi.unstubAllGlobals();
+      vi.stubGlobal("fetch", mockFetch);
+    });
+
+    it("fires onClose callback on WebSocket close", () => {
+      const mockWs = {
+        readyState: 1,
+        send: vi.fn(),
+        close: vi.fn(),
+        onopen: null as (() => void) | null,
+        onclose: null as ((e: { code: number; reason: string }) => void) | null,
+        onerror: null as ((e: Event) => void) | null,
+        onmessage: null as ((e: { data: string }) => void) | null,
+      };
+      vi.stubGlobal(
+        "WebSocket",
+        vi.fn().mockImplementation(() => mockWs),
+      );
+
+      const conn = api.ptyConnectWs(42);
+      const closeCb = vi.fn();
+      conn.onClose(closeCb);
+
+      // Simulate WebSocket close
+      mockWs.onclose?.({ code: 1006, reason: "abnormal" });
+
+      expect(closeCb).toHaveBeenCalledOnce();
+      expect(closeCb.mock.calls[0]).toEqual([1006, "abnormal"]);
+
+      vi.unstubAllGlobals();
       vi.stubGlobal("fetch", mockFetch);
     });
   });

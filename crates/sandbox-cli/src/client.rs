@@ -41,6 +41,14 @@ pub struct ProcessInfo {
     pub is_running: bool,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct ReadyzResponse {
+    pub status: String,
+    pub http_server: bool,
+    pub pty_active: bool,
+    pub pending_cli: bool,
+}
+
 pub struct SandboxClient {
     base_url: String,
     port: u16,
@@ -95,6 +103,17 @@ impl SandboxClient {
             .with_context(|| "Failed to get sandbox info")?;
         let info: InfoResponse = resp.json().await?;
         Ok(info)
+    }
+
+    pub async fn readyz(&self) -> Result<ReadyzResponse> {
+        let resp = self
+            .client
+            .get(format!("{}/readyz", self.base_url))
+            .send()
+            .await
+            .with_context(|| "Failed to connect to sandbox readyz")?;
+        let readyz: ReadyzResponse = resp.json().await?;
+        Ok(readyz)
     }
 
     // ── Input (CGEvent) ───────────────────────────────────
@@ -646,5 +665,34 @@ mod tests {
     fn test_from_instance_id_not_found() {
         let result = SandboxClient::from_instance_id("nonexistent_id_12345");
         assert!(result.is_err());
+    }
+
+    // ── ReadyzResponse deserialization ──────────────────────
+
+    #[test]
+    fn test_deserialize_readyz_ready() {
+        let json = r#"{"status":"ready","http_server":true,"pty_active":true,"pending_cli":false}"#;
+        let resp: ReadyzResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(resp.status, "ready");
+        assert!(resp.http_server);
+        assert!(resp.pty_active);
+        assert!(!resp.pending_cli);
+    }
+
+    #[test]
+    fn test_deserialize_readyz_not_ready() {
+        let json = r#"{"status":"not_ready","http_server":true,"pty_active":false,"pending_cli":false}"#;
+        let resp: ReadyzResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(resp.status, "not_ready");
+        assert!(!resp.pty_active);
+        assert!(!resp.pending_cli);
+    }
+
+    #[test]
+    fn test_deserialize_readyz_pending_cli() {
+        let json = r#"{"status":"ready","http_server":true,"pty_active":false,"pending_cli":true}"#;
+        let resp: ReadyzResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(resp.status, "ready");
+        assert!(resp.pending_cli);
     }
 }

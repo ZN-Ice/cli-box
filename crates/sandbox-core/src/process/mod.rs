@@ -209,18 +209,22 @@ impl ProcessManager {
                         }
                         Ok(n) => {
                             let text = String::from_utf8_lossy(&read_buf[..n]).to_string();
-                            let hex: String = read_buf[..n].iter().map(|b| format!("{b:02x}")).collect::<Vec<_>>().join(" ");
                             let preview: String = text.chars().take(40).collect();
-                            debug!(
-                                "[DEBUG-PTY-READ] pid={tracked_id}: read {} bytes, text_preview={:?}, hex={}",
-                                n, preview, hex
+                            info!(
+                                "[PTY-READ] pid={tracked_id}: read {} bytes, preview={:?}",
+                                n, preview
                             );
                             // Persist to SQLite (survives reconnections)
                             if let Err(e) = thread_store.append(&text) {
                                 warn!("PTY reader {tracked_id}: store append failed: {e}");
                             }
                             // Real-time broadcast to current subscribers
+                            let receiver_count = thread_tx.receiver_count();
                             let _ = thread_tx.send(text);
+                            info!(
+                                "[PTY-READ] pid={tracked_id}: broadcast sent, receivers={}",
+                                receiver_count
+                            );
                         }
                         Err(ref e) if e.kind() == std::io::ErrorKind::Interrupted => {
                             trace!("PTY reader thread {tracked_id}: interrupted, retrying");

@@ -200,6 +200,7 @@ fn main() {
 
                 let router = sandbox_core::server::build_router(state);
                 let port_val = port;
+                let sandbox_id_for_server = sandbox_id.clone();
 
                 tauri::async_runtime::spawn(async move {
                     let addr = format!("127.0.0.1:{port_val}");
@@ -212,6 +213,16 @@ fn main() {
                         }
                         Err(e) => {
                             tracing::error!("Failed to bind HTTP server on port {port_val}: {e}");
+                            if let Some(ref id) = sandbox_id_for_server {
+                                let registry =
+                                    sandbox_core::instance::InstanceRegistry::default();
+                                let _ = registry.update_status(
+                                    id,
+                                    sandbox_core::instance::InstanceStatus::Error(format!(
+                                        "HTTP bind failed: {e}"
+                                    )),
+                                );
+                            }
                         }
                     }
                 });
