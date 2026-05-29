@@ -1,13 +1,11 @@
 // crates/sandbox-daemon/src/main.rs
-use sandbox_core::daemon::DaemonState;
-
 fn main() {
     tracing_subscriber::fmt::init();
 
     let port = sandbox_core::daemon::find_available_port(15801, 15899)
         .expect("No available port in range 15801-15899");
 
-    println!("Sandbox daemon started on port {port}");
+    tracing::info!("Sandbox daemon started on port {port}");
 
     let rt = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
     rt.block_on(async move { sandbox_core::daemon::run_daemon(port).await })
