@@ -152,7 +152,8 @@ struct UiValueQuery {
     element_id: String,
 }
 
-/// Build the HTTP API router
+/// Build the legacy single-instance HTTP API router.
+/// For multi-sandbox daemon mode, use `crate::daemon::build_daemon_router` instead.
 pub fn build_router(state: Arc<Mutex<AppState>>) -> Router {
     let cors = CorsLayer::new()
         .allow_origin(Any)
