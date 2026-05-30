@@ -90,15 +90,20 @@ if [ ! -d "$TAURI_BUNDLE" ]; then
 fi
 ok "Tauri app built: $(du -sh "$TAURI_BUNDLE" | cut -f1)"
 
-# --- step 5: build CLI binary (release) ---
+# --- step 5: build CLI + daemon binaries (release) ---
 echo ""
-info "Building CLI binary (release)..."
-cargo build --release -p sandbox-cli
+info "Building CLI + daemon binaries (release)..."
+cargo build --release -p sandbox-cli -p sandbox-daemon
 CLI_BIN="$SCRIPT_DIR/target/release/sandbox"
+DAEMON_BIN="$SCRIPT_DIR/target/release/sandbox-daemon"
 if [ ! -f "$CLI_BIN" ]; then
     err "CLI binary not found at $CLI_BIN"
 fi
+if [ ! -f "$DAEMON_BIN" ]; then
+    err "Daemon binary not found at $DAEMON_BIN"
+fi
 ok "CLI binary built: $(du -h "$CLI_BIN" | cut -f1)"
+ok "Daemon binary built: $(du -h "$DAEMON_BIN" | cut -f1)"
 
 # --- step 6: assemble release folder ---
 echo ""
@@ -110,6 +115,11 @@ mkdir -p "$RELEASE_DIR"
 cp "$CLI_BIN" "$RELEASE_DIR/sandbox"
 chmod +x "$RELEASE_DIR/sandbox"
 ok "sandbox CLI binary"
+
+# Copy daemon
+cp "$DAEMON_BIN" "$RELEASE_DIR/sandbox-daemon"
+chmod +x "$RELEASE_DIR/sandbox-daemon"
+ok "sandbox-daemon binary"
 
 # Copy Tauri app bundle
 cp -R "$TAURI_BUNDLE" "$RELEASE_DIR/${APP_NAME}.app"

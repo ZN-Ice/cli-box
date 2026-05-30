@@ -72,6 +72,11 @@ struct CreateSandboxRequest {
     rows: Option<u16>,
 }
 
+#[derive(Deserialize)]
+struct PtyWriteRequest {
+    data: String,
+}
+
 #[derive(Serialize)]
 struct HealthResponse {
     status: String,
@@ -195,6 +200,7 @@ pub fn build_daemon_router(state: Arc<Mutex<DaemonState>>) -> Router {
         .route("/sandbox/{id}/input/key", post(key_handler))
         .route("/sandbox/{id}/input/scroll", post(scroll_handler))
         .route("/sandbox/{id}/pty/ws/{pid}", get(pty_ws_upgrade_handler))
+        .route("/sandbox/{id}/pty/write", post(pty_write_handler))
         .route("/sandbox/{id}/processes", get(processes_handler))
         .route("/sandbox/{id}/app/spawn", post(spawn_app_handler))
         .route("/sandbox/{id}/windows", get(windows_handler))
@@ -513,6 +519,27 @@ async fn windows_handler(
         .await
         .map_err(|e| AppError::Process(format!("list_windows panicked: {e}")))??;
     Ok(Json(windows))
+}
+
+async fn pty_write_handler(
+    State(state): State<Arc<Mutex<DaemonState>>>,
+    Path(id): Path<String>,
+    Json(req): Json<PtyWriteRequest>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let pty_pid: u32 = {
+        let s = state.lock().await;
+        let sb = s
+            .sandboxes
+            .get(&id)
+            .ok_or_else(|| AppError::Process(format!("Sandbox {id} not found")))?;
+        sb.pty_pid
+            .ok_or_else(|| AppError::Process(format!("Sandbox {id} has no PTY")))?
+    };
+    let data = req.data.clone();
+    tokio::task::spawn_blocking(move || ProcessManager::send_input(pty_pid, data.as_bytes()))
+        .await
+        .map_err(|e| AppError::Process(format!("pty_write panicked: {e}")))??;
+    Ok(Json(serde_json::json!({"written": true, "bytes": req.data.len()})))
 }
 
 async fn processes_handler(
