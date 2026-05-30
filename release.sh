@@ -49,9 +49,24 @@ ok "All prerequisites met"
 # --- step 2: clean up old processes & registries ---
 echo ""
 info "Cleaning up old sandbox processes..."
-pkill -f "system-test-sandbox" 2>/dev/null || true
-pkill -f "sandbox-cli" 2>/dev/null || true
+
+# Kill daemon by PID from daemon.json (avoid pkill -f which matches Electron apps)
+if [ -f ~/.sandbox/daemon.json ]; then
+    DAEMON_PID=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1])).get('pid',''))" ~/.sandbox/daemon.json 2>/dev/null)
+    if [ -n "$DAEMON_PID" ] && kill -0 "$DAEMON_PID" 2>/dev/null; then
+        kill "$DAEMON_PID" 2>/dev/null || true
+        info "Stopped daemon (PID $DAEMON_PID)"
+    fi
+    rm -f ~/.sandbox/daemon.json
+fi
+
+# Kill legacy Tauri app by exact process name (not -f, which is too broad)
+pkill -x "System Test Sandbox" 2>/dev/null || true
+
+# Kill CLI processes by exact binary name
 pkill -x "sandbox" 2>/dev/null || true
+pkill -x "sandbox-daemon" 2>/dev/null || true
+
 rm -f ~/.sandbox/instances/*.json 2>/dev/null || true
 ok "Cleanup done"
 
