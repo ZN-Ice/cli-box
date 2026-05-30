@@ -158,20 +158,16 @@ async fn main() -> anyhow::Result<()> {
         Commands::Close { id } => {
             cmd_close_daemon(&id).await?;
         }
-        Commands::TypeText {
-            text,
-            id,
-            pty: _pty,
-        } => {
-            cmd_type_daemon(&text, &id).await?;
+        Commands::TypeText { text, id, pty } => {
+            cmd_type_daemon(&text, &id, pty).await?;
         }
         Commands::Key {
             key,
             id,
             modifiers,
-            pty: _pty,
+            pty,
         } => {
-            cmd_key_daemon(&key, &id, &modifiers).await?;
+            cmd_key_daemon(&key, &id, &modifiers, pty).await?;
         }
         Commands::Click { x, y, id, button } => {
             cmd_click_daemon(x, y, &id, &button).await?;
@@ -451,32 +447,74 @@ async fn cmd_close_daemon(id: &str) -> anyhow::Result<()> {
 }
 
 /// Type text in a sandbox via the daemon API.
-async fn cmd_type_daemon(text: &str, id: &str) -> anyhow::Result<()> {
-    tracing::info!("[cli] type: text_len={}, id={}", text.len(), id);
-    client::daemon_type(id, text).await?;
-    println!("Typed: {:?} -> sandbox {}", text, id);
+async fn cmd_type_daemon(text: &str, id: &str, pty: bool) -> anyhow::Result<()> {
+    tracing::info!(
+        "[cli] type: text_len={}, id={}, pty={}",
+        text.len(),
+        id,
+        pty
+    );
+    if pty {
+        client::daemon_pty_write(id, text).await?;
+        println!("Typed (PTY): {:?} -> sandbox {}", text, id);
+    } else {
+        client::daemon_type(id, text).await?;
+        println!("Typed: {:?} -> sandbox {}", text, id);
+    }
     Ok(())
 }
 
 /// Press a key in a sandbox via the daemon API.
-async fn cmd_key_daemon(key: &str, id: &str, modifiers: &[String]) -> anyhow::Result<()> {
+async fn cmd_key_daemon(
+    key: &str,
+    id: &str,
+    modifiers: &[String],
+    pty: bool,
+) -> anyhow::Result<()> {
     tracing::info!(
-        "[cli] key: key={}, modifiers={:?}, id={}",
+        "[cli] key: key={}, modifiers={:?}, id={}, pty={}",
         key,
         modifiers,
-        id
+        id,
+        pty
     );
-    client::daemon_key(id, key, modifiers).await?;
-    println!(
-        "Pressed: {}{} -> sandbox {}",
-        if modifiers.is_empty() {
-            String::new()
+    if pty {
+        let data = client::key_to_pty_bytes_with_modifiers(key, modifiers);
+        if data.is_empty() {
+            let plain = client::key_to_pty_bytes(key);
+            if plain.is_empty() {
+                anyhow::bail!(
+                    "Key '{}' with modifiers {:?} cannot be mapped to PTY bytes. Use CGEvent mode (remove --pty).",
+                    key, modifiers
+                );
+            }
+            client::daemon_pty_write(id, &plain).await?;
         } else {
-            format!("{:?}+", modifiers)
-        },
-        key,
-        id
-    );
+            client::daemon_pty_write(id, &data).await?;
+        }
+        println!(
+            "Pressed (PTY): {}{} -> sandbox {}",
+            if modifiers.is_empty() {
+                String::new()
+            } else {
+                format!("{:?}+", modifiers)
+            },
+            key,
+            id
+        );
+    } else {
+        client::daemon_key(id, key, modifiers).await?;
+        println!(
+            "Pressed: {}{} -> sandbox {}",
+            if modifiers.is_empty() {
+                String::new()
+            } else {
+                format!("{:?}+", modifiers)
+            },
+            key,
+            id
+        );
+    }
     Ok(())
 }
 

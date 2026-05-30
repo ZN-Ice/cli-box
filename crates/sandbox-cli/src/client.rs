@@ -153,6 +153,21 @@ pub async fn daemon_type(sandbox_id: &str, text: &str) -> Result<()> {
     Ok(())
 }
 
+/// Type text into a sandbox PTY via the daemon HTTP API.
+pub async fn daemon_pty_write(sandbox_id: &str, data: &str) -> Result<()> {
+    let base = daemon_base_url()?;
+    let client = reqwest_client();
+    client
+        .post(format!("{base}/sandbox/{sandbox_id}/pty/write"))
+        .json(&serde_json::json!({ "data": data }))
+        .send()
+        .await
+        .with_context(|| "pty_write request to daemon failed")?
+        .error_for_status()
+        .with_context(|| "pty_write failed")?;
+    Ok(())
+}
+
 /// Press a key in a sandbox via the daemon HTTP API.
 pub async fn daemon_key(sandbox_id: &str, key: &str, modifiers: &[String]) -> Result<()> {
     let base = daemon_base_url()?;
