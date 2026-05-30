@@ -11,10 +11,28 @@ const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) {
   app.quit();
 } else {
-  app.on("second-instance", () => {
+  app.on("second-instance", async () => {
     if (mainWindow) {
       if (mainWindow.isMinimized()) mainWindow.restore();
       mainWindow.focus();
+    }
+
+    // Poll daemon for new sandboxes and create tabs for them
+    if (daemonPort) {
+      try {
+        const resp = await fetch(`http://127.0.0.1:${daemonPort}/sandbox/list`);
+        const sandboxes = await resp.json();
+        const existingTabs = new Set(tabManager.getAllTabs().map((t) => t.id));
+        for (const sb of sandboxes) {
+          if (!existingTabs.has(sb.id)) {
+            const title = sb.kind?.detail?.command || sb.id;
+            tabManager.createTab(sb.id, sb.kind?.type || "cli", title, daemonPort);
+            tabManager.switchToTab(sb.id);
+          }
+        }
+      } catch (err) {
+        console.error("Failed to sync sandboxes:", err);
+      }
     }
   });
 
@@ -28,6 +46,24 @@ if (!gotTheLock) {
     }
 
     createWindow();
+
+    // Sync existing sandboxes from daemon (e.g., daemon was already running)
+    if (daemonPort) {
+      try {
+        const resp = await fetch(`http://127.0.0.1:${daemonPort}/sandbox/list`);
+        const sandboxes = await resp.json();
+        for (const sb of sandboxes) {
+          const title = sb.kind?.detail?.command || sb.id;
+          tabManager.createTab(sb.id, sb.kind?.type || "cli", title, daemonPort);
+        }
+        const tabs = tabManager.getAllTabs();
+        if (tabs.length > 0) {
+          tabManager.switchToTab(tabs[0].id);
+        }
+      } catch (err) {
+        console.error("Failed to sync sandboxes:", err);
+      }
+    }
   });
 }
 
