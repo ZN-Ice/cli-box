@@ -1,7 +1,20 @@
 import { app, BrowserWindow, ipcMain } from "electron";
 import { join } from "path";
+import { writeFileSync, unlinkSync, mkdirSync } from "fs";
 import { ensureDaemon, killDaemon } from "./daemon-bridge";
 import * as tabManager from "./tab-manager";
+
+const ELECTRON_JSON_PATH = join(process.env.HOME || "/tmp", ".sandbox", "electron.json");
+
+function writeElectronJson(port: number) {
+  const dir = join(process.env.HOME || "/tmp", ".sandbox");
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(ELECTRON_JSON_PATH, JSON.stringify({ pid: process.pid, port }));
+}
+
+function removeElectronJson() {
+  try { unlinkSync(ELECTRON_JSON_PATH); } catch { /* ignore */ }
+}
 
 let mainWindow: BrowserWindow | null = null;
 let daemonPort: number | null = null;
@@ -45,6 +58,7 @@ if (!gotTheLock) {
       return;
     }
 
+    writeElectronJson(daemonPort);
     createWindow();
 
     // Sync existing sandboxes from daemon (e.g., daemon was already running)
@@ -134,6 +148,7 @@ app.on("window-all-closed", () => {
 });
 
 app.on("before-quit", () => {
+  removeElectronJson();
   killDaemon();
 });
 
