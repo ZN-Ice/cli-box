@@ -114,11 +114,13 @@ mkdir -p "$RELEASE_DIR"
 # Copy CLI
 cp "$CLI_BIN" "$RELEASE_DIR/sandbox"
 chmod +x "$RELEASE_DIR/sandbox"
+codesign --force --sign - "$RELEASE_DIR/sandbox" 2>/dev/null || true
 ok "sandbox CLI binary"
 
 # Copy daemon
 cp "$DAEMON_BIN" "$RELEASE_DIR/sandbox-daemon"
 chmod +x "$RELEASE_DIR/sandbox-daemon"
+codesign --force --sign - "$RELEASE_DIR/sandbox-daemon" 2>/dev/null || true
 ok "sandbox-daemon binary"
 
 # Copy Tauri app bundle
