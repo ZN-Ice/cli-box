@@ -85,6 +85,18 @@ struct HealthResponse {
     sandboxes: usize,
 }
 
+#[derive(Deserialize)]
+pub struct UiFindRequest {
+    pub role: String,
+    #[serde(default)]
+    pub title: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct UiValueResponse {
+    pub value: Option<String>,
+}
+
 #[derive(Serialize)]
 struct CreateSandboxResponse {
     sandbox_id: String,
@@ -208,6 +220,9 @@ pub fn build_daemon_router(state: Arc<Mutex<DaemonState>>) -> Router {
             "/sandbox/{id}/ui/inspect/{window_id}",
             get(ui_inspect_handler),
         )
+        .route("/sandbox/{id}/ui/inspect", get(ui_inspect_by_id_handler))
+        .route("/sandbox/{id}/ui/find", post(ui_find_handler))
+        .route("/sandbox/{id}/ui/value", get(ui_value_handler))
         .route("/shutdown", post(shutdown_handler))
         .layer(cors)
         .with_state(state)
@@ -575,6 +590,80 @@ async fn ui_inspect_handler(
         .await
         .map_err(|e| AppError::Accessibility(format!("UI inspect task failed: {e}")))?;
     Ok(Json(result?))
+}
+
+/// Inspect UI tree using the sandbox's stored window_id.
+async fn ui_inspect_by_id_handler(
+    Path(id): Path<String>,
+    State(state): State<Arc<Mutex<DaemonState>>>,
+) -> Result<Json<crate::automation::ax_ui::UiElement>, AppError> {
+    let window_id = {
+        let s = state.lock().await;
+        let sandbox = s
+            .sandboxes
+            .get(&id)
+            .ok_or_else(|| AppError::Instance(format!("Sandbox '{id}' not found")))?;
+        sandbox
+            .window_id
+            .ok_or_else(|| AppError::BadRequest("Sandbox has no window_id".into()))?
+    };
+
+    let result = tokio::task::spawn_blocking(move || UiInspector::inspect_window(window_id))
+        .await
+        .map_err(|e| AppError::Accessibility(format!("UI inspect task failed: {e}")))?;
+    Ok(Json(result?))
+}
+
+/// Find UI elements by role/title in a sandbox window.
+async fn ui_find_handler(
+    Path(id): Path<String>,
+    State(state): State<Arc<Mutex<DaemonState>>>,
+    Json(req): Json<UiFindRequest>,
+) -> Result<Json<Vec<crate::automation::ax_ui::UiElement>>, AppError> {
+    let window_id = {
+        let s = state.lock().await;
+        let sandbox = s
+            .sandboxes
+            .get(&id)
+            .ok_or_else(|| AppError::Instance(format!("Sandbox '{id}' not found")))?;
+        sandbox
+            .window_id
+            .ok_or_else(|| AppError::BadRequest("Sandbox has no window_id".into()))?
+    };
+
+    let result = tokio::task::spawn_blocking(move || {
+        UiInspector::find_elements(window_id, Some(&req.role), req.title.as_deref())
+    })
+    .await
+    .map_err(|e| AppError::Accessibility(format!("UI find task failed: {e}")))?;
+    Ok(Json(result?))
+}
+
+/// Get the value of a UI element by its element ID.
+async fn ui_value_handler(
+    Path(id): Path<String>,
+    State(state): State<Arc<Mutex<DaemonState>>>,
+    axum::extract::Query(params): axum::extract::Query<HashMap<String, String>>,
+) -> Result<Json<UiValueResponse>, AppError> {
+    // Verify sandbox exists
+    {
+        let s = state.lock().await;
+        if !s.sandboxes.contains_key(&id) {
+            return Err(AppError::Instance(format!("Sandbox '{id}' not found")));
+        }
+    }
+
+    let element_id = params
+        .get("element_id")
+        .ok_or_else(|| AppError::BadRequest("Missing element_id query param".into()))?
+        .clone();
+
+    let result = tokio::task::spawn_blocking(move || {
+        UiInspector::get_element_value(&element_id)
+    })
+    .await
+    .map_err(|e| AppError::Accessibility(format!("UI value task failed: {e}")))?;
+    Ok(Json(UiValueResponse { value: result? }))
 }
 
 async fn shutdown_handler() -> Json<serde_json::Value> {
