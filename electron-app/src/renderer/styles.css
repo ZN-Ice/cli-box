@@ -292,6 +292,12 @@ html, body {
   background: var(--bg-terminal);
   overflow: hidden;
   min-height: 0;
+  position: relative;
+}
+
+.terminal-container > div {
+  position: absolute;
+  inset: 0;
 }
 
 /* Status Bar */
