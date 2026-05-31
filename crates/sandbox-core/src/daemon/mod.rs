@@ -234,6 +234,10 @@ pub fn build_daemon_router(state: Arc<Mutex<DaemonState>>) -> Router {
         .route("/sandbox/create", post(create_sandbox_handler))
         .route("/sandbox/{id}/close", post(close_sandbox_handler))
         .route("/sandbox/{id}/screenshot", get(screenshot_handler))
+        .route(
+            "/sandbox/{id}/screenshot/region",
+            get(screenshot_region_handler),
+        )
         .route("/sandbox/{id}/input/click", post(click_handler))
         .route("/sandbox/{id}/input/type", post(type_handler))
         .route("/sandbox/{id}/input/key", post(key_handler))
@@ -433,6 +437,48 @@ async fn screenshot_handler(
             "Sandbox '{id}' has no window_id. Screenshots require an app-mode sandbox or a discovered window."
         ))),
     }
+}
+
+#[derive(Deserialize)]
+struct SandboxRegionQuery {
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
+}
+
+async fn screenshot_region_handler(
+    State(state): State<Arc<Mutex<DaemonState>>>,
+    Path(id): Path<String>,
+    axum::extract::Query(q): axum::extract::Query<SandboxRegionQuery>,
+) -> Result<impl IntoResponse, AppError> {
+    let window_id = {
+        let s = state.lock().await;
+        let sandbox = s
+            .sandboxes
+            .get(&id)
+            .ok_or_else(|| AppError::Instance(format!("Sandbox '{id}' not found")))?;
+        sandbox
+            .window_id
+            .ok_or_else(|| AppError::BadRequest("Sandbox has no window_id".into()))?
+    };
+
+    // Get window frame to convert sandbox-relative coords to screen coords
+    let windows = tokio::task::spawn_blocking(ScreenCapture::list_windows)
+        .await
+        .map_err(|e| AppError::Screenshot(format!("list_windows panicked: {e}")))??;
+    let _window = windows
+        .iter()
+        .find(|(wid, _)| *wid == window_id)
+        .ok_or_else(|| AppError::WindowNotFound(format!("Window {window_id} not found")))?;
+
+    // For now, use coordinates directly (global screen coords)
+    let png_data =
+        tokio::task::spawn_blocking(move || ScreenCapture::capture_region(q.x, q.y, q.width, q.height))
+            .await
+            .map_err(|e| AppError::Screenshot(format!("capture_region task failed: {e}")))??;
+
+    Ok((StatusCode::OK, [("content-type", "image/png")], png_data).into_response())
 }
 
 async fn click_handler(
