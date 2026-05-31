@@ -4,6 +4,7 @@ use sandbox_core::process::ProcessInfo;
 fn process_info_serialization_roundtrip() {
     let info = ProcessInfo {
         pid: 1001,
+        os_pid: None,
         name: "echo".to_string(),
         path: Some("/bin/echo".to_string()),
         is_running: true,
@@ -24,6 +25,7 @@ fn process_info_serialization_roundtrip() {
 fn process_info_not_running() {
     let info = ProcessInfo {
         pid: 0,
+        os_pid: None,
         name: "dead".to_string(),
         path: None,
         is_running: false,
@@ -46,12 +48,14 @@ fn process_info_vec_roundtrip() {
     let infos = vec![
         ProcessInfo {
             pid: 1,
+            os_pid: None,
             name: "a".into(),
             path: None,
             is_running: true,
         },
         ProcessInfo {
             pid: 2,
+            os_pid: None,
             name: "b".into(),
             path: None,
             is_running: false,
@@ -68,6 +72,7 @@ fn process_info_vec_roundtrip() {
 fn process_info_large_pid() {
     let info = ProcessInfo {
         pid: u32::MAX,
+        os_pid: None,
         name: "max".into(),
         path: None,
         is_running: true,
@@ -88,6 +93,7 @@ fn process_info_ignores_unknown_fields() {
 fn process_info_empty_name() {
     let info = ProcessInfo {
         pid: 1,
+        os_pid: None,
         name: String::new(),
         path: None,
         is_running: true,
@@ -101,6 +107,7 @@ fn process_info_empty_name() {
 fn process_info_path_none_serializes_as_null() {
     let info = ProcessInfo {
         pid: 1,
+        os_pid: None,
         name: "x".into(),
         path: None,
         is_running: true,
@@ -113,6 +120,7 @@ fn process_info_path_none_serializes_as_null() {
 fn process_info_path_some_serializes_as_string() {
     let info = ProcessInfo {
         pid: 1,
+        os_pid: None,
         name: "x".into(),
         path: Some("/usr/bin/x".into()),
         is_running: true,
