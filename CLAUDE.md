@@ -4,62 +4,33 @@
 >
 > 对目标应用**零侵入**，所有操作在 OS 层面完成（CGEvent + AXUIElement + ScreenCaptureKit）。
 >
-> **多实例架构**：每个沙箱是一个独立的 Tauri 窗口进程，拥有唯一 ID、内嵌 HTTP API 服务器，通过文件系统注册中心（`~/.sandbox/instances/`）进行实例发现和管理。
+> **Daemon + Electron 架构**：一个长驻 Rust daemon 管理所有沙箱实例（PTY 进程 + macOS 应用），通过单一 HTTP API 对外服务。Electron 应用作为 GUI 前端，提供 tab 管理、xterm.js 终端和截图预览。CLI 直接与 daemon 通信。
 
 ## 一、架构总览
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
 │                  Agent / 用户 (CLI / MCP / HTTP)              │
-│                                                              │
-│  sandbox start                          → 返回 sandbox-id   │
-│  sandbox list                           → 列出所有实例       │
-│  sandbox screenshot <id>                → 截取沙箱截图       │
-│  sandbox click <id> 100 200             → 模拟点击           │
-│  sandbox close <id>                     → 关闭沙箱           │
-└──────────────────────┬───────────────────────────────────────┘
-                       │ CLI (子进程启动) / MCP stdio / HTTP
-                       ▼
+│  sandbox start / list / screenshot / click / type / key      │
+└───────────────────────────────┬───────────────────────────────┘
+                                │ HTTP (localhost:15801)
+                                ▼
 ┌──────────────────────────────────────────────────────────────┐
-│              沙箱实例注册中心 (~/.sandbox/instances/)         │
-│                                                              │
-│  ┌─────────────────────┐  ┌─────────────────────┐            │
-│  │ Sandbox Instance #1 │  │ Sandbox Instance #2 │  ...       │
-│  │ id: abc123          │  │ id: def456          │            │
-│  │ port: 15801         │  │ port: 15802         │            │
-│  │ mode: cli (claude)  │  │ mode: app (cc-switch)│           │
-│  │ status: Running     │  │ status: Running     │            │
-│  └─────────┬───────────┘  └─────────┬───────────┘            │
-│            │                         │                        │
-│            │ HTTP :15801             │ HTTP :15802            │
-└────────────┼─────────────────────────┼────────────────────────┘
-             │                         │
-             ▼                         ▼
-   ┌──────────────────┐    ┌──────────────────┐
-   │  Tauri Window #1  │    │  Tauri Window #2  │
-   │  "System Test     │    │  "System Test     │
-   │   Sandbox [abc]"  │    │   Sandbox [def]"  │
-   │                  │    │                  │
-   │  ┌────────────┐  │    │  ┌────────────┐  │
-   │  │ xterm.js   │  │    │  │ App 关联   │  │
-   │  │ (claude)   │  │    │  │ (cc-switch)│  │
-   │  └────────────┘  │    │  └────────────┘  │
-   │                  │    │                  │
-   │  内嵌 HTTP API   │    │  内嵌 HTTP API   │
-   │  + Automation    │    │  + Automation    │
-   │  Engine          │    │  Engine          │
-   └──────────────────┘    └──────────────────┘
-             │                         │
-             ▼                         ▼
-      ┌─────────────┐          ┌─────────────────┐
-      │  CLI 进程    │          │  macOS .app      │
-      │  (PTY)      │          │  (NSWorkspace)   │
-      └─────────────┘          └─────────────────┘
+│              sandbox-daemon (Rust, 单实例)                     │
+│  PTY Manager + App Manager + Automation Engine                │
+│  Instance Registry (~/.sandbox/instances/)                    │
+└───────────────────────────────┬───────────────────────────────┘
+                                │ WebSocket (PTY 流)
+                                ▼
+┌──────────────────────────────────────────────────────────────┐
+│              Electron App (单实例, Chromium)                   │
+│  Tab 管理 + xterm.js + 控制面板 + 截图预览                     │
+└──────────────────────────────────────────────────────────────┘
 ```
 
 **设计原则**：
 1. **零侵入**：目标应用不需要任何适配，所有操作在 OS 层面完成
-2. **多实例**：每个沙箱是独立的 Tauri 窗口进程，通过 CLI 管理生命周期
+2. **单 daemon 多沙箱**：一个 daemon 进程管理所有沙箱实例，通过 CLI 管理生命周期
 3. **窗口级截图**：ScreenCaptureKit 按窗口 ID 截图，不需要窗口在前台
 4. **双协议**：MCP (Agent CLI 原生) + HTTP (通用调用)
 5. **文件系统注册中心**：沙箱实例通过 `~/.sandbox/instances/<id>.json` 注册和发现
@@ -72,8 +43,8 @@
 |---------|--------|
 | 核心库 | Rust (Edition 2021, >=1.88), `sandbox-core` library crate |
 | CLI | Rust, `sandbox-cli` binary crate |
-| 桌面框架 | Tauri 2.x |
-| 桌面前端 | React 18 + TS + Vite + TailwindCSS + xterm.js |
+| 桌面框架 | Electron (Chromium) |
+| 桌面前端 | React 18 + TS + Vite + xterm.js |
 | 异步运行时 | tokio |
 | macOS API | CoreGraphics (CGEvent), ApplicationServices (AXUIElement), ScreenCaptureKit |
 | 包管理 | Cargo Workspace + pnpm |
