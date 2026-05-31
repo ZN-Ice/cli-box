@@ -67,6 +67,11 @@ export default function SandboxTerminal({ sandboxId, ptyPid, onReady }: Terminal
     requestAnimationFrame(() => {
       fitAddon.fit();
       onReady?.(term.cols, term.rows);
+
+      // Re-fit after layout settles (flex layout may not be fully computed on first frame)
+      setTimeout(() => {
+        doFit();
+      }, 100);
     });
 
     term.onData((data) => {
