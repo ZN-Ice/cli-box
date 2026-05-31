@@ -245,6 +245,68 @@ pub async fn daemon_processes(sandbox_id: &str) -> Result<Vec<ProcessInfo>> {
     Ok(processes)
 }
 
+/// Inspect UI tree of a sandbox window via the daemon HTTP API.
+pub async fn daemon_ui_inspect(sandbox_id: &str) -> Result<serde_json::Value> {
+    let base = daemon_base_url()?;
+    let client = reqwest_client();
+    let resp = client
+        .get(format!("{base}/sandbox/{sandbox_id}/ui/inspect"))
+        .send()
+        .await
+        .with_context(|| "ui/inspect request to daemon failed")?;
+    let status = resp.status();
+    if !status.is_success() {
+        let text = resp.text().await.unwrap_or_default();
+        anyhow::bail!("ui/inspect failed (HTTP {status}): {text}");
+    }
+    Ok(resp.json().await?)
+}
+
+/// Find UI elements by role/title in a sandbox window.
+pub async fn daemon_ui_find(
+    sandbox_id: &str,
+    role: &str,
+    title: Option<&str>,
+) -> Result<serde_json::Value> {
+    let base = daemon_base_url()?;
+    let client = reqwest_client();
+    let mut body = serde_json::json!({ "role": role });
+    if let Some(t) = title {
+        body["title"] = serde_json::json!(t);
+    }
+    let resp = client
+        .post(format!("{base}/sandbox/{sandbox_id}/ui/find"))
+        .json(&body)
+        .send()
+        .await
+        .with_context(|| "ui/find request to daemon failed")?;
+    let status = resp.status();
+    if !status.is_success() {
+        let text = resp.text().await.unwrap_or_default();
+        anyhow::bail!("ui/find failed (HTTP {status}): {text}");
+    }
+    Ok(resp.json().await?)
+}
+
+/// Get the value of a UI element by its element ID.
+pub async fn daemon_ui_value(sandbox_id: &str, element_id: &str) -> Result<serde_json::Value> {
+    let base = daemon_base_url()?;
+    let client = reqwest_client();
+    let resp = client
+        .get(format!(
+            "{base}/sandbox/{sandbox_id}/ui/value?element_id={element_id}"
+        ))
+        .send()
+        .await
+        .with_context(|| "ui/value request to daemon failed")?;
+    let status = resp.status();
+    if !status.is_success() {
+        let text = resp.text().await.unwrap_or_default();
+        anyhow::bail!("ui/value failed (HTTP {status}): {text}");
+    }
+    Ok(resp.json().await?)
+}
+
 fn reqwest_client() -> reqwest::Client {
     reqwest::ClientBuilder::new()
         .no_proxy()

@@ -129,6 +129,36 @@ enum Commands {
         /// Sandbox instance ID (omit to show all log paths)
         id: Option<String>,
     },
+
+    /// Inspect UI tree of a sandbox window
+    UiInspect {
+        /// Sandbox instance ID
+        #[arg(long)]
+        id: String,
+    },
+
+    /// Find UI elements by role/title
+    UiFind {
+        /// Sandbox instance ID
+        #[arg(long)]
+        id: String,
+        /// AX role (e.g., AXButton, AXTextField)
+        #[arg(long)]
+        role: String,
+        /// Optional title filter
+        #[arg(long)]
+        title: Option<String>,
+    },
+
+    /// Get value of a UI element
+    UiValue {
+        /// Sandbox instance ID
+        #[arg(long)]
+        id: String,
+        /// Element ID
+        #[arg(long)]
+        element_id: String,
+    },
 }
 
 #[tokio::main]
@@ -190,6 +220,15 @@ async fn main() -> anyhow::Result<()> {
         }
         Commands::Logs { id } => {
             cmd_logs(id.as_deref())?;
+        }
+        Commands::UiInspect { id } => {
+            cmd_ui_inspect(&id).await?;
+        }
+        Commands::UiFind { id, role, title } => {
+            cmd_ui_find(&id, &role, title.as_deref()).await?;
+        }
+        Commands::UiValue { id, element_id } => {
+            cmd_ui_value(&id, &element_id).await?;
         }
     }
 
@@ -979,6 +1018,26 @@ fn cmd_logs(id: Option<&str>) -> anyhow::Result<()> {
         }
     }
 
+    Ok(())
+}
+
+// ── UI Inspection Commands ──────────────────────────────
+
+async fn cmd_ui_inspect(id: &str) -> anyhow::Result<()> {
+    let tree = client::daemon_ui_inspect(id).await?;
+    println!("{}", serde_json::to_string_pretty(&tree)?);
+    Ok(())
+}
+
+async fn cmd_ui_find(id: &str, role: &str, title: Option<&str>) -> anyhow::Result<()> {
+    let elements = client::daemon_ui_find(id, role, title).await?;
+    println!("{}", serde_json::to_string_pretty(&elements)?);
+    Ok(())
+}
+
+async fn cmd_ui_value(id: &str, element_id: &str) -> anyhow::Result<()> {
+    let value = client::daemon_ui_value(id, element_id).await?;
+    println!("{}", serde_json::to_string_pretty(&value)?);
     Ok(())
 }
 
