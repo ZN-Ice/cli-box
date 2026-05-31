@@ -476,10 +476,11 @@ async fn screenshot_region_handler(
         .ok_or_else(|| AppError::WindowNotFound(format!("Window {window_id} not found")))?;
 
     // For now, use coordinates directly (global screen coords)
-    let png_data =
-        tokio::task::spawn_blocking(move || ScreenCapture::capture_region(q.x, q.y, q.width, q.height))
-            .await
-            .map_err(|e| AppError::Screenshot(format!("capture_region task failed: {e}")))??;
+    let png_data = tokio::task::spawn_blocking(move || {
+        ScreenCapture::capture_region(q.x, q.y, q.width, q.height)
+    })
+    .await
+    .map_err(|e| AppError::Screenshot(format!("capture_region task failed: {e}")))??;
 
     Ok((StatusCode::OK, [("content-type", "image/png")], png_data).into_response())
 }
@@ -652,7 +653,9 @@ async fn pty_write_handler(
     tokio::task::spawn_blocking(move || ProcessManager::send_input(pty_pid, data.as_bytes()))
         .await
         .map_err(|e| AppError::Process(format!("pty_write panicked: {e}")))??;
-    Ok(Json(serde_json::json!({"written": true, "bytes": req.data.len()})))
+    Ok(Json(
+        serde_json::json!({"written": true, "bytes": req.data.len()}),
+    ))
 }
 
 async fn processes_handler(
@@ -756,11 +759,9 @@ async fn ui_value_handler(
         .ok_or_else(|| AppError::BadRequest("Missing element_id query param".into()))?
         .clone();
 
-    let result = tokio::task::spawn_blocking(move || {
-        UiInspector::get_element_value(&element_id)
-    })
-    .await
-    .map_err(|e| AppError::Accessibility(format!("UI value task failed: {e}")))?;
+    let result = tokio::task::spawn_blocking(move || UiInspector::get_element_value(&element_id))
+        .await
+        .map_err(|e| AppError::Accessibility(format!("UI value task failed: {e}")))?;
     Ok(Json(UiValueResponse { value: result? }))
 }
 

@@ -278,8 +278,13 @@ async fn main() -> anyhow::Result<()> {
         Commands::Playback { id, input, speed } => {
             cmd_playback(&id, &input, speed)?;
         }
-        Commands::Diff { a, b, threshold, output } => {
-            cmd_diff(&a, &b, threshold, output.as_ref())?;
+        Commands::Diff {
+            a,
+            b,
+            threshold,
+            output,
+        } => {
+            cmd_diff(&a, &b, threshold, output.as_deref())?;
         }
         Commands::McpServe => {
             run_mcp_server().await?;
@@ -631,7 +636,7 @@ async fn cmd_click_daemon(x: f64, y: f64, id: &str, button: &str) -> anyhow::Res
 }
 
 /// Take a screenshot via the daemon API.
-async fn cmd_screenshot_daemon(output: &PathBuf, id: Option<&str>) -> anyhow::Result<()> {
+async fn cmd_screenshot_daemon(output: &std::path::Path, id: Option<&str>) -> anyhow::Result<()> {
     let sandbox_id = id.ok_or_else(|| {
         anyhow::anyhow!(
             "--id is required for screenshots. Use: sandbox screenshot --id <sandbox-id>"
@@ -903,7 +908,7 @@ async fn cmd_click(x: f64, y: f64, id: &str, button: &str) -> anyhow::Result<()>
 /// Take a screenshot (legacy).
 #[allow(dead_code)]
 async fn cmd_screenshot(
-    output: &PathBuf,
+    output: &std::path::Path,
     id: Option<&str>,
     window_id: Option<u32>,
 ) -> anyhow::Result<()> {
@@ -1097,15 +1102,18 @@ async fn cmd_ui_value(id: &str, element_id: &str) -> anyhow::Result<()> {
 
 // ── Record / Playback / Diff Commands ───────────────────
 
-fn cmd_record(id: &str, output: &PathBuf) -> anyhow::Result<()> {
+fn cmd_record(id: &str, output: &std::path::Path) -> anyhow::Result<()> {
     println!("Recording sandbox {id} to {}...", output.display());
     println!("Use 'sandbox type', 'sandbox key', 'sandbox click' commands while recording.");
     println!("Recording is integrated into the daemon — use HTTP API for now.");
     Ok(())
 }
 
-fn cmd_playback(id: &str, input: &PathBuf, speed: f64) -> anyhow::Result<()> {
-    println!("Playing back {} on sandbox {id} at {speed}x speed...", input.display());
+fn cmd_playback(id: &str, input: &std::path::Path, speed: f64) -> anyhow::Result<()> {
+    println!(
+        "Playing back {} on sandbox {id} at {speed}x speed...",
+        input.display()
+    );
     let actions = sandbox_core::player::Player::load_actions(input)?;
     println!("Loaded {} actions.", actions.len());
     for action in &actions {
@@ -1114,7 +1122,12 @@ fn cmd_playback(id: &str, input: &PathBuf, speed: f64) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn cmd_diff(a: &PathBuf, b: &PathBuf, threshold: u8, output: Option<&PathBuf>) -> anyhow::Result<()> {
+fn cmd_diff(
+    a: &std::path::Path,
+    b: &std::path::Path,
+    threshold: u8,
+    output: Option<&std::path::Path>,
+) -> anyhow::Result<()> {
     let img_a = std::fs::read(a).with_context(|| format!("Failed to read {}", a.display()))?;
     let img_b = std::fs::read(b).with_context(|| format!("Failed to read {}", b.display()))?;
     let result = sandbox_core::diff::diff_images(&img_a, &img_b, threshold)?;
@@ -1229,10 +1242,7 @@ async fn run_mcp_server() -> anyhow::Result<()> {
         let msg: serde_json::Value = serde_json::from_str(&line)?;
         let method = msg.get("method").and_then(|m| m.as_str()).unwrap_or("");
         let id = msg.get("id").cloned();
-        let params = msg
-            .get("params")
-            .cloned()
-            .unwrap_or(serde_json::json!({}));
+        let params = msg.get("params").cloned().unwrap_or(serde_json::json!({}));
 
         let result = match method {
             "initialize" => serde_json::json!({
@@ -1450,13 +1460,18 @@ fn find_electron_binary() -> anyhow::Result<PathBuf> {
         return Ok(dev_bundle_x64.join("Contents/MacOS/system-test-sandbox"));
     }
 
-    anyhow::bail!("Electron app not found. Build it first: cd electron-app && pnpm build && pnpm pack")
+    anyhow::bail!(
+        "Electron app not found. Build it first: cd electron-app && pnpm build && pnpm pack"
+    )
 }
 
 /// Check if Electron is already running by reading ~/.sandbox/electron.json
+#[allow(dead_code)]
 fn find_running_electron() -> bool {
     let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
-    let path = std::path::PathBuf::from(home).join(".sandbox").join("electron.json");
+    let path = std::path::PathBuf::from(home)
+        .join(".sandbox")
+        .join("electron.json");
     if !path.exists() {
         return false;
     }

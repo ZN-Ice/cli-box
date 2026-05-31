@@ -308,6 +308,7 @@ pub async fn daemon_ui_value(sandbox_id: &str, element_id: &str) -> Result<serde
 }
 
 /// Set the window_id for a sandbox via the daemon HTTP API.
+#[allow(dead_code)]
 pub async fn daemon_set_window_id(sandbox_id: &str, window_id: u32) -> Result<()> {
     let base = daemon_base_url()?;
     let client = reqwest_client();

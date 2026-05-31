@@ -5,7 +5,12 @@ fn encode_png(img: &image::RgbaImage) -> Vec<u8> {
     let encoder = image::codecs::png::PngEncoder::new(&mut buf);
     use image::ImageEncoder;
     encoder
-        .write_image(img.as_raw(), img.width(), img.height(), image::ExtendedColorType::Rgba8)
+        .write_image(
+            img.as_raw(),
+            img.width(),
+            img.height(),
+            image::ExtendedColorType::Rgba8,
+        )
         .unwrap();
     buf
 }

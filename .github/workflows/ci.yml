@@ -192,20 +192,20 @@ jobs:
           version: "10"
 
       - name: 安装依赖
-        working-directory: sandbox-web
+        working-directory: electron-app
         run: pnpm install --frozen-lockfile
 
       - name: TypeScript 类型检查
-        working-directory: sandbox-web
+        working-directory: electron-app
         run: pnpm typecheck
 
       - name: 运行前端测试 + 覆盖率
-        working-directory: sandbox-web
+        working-directory: electron-app
         run: pnpm vitest run --coverage --coverage.reporter=json-summary --coverage.reporter=text
 
       - name: 生成前端覆盖率摘要
         if: always()
-        working-directory: sandbox-web
+        working-directory: electron-app
         run: |
           SUMMARY_FILE="frontend-coverage-summary.md"
           echo "## 前端测试覆盖率" > "$SUMMARY_FILE"
@@ -260,7 +260,7 @@ jobs:
         if: always()
         with:
           name: frontend-coverage-summary
-          path: sandbox-web/frontend-coverage-summary.md
+          path: electron-app/frontend-coverage-summary.md
           retention-days: 1
 
       - name: 上传前端覆盖率报告
@@ -268,7 +268,7 @@ jobs:
         if: always()
         with:
           name: frontend-coverage
-          path: sandbox-web/coverage/
+          path: electron-app/coverage/
           retention-days: 14
 
   # ==================== 安全检查 ====================

@@ -26,11 +26,7 @@ pub enum ActionType {
         pty: bool,
     },
     #[serde(rename = "click")]
-    Click {
-        x: f64,
-        y: f64,
-        button: String,
-    },
+    Click { x: f64, y: f64, button: String },
     #[serde(rename = "screenshot")]
     Screenshot { path: String },
     #[serde(rename = "wait")]
