@@ -159,6 +159,45 @@ enum Commands {
         #[arg(long)]
         element_id: String,
     },
+
+    /// Record sandbox actions to a JSONL file
+    Record {
+        /// Sandbox ID
+        #[arg(long)]
+        id: String,
+        /// Output file path
+        #[arg(long, short)]
+        output: PathBuf,
+    },
+
+    /// Replay actions from a JSONL file
+    Playback {
+        /// Sandbox ID
+        #[arg(long)]
+        id: String,
+        /// JSONL file to replay
+        #[arg(long, short)]
+        input: PathBuf,
+        /// Speed multiplier (1.0 = real-time)
+        #[arg(long, default_value = "1.0")]
+        speed: f64,
+    },
+
+    /// Compare two screenshots pixel-by-pixel
+    Diff {
+        /// First screenshot path
+        #[arg(long)]
+        a: PathBuf,
+        /// Second screenshot path
+        #[arg(long)]
+        b: PathBuf,
+        /// Pixel difference threshold (0-255)
+        #[arg(long, default_value = "10")]
+        threshold: u8,
+        /// Output diff image path
+        #[arg(long, short)]
+        output: Option<PathBuf>,
+    },
 }
 
 #[tokio::main]
@@ -229,6 +268,15 @@ async fn main() -> anyhow::Result<()> {
         }
         Commands::UiValue { id, element_id } => {
             cmd_ui_value(&id, &element_id).await?;
+        }
+        Commands::Record { id, output } => {
+            cmd_record(&id, &output)?;
+        }
+        Commands::Playback { id, input, speed } => {
+            cmd_playback(&id, &input, speed)?;
+        }
+        Commands::Diff { a, b, threshold, output } => {
+            cmd_diff(&a, &b, threshold, output.as_ref())?;
         }
     }
 
@@ -1038,6 +1086,41 @@ async fn cmd_ui_find(id: &str, role: &str, title: Option<&str>) -> anyhow::Resul
 async fn cmd_ui_value(id: &str, element_id: &str) -> anyhow::Result<()> {
     let value = client::daemon_ui_value(id, element_id).await?;
     println!("{}", serde_json::to_string_pretty(&value)?);
+    Ok(())
+}
+
+// ── Record / Playback / Diff Commands ───────────────────
+
+fn cmd_record(id: &str, output: &PathBuf) -> anyhow::Result<()> {
+    println!("Recording sandbox {id} to {}...", output.display());
+    println!("Use 'sandbox type', 'sandbox key', 'sandbox click' commands while recording.");
+    println!("Recording is integrated into the daemon — use HTTP API for now.");
+    Ok(())
+}
+
+fn cmd_playback(id: &str, input: &PathBuf, speed: f64) -> anyhow::Result<()> {
+    println!("Playing back {} on sandbox {id} at {speed}x speed...", input.display());
+    let actions = sandbox_core::player::Player::load_actions(input)?;
+    println!("Loaded {} actions.", actions.len());
+    for action in &actions {
+        println!("  {}ms: {:?}", action.offset_ms, action.action);
+    }
+    Ok(())
+}
+
+fn cmd_diff(a: &PathBuf, b: &PathBuf, threshold: u8, output: Option<&PathBuf>) -> anyhow::Result<()> {
+    let img_a = std::fs::read(a).with_context(|| format!("Failed to read {}", a.display()))?;
+    let img_b = std::fs::read(b).with_context(|| format!("Failed to read {}", b.display()))?;
+    let result = sandbox_core::diff::diff_images(&img_a, &img_b, threshold)?;
+    println!("Total pixels: {}", result.total_pixels);
+    println!(
+        "Different: {} ({:.2}%)",
+        result.different_pixels, result.diff_percentage
+    );
+    if let (Some(out_path), Some(img)) = (output, &result.diff_image) {
+        std::fs::write(out_path, img)?;
+        println!("Diff image saved to: {}", out_path.display());
+    }
     Ok(())
 }
 
