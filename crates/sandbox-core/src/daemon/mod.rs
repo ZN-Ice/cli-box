@@ -452,6 +452,29 @@ async fn screenshot_handler(
         // Fall through to ScreenCaptureKit if renderer unavailable
     }
 
+    // If no window_id stored, try to discover the Electron window
+    let window_id = match window_id {
+        Some(wid) => Some(wid),
+        None => {
+            let discovered = tokio::task::spawn_blocking(|| {
+                ScreenCapture::find_window_by_title("System Test Sandbox")
+            })
+            .await
+            .ok()
+            .and_then(|r| r.ok());
+            if let Some(wid) = discovered {
+                // Cache the discovered window_id
+                let mut s = state.lock().await;
+                if let Some(sb) = s.sandboxes.get_mut(&id) {
+                    sb.window_id = Some(wid);
+                }
+                Some(wid)
+            } else {
+                None
+            }
+        }
+    };
+
     match window_id {
         Some(wid) => {
             let png_data = tokio::task::spawn_blocking(move || {
