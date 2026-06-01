@@ -209,13 +209,15 @@ function App() {
         // ignore
       }
       terminalRefs.current.delete(id);
-      setTabs((prev) => prev.filter((t) => t.id !== id));
-      if (activeTabId === id) {
-        const remaining = tabs.filter((t) => t.id !== id);
-        setActiveTabId(remaining.length > 0 ? remaining[0].id : null);
-      }
+      setTabs((prev) => {
+        const next = prev.filter((t) => t.id !== id);
+        if (activeTabId === id) {
+          setActiveTabId(next.length > 0 ? next[0].id : null);
+        }
+        return next;
+      });
     },
-    [activeTabId, tabs]
+    [activeTabId]
   );
 
   const handleTabClick = useCallback((id: string) => {
