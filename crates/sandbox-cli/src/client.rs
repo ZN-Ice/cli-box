@@ -106,11 +106,16 @@ pub async fn daemon_list_sandboxes() -> Result<Vec<DaemonSandbox>> {
 }
 
 /// Take a screenshot of a sandbox via the daemon HTTP API. Returns PNG bytes.
-pub async fn daemon_screenshot(sandbox_id: &str) -> Result<Vec<u8>> {
+pub async fn daemon_screenshot(sandbox_id: &str, with_frame: bool) -> Result<Vec<u8>> {
     let base = daemon_base_url()?;
     let client = reqwest_client();
+    let url = if with_frame {
+        format!("{base}/sandbox/{sandbox_id}/screenshot?with_frame=true")
+    } else {
+        format!("{base}/sandbox/{sandbox_id}/screenshot")
+    };
     let resp = client
-        .get(format!("{base}/sandbox/{sandbox_id}/screenshot"))
+        .get(url)
         .send()
         .await
         .with_context(|| "screenshot request to daemon failed")?;

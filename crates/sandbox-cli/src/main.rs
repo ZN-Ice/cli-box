@@ -109,6 +109,10 @@ enum Commands {
         /// Window ID to capture (overrides auto-detection)
         #[arg(long)]
         window_id: Option<u32>,
+
+        /// Capture full macOS window frame (title bar, tabs, status bar)
+        #[arg(long)]
+        with_frame: bool,
     },
 
     /// List all visible windows on the system
@@ -248,8 +252,9 @@ async fn main() -> anyhow::Result<()> {
             output,
             id,
             window_id: _window_id,
+            with_frame,
         } => {
-            cmd_screenshot_daemon(&output, id.as_deref()).await?;
+            cmd_screenshot_daemon(&output, id.as_deref(), with_frame).await?;
         }
         Commands::Windows => {
             cmd_windows()?;
@@ -636,14 +641,18 @@ async fn cmd_click_daemon(x: f64, y: f64, id: &str, button: &str) -> anyhow::Res
 }
 
 /// Take a screenshot via the daemon API.
-async fn cmd_screenshot_daemon(output: &std::path::Path, id: Option<&str>) -> anyhow::Result<()> {
+async fn cmd_screenshot_daemon(
+    output: &std::path::Path,
+    id: Option<&str>,
+    with_frame: bool,
+) -> anyhow::Result<()> {
     let sandbox_id = id.ok_or_else(|| {
         anyhow::anyhow!(
             "--id is required for screenshots. Use: sandbox screenshot --id <sandbox-id>"
         )
     })?;
 
-    let png = client::daemon_screenshot(sandbox_id).await?;
+    let png = client::daemon_screenshot(sandbox_id, with_frame).await?;
     std::fs::write(output, &png)
         .with_context(|| format!("Failed to write screenshot to {:?}", output))?;
     println!("Screenshot saved to {:?} ({} bytes)", output, png.len());
@@ -1303,7 +1312,7 @@ async fn handle_mcp_tool(name: &str, args: &serde_json::Value) -> serde_json::Va
             }
             "screenshot_sandbox" => {
                 let id = args["sandbox_id"].as_str().unwrap_or("");
-                let png = client::daemon_screenshot(id).await?;
+                let png = client::daemon_screenshot(id, false).await?;
                 let b64 = base64_encode(&png);
                 Ok(serde_json::json!({ "sandbox_id": id, "image_base64": b64 }))
             }
