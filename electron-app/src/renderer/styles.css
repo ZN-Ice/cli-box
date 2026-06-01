@@ -288,6 +288,16 @@ html, body, #root {
   padding: 8px;
 }
 
+/* Terminal Area (flex container for all tabs) */
+.terminal-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
+  min-height: 0;
+}
+
 /* Status Bar */
 .statusbar {
   height: 24px;
