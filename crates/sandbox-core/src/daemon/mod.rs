@@ -13,20 +13,21 @@ use crate::process::ProcessManager;
 use crate::server::{
     handle_pty_ws, ClickRequest, KeyRequest, ScrollRequest, SpawnAppRequest, TypeRequest,
 };
-use axum::extract::ws::WebSocketUpgrade;
+use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::routing::{get, post};
 use axum::Json;
 use axum::Router;
+use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::TcpListener;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
-use tokio::sync::Mutex;
+use tokio::sync::{oneshot, Mutex};
 use tower_http::cors::{Any, CorsLayer};
 
 // ── Types ─────────────────────────────────────────────────────
@@ -47,6 +48,12 @@ pub struct DaemonState {
     pub port: u16,
     pub sandboxes: HashMap<String, ManagedSandbox>,
     pub started_at: Instant,
+    /// Write half of the renderer's screenshot WebSocket connection.
+    pub screenshot_ws_tx: Option<futures_util::stream::SplitSink<WebSocket, Message>>,
+    /// Pending screenshot requests awaiting renderer responses.
+    pub pending_screenshots: HashMap<u64, oneshot::Sender<Result<Vec<u8>, String>>>,
+    /// Counter for generating unique request IDs.
+    pub screenshot_request_counter: u64,
 }
 
 impl DaemonState {
@@ -259,6 +266,7 @@ pub fn build_daemon_router(state: Arc<Mutex<DaemonState>>) -> Router {
         .route("/sandbox/{id}/ui/value", get(ui_value_handler))
         .route("/sandbox/{id}/window", post(set_window_id_handler))
         .route("/shutdown", post(shutdown_handler))
+        .route("/screenshot/ws", get(screenshot_ws_handler))
         .layer(cors)
         .with_state(state)
 }
@@ -329,6 +337,10 @@ async fn create_sandbox_handler(
                 managed.kind.clone(),
             );
             registry.register(&instance)?;
+            // Persist window_id to registry so CLI reads are consistent
+            if let Some(wid) = window_id {
+                let _ = registry.update_window_id(&id, wid);
+            }
 
             state.lock().await.sandboxes.insert(id.clone(), managed);
 
@@ -372,6 +384,10 @@ async fn create_sandbox_handler(
                 managed.kind.clone(),
             );
             registry.register(&instance)?;
+            // Persist window_id to registry so CLI reads are consistent
+            if let Some(wid) = window_id {
+                let _ = registry.update_window_id(&id, wid);
+            }
 
             state.lock().await.sandboxes.insert(id.clone(), managed);
 
@@ -418,28 +434,230 @@ async fn screenshot_handler(
     State(state): State<Arc<Mutex<DaemonState>>>,
     Path(id): Path<String>,
 ) -> Result<impl IntoResponse, AppError> {
+    // Verify sandbox exists
+    {
+        let s = state.lock().await;
+        if !s.sandboxes.contains_key(&id) {
+            return Err(AppError::Instance(format!("Sandbox '{id}' not found")));
+        }
+    }
+
+    // Attempt 1: Ask the Electron renderer to capture via WebSocket
+    if let Some(png_data) = request_renderer_screenshot(state.clone(), &id).await {
+        tracing::info!(
+            "[screenshot] sandbox {} captured via renderer ({} bytes)",
+            id,
+            png_data.len()
+        );
+        return Ok((StatusCode::OK, [("content-type", "image/png")], png_data).into_response());
+    }
+
+    // Attempt 2: Fall back to ScreenCaptureKit
+    tracing::info!(
+        "[screenshot] renderer unavailable for sandbox {}, falling back to ScreenCaptureKit",
+        id
+    );
+
     let window_id = {
         let s = state.lock().await;
-        let sandbox = s
-            .sandboxes
-            .get(&id)
-            .ok_or_else(|| AppError::Instance(format!("Sandbox '{id}' not found")))?;
-        sandbox.window_id
+        s.sandboxes.get(&id).and_then(|sb| sb.window_id)
     };
 
-    match window_id {
-        Some(wid) => {
-            let png_data = tokio::task::spawn_blocking(move || {
-                ScreenCapture::capture_window(wid)
-            })
+    if let Some(wid) = window_id {
+        let result = tokio::task::spawn_blocking(move || ScreenCapture::capture_window(wid))
             .await
-            .map_err(|e| AppError::Screenshot(format!("screenshot task failed: {e}")))??;
-            Ok((StatusCode::OK, [("content-type", "image/png")], png_data).into_response())
+            .map_err(|e| AppError::Screenshot(format!("screenshot task failed: {e}")))?;
+        match result {
+            Ok(png_data) => {
+                return Ok(
+                    (StatusCode::OK, [("content-type", "image/png")], png_data).into_response()
+                );
+            }
+            Err(AppError::WindowNotFound(_)) => {
+                tracing::warn!(
+                    "Stored window_id={} for sandbox {} is stale, re-discovering",
+                    wid,
+                    id
+                );
+            }
+            Err(e) => return Err(e),
         }
-        None => Err(AppError::BadRequest(format!(
-            "Sandbox '{id}' has no window_id. Screenshots require an app-mode sandbox or a discovered window."
-        ))),
     }
+
+    // Re-discover the Electron window by title
+    let new_wid =
+        tokio::task::spawn_blocking(|| ScreenCapture::find_window_by_title("System Test Sandbox"))
+            .await
+            .map_err(|e| AppError::Screenshot(format!("window discovery task failed: {e}")))??;
+
+    {
+        let mut s = state.lock().await;
+        if let Some(sb) = s.sandboxes.get_mut(&id) {
+            sb.window_id = Some(new_wid);
+        }
+    }
+    let registry = InstanceRegistry::default();
+    let _ = registry.update_window_id(&id, new_wid);
+    tracing::info!("Re-discovered window_id={} for sandbox {}", new_wid, id);
+
+    let png_data = tokio::task::spawn_blocking(move || ScreenCapture::capture_window(new_wid))
+        .await
+        .map_err(|e| AppError::Screenshot(format!("screenshot task failed: {e}")))??;
+    Ok((StatusCode::OK, [("content-type", "image/png")], png_data).into_response())
+}
+
+// ── Screenshot WebSocket ────────────────────────────────────────
+
+/// Request a screenshot from the Electron renderer via WebSocket.
+/// Returns PNG bytes if successful, None if renderer is unavailable or times out.
+async fn request_renderer_screenshot(
+    state: Arc<Mutex<DaemonState>>,
+    sandbox_id: &str,
+) -> Option<Vec<u8>> {
+    let (request_id, response_rx, mut ws_tx) = {
+        let mut s = state.lock().await;
+        let ws_tx = s.screenshot_ws_tx.take()?;
+
+        s.screenshot_request_counter += 1;
+        let request_id = s.screenshot_request_counter;
+
+        let (response_tx, response_rx) = oneshot::channel();
+        s.pending_screenshots.insert(request_id, response_tx);
+
+        (request_id, response_rx, ws_tx)
+    };
+
+    let msg = serde_json::json!({
+        "type": "capture_request",
+        "request_id": request_id,
+        "sandbox_id": sandbox_id,
+    });
+
+    if ws_tx
+        .send(Message::Text(msg.to_string().into()))
+        .await
+        .is_err()
+    {
+        tracing::warn!("[screenshot] failed to send request to renderer");
+        let mut s = state.lock().await;
+        s.pending_screenshots.remove(&request_id);
+        s.screenshot_ws_tx = Some(ws_tx);
+        return None;
+    }
+
+    // Put the ws_tx back
+    {
+        let mut s = state.lock().await;
+        s.screenshot_ws_tx = Some(ws_tx);
+    }
+
+    match tokio::time::timeout(std::time::Duration::from_secs(2), response_rx).await {
+        Ok(Ok(Ok(png_data))) => Some(png_data),
+        Ok(Ok(Err(e))) => {
+            tracing::warn!("[screenshot] renderer returned error: {e}");
+            None
+        }
+        Ok(Err(_)) => {
+            tracing::warn!("[screenshot] response channel dropped");
+            None
+        }
+        Err(_) => {
+            tracing::warn!("[screenshot] renderer did not respond within 2s");
+            let mut s = state.lock().await;
+            s.pending_screenshots.remove(&request_id);
+            None
+        }
+    }
+}
+
+/// WebSocket endpoint for renderer-based screenshot capture.
+async fn screenshot_ws_handler(
+    State(state): State<Arc<Mutex<DaemonState>>>,
+    ws: WebSocketUpgrade,
+) -> impl IntoResponse {
+    ws.on_upgrade(move |socket| handle_screenshot_ws(state, socket))
+}
+
+async fn handle_screenshot_ws(state: Arc<Mutex<DaemonState>>, socket: WebSocket) {
+    let (ws_tx, mut ws_rx) = socket.split();
+
+    {
+        let mut s = state.lock().await;
+        s.screenshot_ws_tx = Some(ws_tx);
+        tracing::info!("[screenshot_ws] renderer connected");
+    }
+
+    while let Some(result) = ws_rx.next().await {
+        match result {
+            Ok(Message::Text(text)) => {
+                let text_str = text.to_string();
+                match serde_json::from_str::<serde_json::Value>(&text_str) {
+                    Ok(msg) => {
+                        let msg_type = msg.get("type").and_then(|v| v.as_str());
+                        let request_id = msg.get("request_id").and_then(|v| v.as_u64());
+
+                        match msg_type {
+                            Some("capture_response") => {
+                                if let (Some(req_id), Some(b64)) =
+                                    (request_id, msg.get("image_base64").and_then(|v| v.as_str()))
+                                {
+                                    let png_data = base64_decode(b64);
+                                    let mut s = state.lock().await;
+                                    if let Some(tx) = s.pending_screenshots.remove(&req_id) {
+                                        let _ = tx.send(png_data);
+                                    }
+                                }
+                            }
+                            Some("capture_error") => {
+                                let error = msg
+                                    .get("error")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("Unknown error")
+                                    .to_string();
+                                if let Some(req_id) = request_id {
+                                    let mut s = state.lock().await;
+                                    if let Some(tx) = s.pending_screenshots.remove(&req_id) {
+                                        let _ = tx.send(Err(error));
+                                    }
+                                }
+                            }
+                            _ => {
+                                tracing::warn!(
+                                    "[screenshot_ws] unknown message type: {:?}",
+                                    msg_type
+                                );
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!("[screenshot_ws] JSON parse error: {e}");
+                    }
+                }
+            }
+            Ok(Message::Close(_)) => {
+                tracing::info!("[screenshot_ws] renderer sent close frame");
+                break;
+            }
+            Err(e) => {
+                tracing::warn!("[screenshot_ws] receive error: {e}");
+                break;
+            }
+            _ => {}
+        }
+    }
+
+    {
+        let mut s = state.lock().await;
+        s.screenshot_ws_tx = None;
+        tracing::info!("[screenshot_ws] renderer disconnected");
+    }
+}
+
+fn base64_decode(s: &str) -> Result<Vec<u8>, String> {
+    use base64::Engine;
+    base64::engine::general_purpose::STANDARD
+        .decode(s)
+        .map_err(|e| format!("base64 decode error: {e}"))
 }
 
 #[derive(Deserialize)]
@@ -461,9 +679,28 @@ async fn screenshot_region_handler(
             .sandboxes
             .get(&id)
             .ok_or_else(|| AppError::Instance(format!("Sandbox '{id}' not found")))?;
-        sandbox
-            .window_id
-            .ok_or_else(|| AppError::BadRequest("Sandbox has no window_id".into()))?
+
+        match sandbox.window_id {
+            Some(wid) => wid,
+            None => {
+                // Re-discover window
+                drop(s);
+                let new_wid = tokio::task::spawn_blocking(|| {
+                    ScreenCapture::find_window_by_title("System Test Sandbox")
+                })
+                .await
+                .map_err(|e| {
+                    AppError::Screenshot(format!("window discovery task failed: {e}"))
+                })??;
+                let mut s = state.lock().await;
+                if let Some(sb) = s.sandboxes.get_mut(&id) {
+                    sb.window_id = Some(new_wid);
+                }
+                let registry = InstanceRegistry::default();
+                let _ = registry.update_window_id(&id, new_wid);
+                new_wid
+            }
+        }
     };
 
     // Get window frame to convert sandbox-relative coords to screen coords
@@ -813,6 +1050,9 @@ pub async fn run_daemon(port: u16) -> Result<(), Box<dyn std::error::Error>> {
         port,
         sandboxes: HashMap::new(),
         started_at: Instant::now(),
+        screenshot_ws_tx: None,
+        pending_screenshots: HashMap::new(),
+        screenshot_request_counter: 0,
     }));
 
     let router = build_daemon_router(state.clone());
@@ -852,9 +1092,11 @@ pub async fn run_daemon(port: u16) -> Result<(), Box<dyn std::error::Error>> {
             Ok(Ok(window_id)) => {
                 tracing::info!("Discovered Electron window_id={}", window_id);
                 let mut s = discovery_state.lock().await;
-                for (_, sb) in s.sandboxes.iter_mut() {
+                let registry = InstanceRegistry::default();
+                for (id, sb) in s.sandboxes.iter_mut() {
                     if sb.window_id.is_none() {
                         sb.window_id = Some(window_id);
+                        let _ = registry.update_window_id(id, window_id);
                     }
                 }
             }
@@ -1004,6 +1246,9 @@ mod tests {
             port: 15999,
             sandboxes: HashMap::new(),
             started_at: Instant::now(),
+            screenshot_ws_tx: None,
+            pending_screenshots: HashMap::new(),
+            screenshot_request_counter: 0,
         }))
     }
 
@@ -1027,6 +1272,9 @@ mod tests {
             port: 15999,
             sandboxes,
             started_at: Instant::now(),
+            screenshot_ws_tx: None,
+            pending_screenshots: HashMap::new(),
+            screenshot_request_counter: 0,
         }))
     }
 

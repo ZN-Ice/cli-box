@@ -119,13 +119,21 @@
   box-sizing: border-box;
 }
 
-html, body, #root {
+html, body {
   height: 100%;
   width: 100%;
   overflow: hidden;
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
   background: var(--bg-primary);
   color: var(--text-primary);
+}
+
+#root {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 /* Title Bar */
@@ -276,16 +284,29 @@ html, body, #root {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  min-height: 0;
 }
 
 .terminal-container {
   flex: 1;
   background: var(--bg-terminal);
   overflow: hidden;
+  min-height: 0;
+  position: relative;
 }
 
-.terminal-container .xterm {
-  padding: 8px;
+.terminal-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.terminal-container > div {
+  position: absolute;
+  inset: 0;
 }
 
 /* Status Bar */
