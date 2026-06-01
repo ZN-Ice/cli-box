@@ -47,6 +47,15 @@ pub struct DaemonState {
     pub port: u16,
     pub sandboxes: HashMap<String, ManagedSandbox>,
     pub started_at: Instant,
+    /// Write half of the renderer's screenshot WebSocket connection.
+    pub screenshot_ws_tx:
+        Option<futures_util::stream::SplitSink<axum::extract::ws::WebSocket, axum::extract::ws::Message>>,
+    /// Pending screenshot requests awaiting renderer responses.
+    pub pending_screenshots: HashMap<u64, tokio::sync::oneshot::Sender<Result<Vec<u8>, String>>>,
+    /// Pending tab switch confirmations from renderer.
+    pub pending_tab_switches: HashMap<u64, tokio::sync::oneshot::Sender<Result<(), String>>>,
+    /// Counter for generating unique request IDs.
+    pub screenshot_request_counter: u64,
 }
 
 impl DaemonState {
@@ -259,6 +268,7 @@ pub fn build_daemon_router(state: Arc<Mutex<DaemonState>>) -> Router {
         .route("/sandbox/{id}/ui/value", get(ui_value_handler))
         .route("/sandbox/{id}/window", post(set_window_id_handler))
         .route("/shutdown", post(shutdown_handler))
+        .route("/screenshot/ws", get(screenshot_ws_upgrade_handler))
         .layer(cors)
         .with_state(state)
 }
@@ -414,9 +424,16 @@ async fn close_sandbox_handler(
     Ok(Json(serde_json::json!({"closed": id})))
 }
 
+#[derive(Deserialize)]
+struct ScreenshotQuery {
+    #[serde(default)]
+    with_frame: bool,
+}
+
 async fn screenshot_handler(
     State(state): State<Arc<Mutex<DaemonState>>>,
     Path(id): Path<String>,
+    axum::extract::Query(q): axum::extract::Query<ScreenshotQuery>,
 ) -> Result<impl IntoResponse, AppError> {
     let window_id = {
         let s = state.lock().await;
@@ -426,6 +443,14 @@ async fn screenshot_handler(
             .ok_or_else(|| AppError::Instance(format!("Sandbox '{id}' not found")))?;
         sandbox.window_id
     };
+
+    // --with-frame: try renderer-based tab switch + ScreenCaptureKit
+    if q.with_frame {
+        if let Some(png) = request_renderer_screenshot_with_frame(state.clone(), &id).await {
+            return Ok((StatusCode::OK, [("content-type", "image/png")], png).into_response());
+        }
+        // Fall through to ScreenCaptureKit if renderer unavailable
+    }
 
     match window_id {
         Some(wid) => {
@@ -440,6 +465,204 @@ async fn screenshot_handler(
             "Sandbox '{id}' has no window_id. Screenshots require an app-mode sandbox or a discovered window."
         ))),
     }
+}
+
+async fn screenshot_ws_upgrade_handler(
+    ws: WebSocketUpgrade,
+    State(state): State<Arc<Mutex<DaemonState>>>,
+) -> impl IntoResponse {
+    ws.on_upgrade(move |socket| handle_screenshot_ws(socket, state))
+}
+
+async fn handle_screenshot_ws(
+    socket: axum::extract::ws::WebSocket,
+    state: Arc<Mutex<DaemonState>>,
+) {
+    use futures_util::StreamExt;
+    let (ws_tx, mut ws_rx) = socket.split();
+
+    // Store the write half
+    {
+        let mut s = state.lock().await;
+        s.screenshot_ws_tx = Some(ws_tx);
+    }
+    tracing::info!("Renderer screenshot WebSocket connected");
+
+    while let Some(msg) = ws_rx.next().await {
+        let msg = match msg {
+            Ok(axum::extract::ws::Message::Text(t)) => t,
+            Ok(_) => continue,
+            Err(e) => {
+                tracing::warn!("Screenshot WS error: {e}");
+                break;
+            }
+        };
+
+        let parsed: serde_json::Value = match serde_json::from_str(&msg) {
+            Ok(v) => v,
+            Err(e) => {
+                tracing::warn!("Screenshot WS parse error: {e}");
+                continue;
+            }
+        };
+
+        let msg_type = parsed.get("type").and_then(|v| v.as_str()).unwrap_or("");
+        let request_id = parsed.get("request_id").and_then(|v| v.as_u64());
+
+        match msg_type {
+            "tab_switched" => {
+                if let Some(rid) = request_id {
+                    let mut s = state.lock().await;
+                    if let Some(tx) = s.pending_tab_switches.remove(&rid) {
+                        let _ = tx.send(Ok(()));
+                    }
+                }
+            }
+            "capture_response" => {
+                if let Some(rid) = request_id {
+                    let base64_data = parsed
+                        .get("image_base64")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+                    let result = base64::Engine::decode(
+                        &base64::engine::general_purpose::STANDARD,
+                        base64_data,
+                    )
+                    .map_err(|e| format!("base64 decode error: {e}"));
+                    let mut s = state.lock().await;
+                    if let Some(tx) = s.pending_screenshots.remove(&rid) {
+                        let _ = tx.send(result);
+                    }
+                }
+            }
+            "capture_error" => {
+                if let Some(rid) = request_id {
+                    let error = parsed
+                        .get("error")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("unknown error")
+                        .to_string();
+                    let mut s = state.lock().await;
+                    if let Some(tx) = s.pending_screenshots.remove(&rid) {
+                        let _ = tx.send(Err(error));
+                    }
+                }
+            }
+            _ => {
+                tracing::debug!("Unknown screenshot WS message type: {msg_type}");
+            }
+        }
+    }
+
+    // Clean up on disconnect
+    let mut s = state.lock().await;
+    s.screenshot_ws_tx = None;
+    tracing::info!("Renderer screenshot WebSocket disconnected");
+}
+
+/// Ask the renderer to switch to a tab, then capture the full window with ScreenCaptureKit.
+async fn request_renderer_screenshot_with_frame(
+    state: Arc<Mutex<DaemonState>>,
+    sandbox_id: &str,
+) -> Option<Vec<u8>> {
+    use futures_util::SinkExt;
+
+    // Get the Electron window_id for ScreenCaptureKit
+    let window_id = {
+        let s = state.lock().await;
+        s.sandboxes.get(sandbox_id)?.window_id?
+    };
+
+    // Take ws_tx and generate request_id
+    let (mut ws_tx, request_id) = {
+        let mut s = state.lock().await;
+        let ws_tx = s.screenshot_ws_tx.take()?;
+        let rid = s.screenshot_request_counter;
+        s.screenshot_request_counter += 1;
+        (ws_tx, rid)
+    };
+
+    // Create oneshot channels
+    let (switch_tx, switch_rx) = tokio::sync::oneshot::channel::<Result<(), String>>();
+    let (capture_tx, _capture_rx) = tokio::sync::oneshot::channel::<Result<Vec<u8>, String>>();
+    {
+        let mut s = state.lock().await;
+        s.pending_tab_switches.insert(request_id, switch_tx);
+        s.pending_screenshots.insert(request_id, capture_tx);
+    }
+
+    // Send switch_and_capture to renderer
+    let msg = serde_json::json!({
+        "type": "switch_and_capture",
+        "request_id": request_id,
+        "sandbox_id": sandbox_id,
+    });
+    if ws_tx
+        .send(axum::extract::ws::Message::Text(msg.to_string().into()))
+        .await
+        .is_err()
+    {
+        let mut s = state.lock().await;
+        s.pending_tab_switches.remove(&request_id);
+        s.pending_screenshots.remove(&request_id);
+        s.screenshot_ws_tx = Some(ws_tx);
+        return None;
+    }
+
+    // Put ws_tx back
+    {
+        let mut s = state.lock().await;
+        s.screenshot_ws_tx = Some(ws_tx);
+    }
+
+    // Wait for renderer to confirm tab switch (2s timeout)
+    let _ = tokio::time::timeout(std::time::Duration::from_secs(2), switch_rx).await;
+
+    // Capture with ScreenCaptureKit
+    let png_data = tokio::task::spawn_blocking(move || {
+        crate::capture::ScreenCapture::capture_window(window_id)
+    })
+    .await
+    .ok()
+    .and_then(|r| r.ok());
+
+    let png_data = match png_data {
+        Some(data) => data,
+        None => {
+            let mut s = state.lock().await;
+            s.pending_screenshots.remove(&request_id);
+            return None;
+        }
+    };
+
+    // Send capture_done to renderer (tells it to switch back)
+    let mut ws_tx = {
+        let mut s = state.lock().await;
+        match s.screenshot_ws_tx.take() {
+            Some(tx) => tx,
+            None => {
+                s.pending_screenshots.remove(&request_id);
+                return Some(png_data);
+            }
+        }
+    };
+    let done_msg = serde_json::json!({
+        "type": "capture_done",
+        "request_id": request_id,
+    });
+    let _ = ws_tx
+        .send(axum::extract::ws::Message::Text(done_msg.to_string().into()))
+        .await;
+    {
+        let mut s = state.lock().await;
+        s.screenshot_ws_tx = Some(ws_tx);
+    }
+
+    // Don't wait for capture_response — we already have the PNG from ScreenCaptureKit
+    let mut s = state.lock().await;
+    s.pending_screenshots.remove(&request_id);
+
+    Some(png_data)
 }
 
 #[derive(Deserialize)]
@@ -813,6 +1036,10 @@ pub async fn run_daemon(port: u16) -> Result<(), Box<dyn std::error::Error>> {
         port,
         sandboxes: HashMap::new(),
         started_at: Instant::now(),
+        screenshot_ws_tx: None,
+        pending_screenshots: HashMap::new(),
+        pending_tab_switches: HashMap::new(),
+        screenshot_request_counter: 0,
     }));
 
     let router = build_daemon_router(state.clone());
@@ -1004,6 +1231,10 @@ mod tests {
             port: 15999,
             sandboxes: HashMap::new(),
             started_at: Instant::now(),
+            screenshot_ws_tx: None,
+            pending_screenshots: HashMap::new(),
+            pending_tab_switches: HashMap::new(),
+            screenshot_request_counter: 0,
         }))
     }
 
@@ -1027,6 +1258,10 @@ mod tests {
             port: 15999,
             sandboxes,
             started_at: Instant::now(),
+            screenshot_ws_tx: None,
+            pending_screenshots: HashMap::new(),
+            pending_tab_switches: HashMap::new(),
+            screenshot_request_counter: 0,
         }))
     }
 
