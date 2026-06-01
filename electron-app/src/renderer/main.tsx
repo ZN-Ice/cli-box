@@ -20,7 +20,7 @@ declare global {
       closeTab: (sandboxId: string) => Promise<void>;
       listTabs: () => Promise<{ id: string; kind: string; title: string }[]>;
       onSwitchTab: (callback: (sandboxId: string) => void) => void;
-      onWindowClosing: (callback: (sandboxIds: string[]) => void) => void;
+      onWindowClosing: (callback: () => void) => void;
       sendCloseResponse: (action: "cancel" | "close-window-only" | "close-all") => Promise<void>;
     };
   }
@@ -395,7 +395,7 @@ function App() {
 
       {/* Close Tab Confirmation Dialog */}
       {closeConfirmTabId && (
-        <div className="dialog-overlay" onClick={() => setCloseConfirmTabId(null)}>
+        <div className="dialog-overlay">
           <div className="dialog" onClick={(e) => e.stopPropagation()}>
             <div className="dialog-title">Close Terminal</div>
             <div className="dialog-message">

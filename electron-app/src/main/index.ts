@@ -98,8 +98,10 @@ function createWindow() {
   });
 
   // NEW: intercept close to show confirmation dialog
+  let isClosing = false;
   mainWindow.on("close", (e) => {
-    if (!mainWindow) return;
+    if (!mainWindow || isClosing) return;
+    isClosing = true;
 
     // Query renderer for sandbox list, then wait for user's choice
     e.preventDefault();
@@ -117,7 +119,8 @@ function createWindow() {
 
     Promise.race([responsePromise, timeout]).then((action) => {
       if (action === "cancel") {
-        // Do nothing, window stays open
+        // Reset guard so user can try closing again
+        isClosing = false;
         return;
       }
 
