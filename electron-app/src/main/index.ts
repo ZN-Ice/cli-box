@@ -47,9 +47,11 @@ if (!gotTheLock) {
 // IPC: renderer asks for daemon port
 ipcMain.handle("get-daemon-port", () => daemonPort);
 
-// IPC: unused stubs for compatibility
+// IPC: forward tab commands to renderer
 ipcMain.handle("create-tab", () => {});
-ipcMain.handle("switch-tab", () => {});
+ipcMain.handle("switch-tab", (_event, sandboxId: string) => {
+  mainWindow?.webContents.send("switch-to-tab", sandboxId);
+});
 ipcMain.handle("close-tab", () => {});
 ipcMain.handle("list-tabs", () => []);
 

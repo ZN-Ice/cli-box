@@ -16,6 +16,9 @@ fn empty_state() -> Arc<Mutex<DaemonState>> {
         port: 0,
         sandboxes: HashMap::new(),
         started_at: std::time::Instant::now(),
+        screenshot_ws_tx: None,
+        pending_screenshots: HashMap::new(),
+        screenshot_request_counter: 0,
     }))
 }
 

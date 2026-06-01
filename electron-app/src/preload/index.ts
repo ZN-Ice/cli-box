@@ -7,4 +7,7 @@ contextBridge.exposeInMainWorld("sandbox", {
   switchTab: (sandboxId: string) => ipcRenderer.invoke("switch-tab", sandboxId),
   closeTab: (sandboxId: string) => ipcRenderer.invoke("close-tab", sandboxId),
   listTabs: () => ipcRenderer.invoke("list-tabs"),
+  onSwitchTab: (callback: (sandboxId: string) => void) => {
+    ipcRenderer.on("switch-to-tab", (_event, sandboxId) => callback(sandboxId));
+  },
 });

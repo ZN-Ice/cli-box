@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import ReactDOM from "react-dom/client";
-import SandboxTerminal from "./components/Terminal";
+import SandboxTerminal, { SandboxTerminalHandle } from "./components/Terminal";
 import {
   SandboxInfo,
   fetchSandboxList,
@@ -19,6 +19,7 @@ declare global {
       switchTab: (sandboxId: string) => Promise<void>;
       closeTab: (sandboxId: string) => Promise<void>;
       listTabs: () => Promise<{ id: string; kind: string; title: string }[]>;
+      onSwitchTab: (callback: (sandboxId: string) => void) => void;
     };
   }
 }
@@ -43,6 +44,7 @@ function App() {
   const [newSandboxCmd, setNewSandboxCmd] = useState("");
   const [newSandboxMode, setNewSandboxMode] = useState<"cli" | "app">("cli");
   const refreshTimer = useRef<ReturnType<typeof setInterval>>();
+  const terminalRefs = useRef<Map<string, React.RefObject<SandboxTerminalHandle>>>(new Map());
 
   // Apply theme
   useEffect(() => {
@@ -62,6 +64,13 @@ function App() {
       setDaemonPort(port);
       setConnected(true);
       refreshSandboxes();
+    });
+  }, []);
+
+  // Listen for tab switch commands from main process
+  useEffect(() => {
+    window.sandbox.onSwitchTab((sandboxId) => {
+      setActiveTabId(sandboxId);
     });
   }, []);
 
@@ -102,6 +111,59 @@ function App() {
     };
   }, [refreshSandboxes]);
 
+  // Screenshot WebSocket: connect to daemon for per-tab capture
+  useEffect(() => {
+    if (!connected) return;
+    const port = getDaemonPort();
+    if (!port) return;
+
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/screenshot/ws`);
+
+    ws.onopen = () => console.log("[screenshot-ws] connected");
+
+    ws.onmessage = async (event) => {
+      try {
+        const msg = JSON.parse(event.data);
+        if (msg.type === "capture_request") {
+          const { sandbox_id, request_id } = msg;
+          const tabRef = terminalRefs.current.get(sandbox_id);
+          if (tabRef?.current) {
+            try {
+              const base64 = await tabRef.current.captureToPng();
+              ws.send(JSON.stringify({
+                type: "capture_response",
+                request_id,
+                sandbox_id,
+                image_base64: base64,
+              }));
+            } catch (err) {
+              ws.send(JSON.stringify({
+                type: "capture_error",
+                request_id,
+                sandbox_id,
+                error: String(err),
+              }));
+            }
+          } else {
+            ws.send(JSON.stringify({
+              type: "capture_error",
+              request_id,
+              sandbox_id,
+              error: "Terminal not found or not mounted",
+            }));
+          }
+        }
+      } catch (err) {
+        console.error("[screenshot-ws] parse error:", err);
+      }
+    };
+
+    ws.onclose = () => console.log("[screenshot-ws] disconnected");
+    ws.onerror = (err) => console.error("[screenshot-ws] error:", err);
+
+    return () => ws.close();
+  }, [connected]);
+
   const handleCloseTab = useCallback(
     async (id: string) => {
       try {
@@ -111,6 +173,7 @@ function App() {
       } catch {
         // ignore
       }
+      terminalRefs.current.delete(id);
       setTabs((prev) => prev.filter((t) => t.id !== id));
       if (activeTabId === id) {
         const remaining = tabs.filter((t) => t.id !== id);
@@ -180,27 +243,48 @@ function App() {
       </div>
 
       {/* Terminal Area */}
-      {activeTab ? (
-        activeTab.kind === "app" ? (
-          <div className="terminal-container">
-            <AppPanel sandboxId={activeTab.id} />
-          </div>
-        ) : (
-          <div className="terminal-container">
-            <SandboxTerminal
-              key={activeTab.id}
-              sandboxId={activeTab.id}
-              ptyPid={activeTab.sandbox.pty_pid!}
-            />
-          </div>
-        )
-      ) : (
+      {tabs.length === 0 ? (
         <div className="empty-state">
           <div className="empty-state-icon">⌘</div>
           <div className="empty-state-text">No sandbox open</div>
           <div className="empty-state-hint">
             Run <code>sandbox start</code> in your terminal to get started
           </div>
+        </div>
+      ) : (
+        <div className="terminal-area">
+          {tabs.map((tab) => {
+            const isActive = tab.id === activeTabId;
+            const hiddenStyle: React.CSSProperties = isActive
+              ? {}
+              : {
+                  position: "absolute",
+                  left: "-9999px",
+                  top: "-9999px",
+                  width: "1200px",
+                  height: "800px",
+                  visibility: "hidden",
+                };
+
+            if (tab.kind === "app") {
+              return (
+                <div key={tab.id} className="terminal-container" style={hiddenStyle}>
+                  <AppPanel sandboxId={tab.id} />
+                </div>
+              );
+            }
+
+            if (!terminalRefs.current.has(tab.id)) {
+              terminalRefs.current.set(tab.id, { current: null } as React.RefObject<SandboxTerminalHandle>);
+            }
+            const tabRef = terminalRefs.current.get(tab.id)!;
+
+            return (
+              <div key={tab.id} style={{ ...hiddenStyle, display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
+                <SandboxTerminal ref={tabRef} sandboxId={tab.id} ptyPid={tab.sandbox.pty_pid!} />
+              </div>
+            );
+          })}
         </div>
       )}
 
