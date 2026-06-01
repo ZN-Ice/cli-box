@@ -11,4 +11,5 @@
   - Tab 切换正常（离屏定位策略）
   - 截图功能正常
   - 关闭一个 Tab 不影响其他 Tab
-6. 在release_test/${{时间戳，yyyy-mm-dd-hh-mm-ss}}文件夹下，生成markdown的最终测试报告
+6. `sandbox start opencode`打开opencode，分别采用默认的截图和带窗口的截图，截取该opencode的运行状态，查看图片，是否符合预期的设计
+7. 在release_test/${{时间戳，yyyy-mm-dd-hh-mm-ss}}文件夹下，生成markdown的最终测试报告
