@@ -66,7 +66,8 @@ mod macos_impl {
 
             let config = SCStreamConfiguration::new()
                 .with_width(window.frame().width as u32)
-                .with_height(window.frame().height as u32);
+                .with_height(window.frame().height as u32)
+                .with_ignores_shadows_single_window(true);
 
             let image = SCScreenshotManager::capture_image(&filter, &config)
                 .map_err(|e| AppError::Screenshot(format!("Failed to capture image: {e:?}")))?;
