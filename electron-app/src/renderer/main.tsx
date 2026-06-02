@@ -6,6 +6,7 @@ import {
   setDaemonPort,
   getDaemonPort,
   createSandbox,
+  closeSandbox,
 } from "./api";
 import { Tab, syncTabs, selectAfterClose } from "./tabState";
 import AppPanel from "./components/AppPanel";
@@ -180,11 +181,9 @@ function App() {
   const doCloseTab = useCallback(
     async (id: string) => {
       try {
-        await fetch(`${getDaemonPort() ? `http://127.0.0.1:${getDaemonPort()}` : ""}/sandbox/${id}`, {
-          method: "DELETE",
-        });
+        await closeSandbox(id);
       } catch {
-        // ignore
+        // ignore — sandbox may already be gone
       }
       terminalRefs.current.delete(id);
       setTabs((prev) => {
