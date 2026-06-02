@@ -1142,12 +1142,16 @@ mod tests {
 
     #[test]
     fn find_running_daemon_returns_none_when_no_file() {
-        // Use a temp dir that definitely doesn't have daemon.json
-        let tmp = test_dir("no_file");
-        let _ = std::fs::remove_dir_all(&tmp);
-        // Override daemon_json_path is not possible directly,
-        // so we test that read_daemon_info returns None when file is absent.
-        assert!(read_daemon_info().is_none() || !daemon_json_path().exists());
+        // If a real daemon is running, skip this test — it tests the "no daemon" case.
+        if let Some(_port) = find_running_daemon() {
+            return;
+        }
+        // After find_running_daemon, stale daemon.json is cleaned up.
+        // With no daemon running, daemon_json_path should not exist (or be cleaned up).
+        assert!(
+            read_daemon_info().is_none(),
+            "Expected no daemon info after cleanup"
+        );
     }
 
     #[test]

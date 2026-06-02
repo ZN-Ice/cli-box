@@ -17,12 +17,18 @@ ok()    { echo -e "${GREEN}✓${NC} $*"; }
 FAILED=0
 
 # ==================== Rust Tests ====================
-info "Running Rust tests..."
-if cargo test -p sandbox-core 2>&1; then
-  ok "Rust tests passed"
+# Rust tests require macOS frameworks (CGEvent, AXUIElement, ScreenCaptureKit).
+# Skip on Linux CI where these are unavailable.
+if [ "$(uname)" = "Linux" ] && [ -n "${CI:-}" ]; then
+  warn "Skipping Rust tests on Linux CI (macOS frameworks required)"
 else
-  err "Rust tests FAILED"
-  FAILED=1
+  info "Running Rust tests..."
+  if cargo test -p sandbox-core 2>&1; then
+    ok "Rust tests passed"
+  else
+    err "Rust tests FAILED"
+    FAILED=1
+  fi
 fi
 
 # ==================== Frontend Type Check ====================
