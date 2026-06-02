@@ -11,12 +11,17 @@
     "pack": "electron-builder --config electron-builder.config.cjs",
     "dist": "npm run build && npm run pack",
     "test": "vitest run",
-    "test:unit": "vitest run --coverage"
+    "test:unit": "vitest run --coverage",
+    "test:e2e": "playwright test",
+    "test:all": "vitest run && playwright test"
   },
   "dependencies": {
     "electron-store": "^10.0.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.60.0",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
     "@types/react": "^18.3.1",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",
@@ -27,6 +32,7 @@
     "electron": "^34.0.0",
     "electron-builder": "^25.1.8",
     "electron-vite": "^3.0.0",
+    "jsdom": "^29.1.1",
     "postcss": "^8.4.49",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
