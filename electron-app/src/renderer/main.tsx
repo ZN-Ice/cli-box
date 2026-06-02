@@ -2,12 +2,12 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import ReactDOM from "react-dom/client";
 import SandboxTerminal, { SandboxTerminalHandle } from "./components/Terminal";
 import {
-  SandboxInfo,
   fetchSandboxList,
   setDaemonPort,
   getDaemonPort,
   createSandbox,
 } from "./api";
+import { Tab, syncTabs, selectAfterClose } from "./tabState";
 import AppPanel from "./components/AppPanel";
 import "./styles.css";
 
@@ -24,13 +24,6 @@ declare global {
       sendCloseResponse: (action: "cancel" | "close-window-only" | "close-all") => Promise<void>;
     };
   }
-}
-
-interface Tab {
-  id: string;
-  kind: string;
-  title: string;
-  sandbox: SandboxInfo;
 }
 
 type Theme = "dark" | "light" | "system";
@@ -99,23 +92,8 @@ function App() {
   const refreshSandboxes = useCallback(async () => {
     try {
       const list = await fetchSandboxList();
-      setTabs((prev) => {
-        const existing = new Map(prev.map((t) => [t.id, t]));
-        const next: Tab[] = [];
-        for (const sb of list) {
-          const title = sb.kind?.detail?.command || sb.id.slice(0, 8);
-          const existingTab = existing.get(sb.id);
-          next.push({
-            id: sb.id,
-            kind: sb.kind?.type || "cli",
-            title,
-            sandbox: sb,
-          });
-        }
-        return next;
-      });
-
-      // Auto-select first tab if none selected
+      const { tabs: nextTabs } = syncTabs(tabsRef.current, list);
+      setTabs(nextTabs);
       if (!activeTabId && list.length > 0) {
         setActiveTabId(list[0].id);
       }
@@ -211,9 +189,7 @@ function App() {
       terminalRefs.current.delete(id);
       setTabs((prev) => {
         const next = prev.filter((t) => t.id !== id);
-        if (activeTabId === id) {
-          setActiveTabId(next.length > 0 ? next[0].id : null);
-        }
+        setActiveTabId(selectAfterClose(prev, id, activeTabId));
         return next;
       });
     },
