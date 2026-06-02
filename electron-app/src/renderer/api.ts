@@ -36,36 +36,50 @@ export async function fetchSandboxInfo(id: string): Promise<SandboxInfo | undefi
 }
 
 export function connectPty(sandboxId: string, ptyPid: number): PtyConnection {
-  const ws = new WebSocket(`ws://127.0.0.1:${_port}/sandbox/${sandboxId}/pty/ws/${ptyPid}`);
-  ws.binaryType = "arraybuffer";
+  let ws: WebSocket | null = null;
   const outputListeners: ((data: string | Uint8Array) => void)[] = [];
+  let pendingResize: { cols: number; rows: number } | null = null;
 
-  ws.onmessage = (e) => {
-    if (e.data instanceof ArrayBuffer) {
-      for (const cb of outputListeners) cb(new Uint8Array(e.data));
-    } else if (typeof e.data === "string") {
-      for (const cb of outputListeners) cb(e.data);
-    }
-  };
+  function ensureWs() {
+    if (ws) return;
+    ws = new WebSocket(`ws://127.0.0.1:${_port}/sandbox/${sandboxId}/pty/ws/${ptyPid}`);
+    ws.binaryType = "arraybuffer";
+    ws.onopen = () => {
+      if (pendingResize) {
+        ws!.send(JSON.stringify({ type: "resize", ...pendingResize }));
+        pendingResize = null;
+      }
+    };
+    ws.onmessage = (e) => {
+      if (e.data instanceof ArrayBuffer) {
+        for (const cb of outputListeners) cb(new Uint8Array(e.data));
+      } else if (typeof e.data === "string") {
+        for (const cb of outputListeners) cb(e.data);
+      }
+    };
+  }
 
   return {
     onOutput(cb) {
       outputListeners.push(cb);
+      ensureWs();
       return () => {
         const idx = outputListeners.indexOf(cb);
         if (idx >= 0) outputListeners.splice(idx, 1);
       };
     },
     sendInput(data) {
-      if (ws.readyState === WebSocket.OPEN) ws.send(data);
+      if (ws && ws.readyState === WebSocket.OPEN) ws.send(data);
     },
     resize(cols, rows) {
-      if (ws.readyState === WebSocket.OPEN) {
+      if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: "resize", cols, rows }));
+      } else {
+        pendingResize = { cols, rows };
       }
     },
     close() {
-      ws.close();
+      ws?.close();
     },
   };
 }
