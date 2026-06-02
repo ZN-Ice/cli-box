@@ -43,6 +43,9 @@ test.describe("Tab Creation", () => {
     await expect(page.locator(".tab-item")).toHaveCount(3, { timeout: 10000 });
 
     // Visual regression: screenshot the tab bar
-    await expect(page.locator(".tab-bar")).toHaveScreenshot("tab-bar-3-tabs.png");
+    // Use maxDiffPixels to handle platform-specific font rendering differences
+    await expect(page.locator(".tab-bar")).toHaveScreenshot("tab-bar-3-tabs.png", {
+      maxDiffPixels: 500,
+    });
   });
 });

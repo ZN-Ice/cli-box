@@ -58,6 +58,7 @@ test.describe("Tab Screenshot Capture", () => {
     // Screenshot the entire page for visual regression
     await expect(page).toHaveScreenshot("terminal-dark-theme.png", {
       mask: [page.locator(".statusbar-dot")], // mask dynamic elements
+      maxDiffPixels: 500,
     });
   });
 });
