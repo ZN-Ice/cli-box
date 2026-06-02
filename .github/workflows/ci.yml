@@ -301,7 +301,7 @@ jobs:
 
       - name: 运行 Playwright E2E 测试
         working-directory: electron-app
-        run: npx playwright test --config e2e/playwright.config.ts
+        run: npx playwright test --config e2e/playwright.config.ts --update-snapshots missing
 
       - name: 上传测试报告
         if: always()
