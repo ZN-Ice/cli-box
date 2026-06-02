@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { connectPty, setDaemonPort } from "@/api";
+import { connectPty, setDaemonPort } from "../renderer/api";
 import { MockWebSocket, installMockWebSocket } from "./mocks/websocket";
 
 // Capture the most recently constructed MockWebSocket instance
@@ -50,7 +50,7 @@ describe("connectPty", () => {
   it("delivers string messages to onOutput callback after WS opens", () => {
     const conn = connectPty("abc123", 42);
     const received: (string | Uint8Array)[] = [];
-    conn.onOutput((data) => received.push(data));
+    conn.onOutput((data: string | Uint8Array) => received.push(data));
 
     // Advance timers to trigger MockWebSocket's async open
     vi.advanceTimersByTime(1);
@@ -134,7 +134,7 @@ describe("connectPty", () => {
   it("unsubscribe removes callback", () => {
     const conn = connectPty("abc123", 42);
     const received: string[] = [];
-    const unsub = conn.onOutput((data) => {
+    const unsub = conn.onOutput((data: string | Uint8Array) => {
       if (typeof data === "string") received.push(data);
     });
 
@@ -152,7 +152,7 @@ describe("connectPty", () => {
   it("handles binary ArrayBuffer messages", () => {
     const conn = connectPty("abc123", 42);
     const received: (string | Uint8Array)[] = [];
-    conn.onOutput((data) => received.push(data));
+    conn.onOutput((data: string | Uint8Array) => received.push(data));
 
     vi.advanceTimersByTime(1);
 

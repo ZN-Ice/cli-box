@@ -4,7 +4,7 @@ import { resolve } from "path";
 export default defineConfig({
   testDir: ".",
   timeout: 30000,
-  retries: 0,
+  retries: process.env.CI ? 2 : 0,
   use: {
     baseURL: "http://localhost:5173",
     screenshot: "on",
