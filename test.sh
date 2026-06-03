@@ -23,12 +23,34 @@ if [ "$(uname)" = "Linux" ] && [ -n "${CI:-}" ]; then
   warn "Skipping Rust tests on Linux CI (macOS frameworks required)"
 else
   info "Running Rust tests..."
-  if cargo test -p cli-box-core 2>&1; then
+  if cargo test -p cli-box-core -p cli-box-cli 2>&1; then
     ok "Rust tests passed"
   else
     err "Rust tests FAILED"
     FAILED=1
   fi
+fi
+
+# ==================== Rust Clippy ====================
+if [ "$(uname)" = "Linux" ] && [ -n "${CI:-}" ]; then
+  warn "Skipping Rust clippy on Linux CI (macOS frameworks required)"
+else
+  info "Running Rust clippy..."
+  if cargo clippy --all-targets -- -D warnings 2>&1; then
+    ok "Rust clippy passed"
+  else
+    err "Rust clippy FAILED"
+    FAILED=1
+  fi
+fi
+
+# ==================== Rust Format Check ====================
+info "Running cargo fmt check..."
+if cargo fmt --all -- --check 2>&1; then
+  ok "Rust format check passed"
+else
+  err "Rust format check FAILED — run: cargo fmt --all"
+  FAILED=1
 fi
 
 # ==================== Frontend Type Check ====================
@@ -71,6 +93,19 @@ if (cd electron-app && npx playwright test --config e2e/playwright.config.ts) 2>
 else
   err "Playwright E2E tests FAILED"
   FAILED=1
+fi
+
+# ==================== Rename Remnant Check ====================
+info "Checking for 'sandbox' remnants in user-facing strings..."
+# Check specific files that were renamed for leftover "sandbox" references
+# in user-visible strings (help text, error messages, log prefixes)
+SANDBOX_REMNANTS=$(grep -rn '"sandbox' crates/cli-box-cli/src/ crates/cli-box-core/src/daemon/mod.rs electron-app/src/renderer/ --include='*.rs' --include='*.ts' --include='*.tsx' 2>/dev/null \
+  | grep -v '//\|/\*\|\*\|#\|test\|Test\|TEST\|sandbox_state\|sandbox_config\|SandboxConfig\|SandboxState\|ManagedSandbox\|SandboxInstance\|sandbox_id\|sandbox/\|/sandbox\|sandbox-daemon\|sandbox-cli\|sandbox-core\|sandbox-electron\|SANDBOX_\|sandbox_daemon\|sandbox_cli\|sandbox_core\|Sandbox\|\.sandbox\|sandbox\.json\|instances/\|pty_store\|SandboxRegion\|SandboxInfo\|SandboxKind\|SandboxStatus' || true)
+if [ -n "$SANDBOX_REMNANTS" ]; then
+  echo "$SANDBOX_REMNANTS"
+  warn "Found potential 'sandbox' remnants in user-facing strings (review above)"
+else
+  ok "No 'sandbox' remnants found in user-facing strings"
 fi
 
 # ==================== Summary ====================

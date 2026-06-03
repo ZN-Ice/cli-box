@@ -1263,7 +1263,7 @@ async fn run_mcp_server() -> anyhow::Result<()> {
             "initialize" => serde_json::json!({
                 "protocolVersion": "2024-11-05",
                 "capabilities": { "tools": {} },
-                "serverInfo": { "name": "sandbox-mcp", "version": "0.1.0" }
+                "serverInfo": { "name": "cli-box-mcp", "version": "0.1.0" }
             }),
             "tools/list" => mcp_tools(),
             "tools/call" => {
@@ -1562,4 +1562,64 @@ fn is_terminal_title(title: &str) -> bool {
         return false;
     }
     parts[0].trim().parse::<u32>().is_ok() && parts[1].trim().parse::<u32>().is_ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn find_running_electron_returns_false_when_no_file() {
+        let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
+        let path = std::path::PathBuf::from(&home)
+            .join(".cli-box")
+            .join("electron.json");
+        let backup = std::fs::read_to_string(&path).ok();
+        let _ = std::fs::remove_file(&path);
+
+        let result = find_running_electron();
+        assert!(
+            !result,
+            "Should return false when electron.json doesn't exist"
+        );
+
+        if let Some(content) = backup {
+            let _ = std::fs::write(&path, content);
+        }
+    }
+
+    #[test]
+    fn find_running_electron_returns_true_for_alive_pid() {
+        let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
+        let dir = std::path::PathBuf::from(&home).join(".cli-box");
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("electron.json");
+        let backup = std::fs::read_to_string(&path).ok();
+
+        // Use current PID — always alive and accessible (unlike PID 1/launchd
+        // which requires root on macOS). The function only checks if the PID
+        // is alive, not that it's actually Electron.
+        let self_pid = std::process::id();
+        let _ = std::fs::write(
+            &path,
+            serde_json::json!({"pid": self_pid, "port": 15801}).to_string(),
+        );
+
+        // Read back to confirm our write stuck (not overwritten by real Electron)
+        let content = std::fs::read_to_string(&path).unwrap_or_default();
+        if content.contains(&format!("\"pid\":{self_pid}")) {
+            let result = find_running_electron();
+            assert!(
+                result,
+                "Should return true when alive PID {self_pid} is in electron.json"
+            );
+        }
+        // else: real Electron overwrote the file — skip assertion
+
+        if let Some(content) = backup {
+            let _ = std::fs::write(&path, content);
+        } else {
+            let _ = std::fs::remove_file(&path);
+        }
+    }
 }

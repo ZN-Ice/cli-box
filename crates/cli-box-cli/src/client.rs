@@ -1037,3 +1037,34 @@ mod tests {
         assert!(resp.pending_cli);
     }
 }
+
+#[cfg(test)]
+mod screenshot_result_tests {
+    use super::*;
+
+    #[test]
+    fn screenshot_result_has_source_and_reason() {
+        let result = ScreenshotResult {
+            png_data: vec![0x89, 0x50],
+            source: Some("screencapturekit".to_string()),
+            fallback_reason: Some("renderer_unavailable".to_string()),
+        };
+        assert_eq!(result.source.as_deref(), Some("screencapturekit"));
+        assert_eq!(
+            result.fallback_reason.as_deref(),
+            Some("renderer_unavailable")
+        );
+        assert_eq!(result.png_data.len(), 2);
+    }
+
+    #[test]
+    fn screenshot_result_renderer_source_no_fallback() {
+        let result = ScreenshotResult {
+            png_data: vec![],
+            source: Some("renderer".to_string()),
+            fallback_reason: None,
+        };
+        assert_eq!(result.source.as_deref(), Some("renderer"));
+        assert!(result.fallback_reason.is_none());
+    }
+}

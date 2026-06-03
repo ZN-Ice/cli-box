@@ -1659,4 +1659,43 @@ mod tests {
             .unwrap();
         assert_eq!(resp.status(), StatusCode::NOT_FOUND);
     }
+
+    #[tokio::test]
+    async fn request_renderer_screenshot_returns_error_when_ws_not_connected() {
+        let state = test_daemon_state_with_sandbox();
+        let result = request_renderer_screenshot(state, "test-sb").await;
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            err.contains("WebSocket not connected"),
+            "Expected 'WebSocket not connected', got: {err}"
+        );
+    }
+
+    #[test]
+    fn screenshot_response_has_renderer_source() {
+        let resp = screenshot_response(vec![0x89, 0x50], "renderer", None);
+        let headers = resp.headers();
+        assert_eq!(headers.get("x-screenshot-source").unwrap(), "renderer");
+        assert!(headers.get("x-screenshot-fallback-reason").is_none());
+        assert_eq!(headers.get("content-type").unwrap(), "image/png");
+    }
+
+    #[test]
+    fn screenshot_response_has_fallback_source_and_reason() {
+        let resp = screenshot_response(
+            vec![0x89, 0x50],
+            "screencapturekit",
+            Some("renderer_unavailable"),
+        );
+        let headers = resp.headers();
+        assert_eq!(
+            headers.get("x-screenshot-source").unwrap(),
+            "screencapturekit"
+        );
+        assert_eq!(
+            headers.get("x-screenshot-fallback-reason").unwrap(),
+            "renderer_unavailable"
+        );
+    }
 }
