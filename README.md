@@ -1,4 +1,4 @@
-# system-test-sandbox
+# cli-box
 
 macOS 桌面自动化沙箱 — 支持多实例管理，通过 CLI 命令启动独立沙箱窗口，在其中运行任意 CLI 或 macOS 应用，模拟人类操作并获取截图反馈。
 
@@ -34,8 +34,8 @@ sandbox close <id>
 
 ```bash
 # 克隆项目
-git clone https://github.com/ZN-Ice/system-test-sandbox.git
-cd system-test-sandbox
+git clone https://github.com/ZN-Ice/cli-box.git
+cd cli-box
 
 # 构建 daemon + CLI
 cargo build --release
@@ -49,7 +49,7 @@ cd electron-app && pnpm install && pnpm build && cd ..
 ```bash
 # 启动沙箱，运行 Claude Code
 sandbox start claude
-# → 打开 "System Test Sandbox" 窗口
+# → 打开 "CLI Box" 窗口
 # → xterm.js 终端中运行 claude
 # → 输出: Sandbox started: abc123
 
@@ -264,7 +264,7 @@ RUST_LOG=info sandbox type --id <id> "hello"
 RUST_LOG=trace sandbox key --id <id> "a"
 
 # 查看 Tauri 沙箱进程的日志（在沙箱启动的终端中可见）
-RUST_LOG=info ./System\ Test\ Sandbox.app/Contents/MacOS/system-test-sandbox --mode=cli --cmd=claude
+RUST_LOG=info ./CLI\ Box.app/Contents/MacOS/cli-box --mode=cli --cmd=claude
 ```
 
 关键日志前缀：
@@ -292,7 +292,7 @@ RUST_LOG=info ./System\ Test\ Sandbox.app/Contents/MacOS/system-test-sandbox --m
 ## 项目结构
 
 ```
-system-test-sandbox/
+cli-box/
 ├── Cargo.toml                    # Workspace 根
 ├── crates/
 │   ├── sandbox-core/             # 自动化核心 (library)

@@ -335,7 +335,7 @@ Start the sandbox with zsh, type `echo "hello world"`, press Enter, screenshot:
 
 ```bash
 # Start sandbox
-./target/release/bundle/macos/System\ Test\ Sandbox.app/Contents/MacOS/system-test-sandbox --mode=cli --cmd=zsh &
+./target/release/bundle/macos/System\ Test\ Sandbox.app/Contents/MacOS/cli-box --mode=cli --cmd=zsh &
 
 # Wait for startup, then get port from registry
 SANDBOX_ID=$(ls ~/.sandbox/instances/ | head -1 | sed 's/.json//')
@@ -359,7 +359,7 @@ Expected: screenshot shows "hello world" output
 
 ```bash
 # Start sandbox with opencode
-./target/release/bundle/macos/System\ Test\ Sandbox.app/Contents/MacOS/system-test-sandbox --mode=cli --cmd=opencode &
+./target/release/bundle/macos/System\ Test\ Sandbox.app/Contents/MacOS/cli-box --mode=cli --cmd=opencode &
 
 # Wait for startup
 sleep 3

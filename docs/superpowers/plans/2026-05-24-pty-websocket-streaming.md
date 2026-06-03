@@ -54,7 +54,7 @@
 
 - [ ] **Step 1: Add `ws` feature to axum and `futures-util` in workspace Cargo.toml**
 
-In `/Users/zn-ice/2026/system-test-sandbox/Cargo.toml`:
+In `/Users/zn-ice/2026/cli-box/Cargo.toml`:
 
 ```toml
 # Change axum (line 22):
@@ -66,7 +66,7 @@ futures-util = "0.3"
 
 - [ ] **Step 2: Add futures-util to sandbox-core**
 
-In `/Users/zn-ice/2026/system-test-sandbox/crates/sandbox-core/Cargo.toml`, add under `[dependencies]`:
+In `/Users/zn-ice/2026/cli-box/crates/sandbox-core/Cargo.toml`, add under `[dependencies]`:
 
 ```toml
 futures-util.workspace = true
@@ -93,7 +93,7 @@ git commit -m "feat(deps): add axum ws feature and futures-util for WebSocket su
 
 - [ ] **Step 1: Add broadcast import and field to PtySession**
 
-At the top of `/Users/zn-ice/2026/system-test-sandbox/crates/sandbox-core/src/process/mod.rs`, add to imports:
+At the top of `/Users/zn-ice/2026/cli-box/crates/sandbox-core/src/process/mod.rs`, add to imports:
 
 ```rust
 use tokio::sync::broadcast;
@@ -189,7 +189,7 @@ git commit -m "feat(process): add broadcast channel for PTY output streaming"
 
 - [ ] **Step 1: Add WebSocket imports**
 
-In `/Users/zn-ice/2026/system-test-sandbox/crates/sandbox-core/src/server/mod.rs`, add imports:
+In `/Users/zn-ice/2026/cli-box/crates/sandbox-core/src/server/mod.rs`, add imports:
 
 ```rust
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
@@ -334,7 +334,7 @@ git commit -m "feat(server): replace HTTP PTY endpoints with WebSocket streaming
 
 - [ ] **Step 1: Remove old HTTP PTY functions**
 
-In `/Users/zn-ice/2026/system-test-sandbox/sandbox-web/src/api.ts`, remove:
+In `/Users/zn-ice/2026/cli-box/sandbox-web/src/api.ts`, remove:
 
 ```typescript
 // REMOVE these functions:
@@ -417,7 +417,7 @@ git commit -m "feat(api): replace HTTP PTY functions with WebSocket client"
 
 - [ ] **Step 1: Rewrite Terminal.tsx to use WebSocket**
 
-Replace the entire content of `/Users/zn-ice/2026/system-test-sandbox/sandbox-web/src/components/Terminal.tsx`:
+Replace the entire content of `/Users/zn-ice/2026/cli-box/sandbox-web/src/components/Terminal.tsx`:
 
 ```tsx
 import { useEffect, useRef, useCallback } from "react";
@@ -581,7 +581,7 @@ export default function SandboxTerminal({ activePid = null }: TerminalProps) {
 
 - [ ] **Step 2: Update main.tsx to remove onTerminalInput**
 
-In `/Users/zn-ice/2026/system-test-sandbox/sandbox-web/src/main.tsx`:
+In `/Users/zn-ice/2026/cli-box/sandbox-web/src/main.tsx`:
 
 1. Remove the `handleTerminalInput` callback (lines 69-76):
 
@@ -654,7 +654,7 @@ git commit -m "feat(terminal): replace HTTP polling with WebSocket bidirectional
 - [ ] **Step 1: Build and start sandbox with opencode**
 
 ```bash
-cd /Users/zn-ice/2026/system-test-sandbox
+cd /Users/zn-ice/2026/cli-box
 ./release.sh
 ./target/release/sandbox start opencode
 ```

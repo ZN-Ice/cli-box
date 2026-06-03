@@ -5,7 +5,7 @@ fn new_sandbox_has_default_config() {
     let sandbox = Sandbox::new(SandboxConfig::default());
     assert_eq!(sandbox.config().width, 1280);
     assert_eq!(sandbox.config().height, 800);
-    assert_eq!(sandbox.config().title, "System Test Sandbox");
+    assert_eq!(sandbox.config().title, "CLI Box");
 }
 
 #[test]
@@ -72,7 +72,7 @@ fn sub_window_tracking() {
     // Main window + 2 sub-windows
     assert_eq!(windows.len(), 3);
     assert_eq!(windows[0].id, 1); // main window first
-    assert_eq!(windows[0].title, "System Test Sandbox");
+    assert_eq!(windows[0].title, "CLI Box");
     assert_eq!(windows[1].id, 100);
     assert_eq!(windows[1].title, "App A");
     assert_eq!(windows[2].id, 200);

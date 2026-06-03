@@ -1,4 +1,4 @@
-# system-test-sandbox — macOS 桌面自动化沙箱
+# cli-box — macOS 桌面自动化沙箱
 
 > **核心理念**：一个可复用的 macOS 桌面自动化沙箱，支持多实例管理——通过 CLI 命令启动独立沙箱窗口，在其中运行任意 CLI 或 macOS 应用，并通过模拟鼠标/键盘操作与截图反馈进行自动化控制。
 >
@@ -55,7 +55,7 @@
 ## 三、目录结构
 
 ```
-system-test-sandbox/
+cli-box/
 ├── Cargo.toml                    # Workspace 根
 ├── crates/
 │   ├── sandbox-core/             # 🔑 自动化核心 (library)
@@ -319,7 +319,7 @@ cargo fmt --all -- --check && cargo clippy --all-targets \
 
 # 构建 Tauri 应用
 cd sandbox-web && pnpm install && pnpm build && cd ..
-cargo build --release -p system-test-sandbox
+cargo build --release -p sandbox-cli
 
 # 使用 CLI 启动沙箱（默认 zsh）
 cargo run -p sandbox-cli -- start
@@ -362,4 +362,4 @@ curl -X POST http://127.0.0.1:5801/input/click \
 
 ---
 
-**版本**：v0.2.0 | **创建**：2026-05-13 | **更新**：2026-05-16 | **维护者**：system-test-sandbox 项目
+**版本**：v0.2.0 | **创建**：2026-05-13 | **更新**：2026-05-16 | **维护者**：cli-box 项目

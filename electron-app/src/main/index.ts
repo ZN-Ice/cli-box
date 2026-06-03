@@ -71,7 +71,7 @@ function createWindow() {
     height: 800,
     minWidth: 600,
     minHeight: 400,
-    title: "System Test Sandbox",
+    title: "CLI Box",
     titleBarStyle: "hiddenInset",
     vibrancy: "sidebar",
     backgroundColor: "#1e1e1e",

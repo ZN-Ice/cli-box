@@ -5,7 +5,7 @@ fn sandbox_config_default_values() {
     let config = SandboxConfig::default();
     assert_eq!(config.width, 1280);
     assert_eq!(config.height, 800);
-    assert_eq!(config.title, "System Test Sandbox");
+    assert_eq!(config.title, "CLI Box");
     assert!(config.id.is_none());
     assert!(config.port.is_none());
     assert!(config.mode.is_none());
@@ -109,7 +109,7 @@ fn sandbox_list_windows_includes_main() {
     let windows = sandbox.list_windows();
     assert_eq!(windows.len(), 3);
     assert_eq!(windows[0].id, 1); // main window first
-    assert_eq!(windows[0].title, "System Test Sandbox");
+    assert_eq!(windows[0].title, "CLI Box");
     assert_eq!(windows[1].id, 10);
     assert_eq!(windows[2].id, 20);
 }

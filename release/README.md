@@ -1,4 +1,4 @@
-# System Test Sandbox — Release v${VERSION}
+# CLI Box — Release v${VERSION}
 
 macOS 桌面自动化沙箱。通过 CLI 启动 Electron 沙箱窗口，内置 xterm.js 终端运行命令行工具（如 Claude Code），支持截图和输入模拟。
 
@@ -8,7 +8,7 @@ macOS 桌面自动化沙箱。通过 CLI 启动 Electron 沙箱窗口，内置 x
 release/
 ├── sandbox                     # CLI 工具（命令行入口）
 ├── sandbox-daemon              # 守护进程（CLI 自动管理）
-├── System Test Sandbox.app/    # Electron 沙箱 macOS 应用
+├── CLI Box.app/    # Electron 沙箱 macOS 应用
 └── README.md                   # 本文件
 ```
 
@@ -28,7 +28,7 @@ release/
 
 授予方式：\`系统设置 → 隐私与安全性 → 辅助功能 / 屏幕录制\`。
 
-将 \`sandbox\` 和 \`System Test Sandbox.app\` 添加进去并勾选。
+将 \`sandbox\` 和 \`CLI Box.app\` 添加进去并勾选。
 
 ## 二、使用方法
 
@@ -130,7 +130,7 @@ A: 检查「屏幕录制」权限是否已授予。
 A: 检查「辅助功能」权限是否已授予。
 
 **Q: 无法启动沙箱？**
-A: 确保 \`System Test Sandbox.app\` 与 \`sandbox\` 在同一目录下。
+A: 确保 \`CLI Box.app\` 与 \`sandbox\` 在同一目录下。
 
 **Q: 沙箱窗口内终端空白？**
 A: 等待几秒让 CLI 工具启动，终端会自动连接 PTY 输出。

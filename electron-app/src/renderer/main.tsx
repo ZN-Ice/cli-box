@@ -215,7 +215,7 @@ function App() {
       <div className="titlebar">
         <div className="titlebar-traffic-lights" />
         <div className="titlebar-content">
-          <span className="titlebar-title">System Test Sandbox</span>
+          <span className="titlebar-title">CLI Box</span>
         </div>
         <div className="titlebar-actions">
           <button className="theme-toggle" onClick={toggleTheme} title="Toggle theme">

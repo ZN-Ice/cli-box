@@ -63,7 +63,7 @@ src-tauri/src/main.rs setup():
     sleep(1s).await;
     
     // 用 ScreenCaptureKit 按标题查找窗口
-    let window_id = ScreenCapture::find_window_by_title("System Test Sandbox");
+    let window_id = ScreenCapture::find_window_by_title("CLI Box");
     
     // 设置到 HTTP AppState
     if let Some(id) = window_id {

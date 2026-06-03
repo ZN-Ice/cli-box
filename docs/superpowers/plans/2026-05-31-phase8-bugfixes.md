@@ -131,7 +131,7 @@ tokio::spawn(async move {
     // Wait a bit for Electron to launch
     tokio::time::sleep(std::time::Duration::from_secs(2)).await;
 
-    match ScreenCapture::find_window_by_title("System Test Sandbox") {
+    match ScreenCapture::find_window_by_title("CLI Box") {
         Ok(window_id) => {
             tracing::info!("Discovered Electron window_id={}", window_id);
             // Store in daemon state for reference
@@ -157,7 +157,7 @@ In `create_sandbox_handler`, after creating the sandbox, try to discover the win
 ```rust
 // After sandbox is created, try to find window_id
 if sandbox.window_id.is_none() {
-    if let Ok(wid) = ScreenCapture::find_window_by_title("System Test Sandbox") {
+    if let Ok(wid) = ScreenCapture::find_window_by_title("CLI Box") {
         sandbox.window_id = Some(wid);
     }
 }

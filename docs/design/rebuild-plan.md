@@ -16,7 +16,7 @@
 ## New Project Structure
 
 ```
-system-test-sandbox/
+cli-box/
 ├── Cargo.toml                         # workspace: sandbox-core + sandbox-cli
 ├── crates/
 │   ├── sandbox-core/                  # 6 个模块（从 11 个简化）

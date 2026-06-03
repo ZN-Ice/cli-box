@@ -9,7 +9,7 @@
 ### 1.1 当前架构
 
 ```
-system-test-sandbox (Tauri 2.11.2)
+cli-box (Tauri 2.11.2)
 ├── Rust 后端：直接在 Tauri 进程内调用 macOS API
 ├── WKWebView 渲染：macOS 系统 WebKit（Safari 内核）
 └── 多实例：每个 sandbox start 启动一个独立 Tauri 进程
@@ -310,7 +310,7 @@ Electron 启动时也通过同样机制发现 daemon 端口。
 ```bash
 sandbox start claude
   → CLI 解析参数
-  → spawn 一个新的 Tauri 进程 (system-test-sandbox --mode=cli --cmd=claude)
+  → spawn 一个新的 Tauri 进程 (cli-box --mode=cli --cmd=claude)
   → Tauri 进程内嵌 HTTP server
   → 注册实例到 ~/.sandbox/instances/
 ```
@@ -468,7 +468,7 @@ struct MacOsEngine { /* CGEvent + AXUIElement + ScreenCaptureKit */ }
 ## 七、目录结构变更
 
 ```
-system-test-sandbox/
+cli-box/
 ├── Cargo.toml                     # Workspace 根
 ├── crates/
 │   ├── sandbox-core/              # 核心库（大部分复用）

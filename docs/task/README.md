@@ -1,4 +1,4 @@
-# system-test-sandbox 任务管理系统
+# cli-box 任务管理系统
 
 > 所有开发任务必须先记录后执行。任务文件：`docs/task/task_records.json`
 

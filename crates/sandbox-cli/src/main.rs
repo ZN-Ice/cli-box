@@ -303,7 +303,7 @@ async fn main() -> anyhow::Result<()> {
 #[allow(dead_code)]
 async fn cmd_start(command: &str, args: &[String]) -> anyhow::Result<()> {
     let bundle_path = find_tauri_bundle()?;
-    let app_binary = bundle_path.join("Contents/MacOS/system-test-sandbox");
+    let app_binary = bundle_path.join("Contents/MacOS/cli-box");
 
     let mut tauri_args = vec!["--mode=cli".to_string(), format!("--cmd={}", command)];
     if !args.is_empty() {
@@ -994,12 +994,12 @@ fn cmd_shutdown() -> anyhow::Result<()> {
 
     let tauri_window = windows
         .iter()
-        .find(|(_, title)| title.starts_with("System Test Sandbox"));
+        .find(|(_, title)| title.starts_with("CLI Box"));
 
     if let Some((id, title)) = tauri_window {
         println!("Closing sandbox window: {} (ID: {})", title, id);
         let script = r#"tell application "System Events"
-    set procList to every process whose name is "system-test-sandbox"
+    set procList to every process whose name is "cli-box"
     repeat with proc in procList
         set winList to every window of proc
         repeat with win in winList
@@ -1356,7 +1356,7 @@ fn base64_encode(data: &[u8]) -> String {
 // ── Helpers ─────────────────────────────────────────────
 
 fn find_tauri_bundle() -> anyhow::Result<PathBuf> {
-    let app_name = "System Test Sandbox.app";
+    let app_name = "CLI Box.app";
     let exe_path = std::env::current_exe().context("Failed to get current exe path")?;
     let exe_dir = exe_path.parent().context("No parent dir for exe")?;
 
@@ -1441,23 +1441,23 @@ fn find_electron_binary() -> anyhow::Result<PathBuf> {
     let exe_dir = exe_path.parent().context("No parent dir for exe")?;
 
     // Check for Electron binary in release directory
-    let electron_name = "System Test Sandbox";
+    let electron_name = "CLI Box";
     let app_bundle = exe_dir.join(format!("{electron_name}.app"));
     if app_bundle.exists() {
-        return Ok(app_bundle.join("Contents/MacOS/System Test Sandbox"));
+        return Ok(app_bundle.join("Contents/MacOS/CLI Box"));
     }
 
     // Dev mode: check dist/electron
     let cwd = std::env::current_dir().unwrap_or_default();
-    let dev_bundle = cwd.join("dist/electron/mac-arm64/System Test Sandbox.app");
+    let dev_bundle = cwd.join("dist/electron/mac-arm64/CLI Box.app");
     if dev_bundle.exists() {
-        return Ok(dev_bundle.join("Contents/MacOS/system-test-sandbox"));
+        return Ok(dev_bundle.join("Contents/MacOS/cli-box"));
     }
 
     // Also check x64
-    let dev_bundle_x64 = cwd.join("dist/electron/mac/System Test Sandbox.app");
+    let dev_bundle_x64 = cwd.join("dist/electron/mac/CLI Box.app");
     if dev_bundle_x64.exists() {
-        return Ok(dev_bundle_x64.join("Contents/MacOS/system-test-sandbox"));
+        return Ok(dev_bundle_x64.join("Contents/MacOS/cli-box"));
     }
 
     anyhow::bail!(
@@ -1505,7 +1505,7 @@ fn discover_sandbox_window() -> anyhow::Result<u32> {
         .context("Failed to list windows. Is Screen Recording permission granted?")?;
 
     for (id, title) in &windows {
-        if title.starts_with("System Test Sandbox") {
+        if title.starts_with("CLI Box") {
             return Ok(*id);
         }
     }

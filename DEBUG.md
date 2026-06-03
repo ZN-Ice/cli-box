@@ -78,7 +78,7 @@ console.log("pending data:", writeBuffer?._pendingData);
 Tauri 构建后前端资源可能被 WKWebView 缓存，修改前端代码后必须清理：
 
 ```bash
-rm -rf ~/Library/Caches/com.system-test-sandbox*
+rm -rf ~/Library/Caches/com.cli-box*
 ```
 
 ### 1.5 强制 Tauri 重新嵌入前端资源
@@ -90,7 +90,7 @@ rm -rf ~/Library/Caches/com.system-test-sandbox*
 bash release.sh
 
 # 方法 2：修改 build.rs 时间戳触发重构建
-touch src-tauri/build.rs && cargo build --release -p system-test-sandbox
+touch src-tauri/build.rs && cargo build --release -p cli-box
 ```
 
 ## 二、服务端调试
@@ -164,7 +164,7 @@ bash release.sh
 ./release/sandbox --version
 
 # 检查 Tauri app 大小
-ls -lh release/system-test-sandbox 2>/dev/null || ls -lh "release/System Test Sandbox.app"
+ls -lh release/cli-box 2>/dev/null || ls -lh "release/CLI Box.app"
 ```
 
 ## 四、端到端测试流程
@@ -173,8 +173,8 @@ ls -lh release/system-test-sandbox 2>/dev/null || ls -lh "release/System Test Sa
 
 ```bash
 # 1. 清理环境
-pkill -f "system-test-sandbox" 2>/dev/null
-rm -rf ~/Library/Caches/com.system-test-sandbox* 2>/dev/null
+pkill -f "cli-box" 2>/dev/null
+rm -rf ~/Library/Caches/com.cli-box* 2>/dev/null
 
 # 2. 构建并启动
 bash release.sh

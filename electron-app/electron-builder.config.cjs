@@ -1,7 +1,7 @@
 /** @type {import('electron-builder').Configuration} */
 const config = {
-  appId: "com.system-test-sandbox",
-  productName: "System Test Sandbox",
+  appId: "com.cli-box",
+  productName: "CLI Box",
   directories: {
     output: "../dist/electron",
   },

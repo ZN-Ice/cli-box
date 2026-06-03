@@ -1,4 +1,4 @@
-# Integration Test Report — system-test-sandbox
+# Integration Test Report — cli-box
 
 **Generated**: 2026-05-16  
 **Branch**: main  
@@ -204,7 +204,7 @@
 
 | 方法 | 状态 | 详情 |
 |------|------|------|
-| `initialize` | ✅ PASS | 协议版本 2024-11-05, Server: system-test-sandbox v0.1.0 |
+| `initialize` | ✅ PASS | 协议版本 2024-11-05, Server: cli-box v0.1.0 |
 | `tools/list` | ✅ PASS | 返回 18 个 MCP 工具 |
 | `tools/call` → `list_windows` | ✅ PASS | 返回 147 个窗口的 ID 和标题 |
 | `tools/call` → `screenshot` | ⚠️ 无窗口 | 同上 |
@@ -235,7 +235,7 @@
    <true/>
    ```
 
-3. **沙箱窗口截图**：`capture_sandbox()` 依赖名为 "System Test Sandbox" 的 Tauri 窗口存在。需要先启动 Tauri 宿主应用。
+3. **沙箱窗口截图**：`capture_sandbox()` 依赖名为 "CLI Box" 的 Tauri 窗口存在。需要先启动 Tauri 宿主应用。
 
 4. **进程状态非持久化**：`ProcessManager` 使用进程内 `static SESSIONS`，每个 CLI 命令是独立进程，状态不共享。通过 HTTP/MCP 服务器使用时状态正常。
 

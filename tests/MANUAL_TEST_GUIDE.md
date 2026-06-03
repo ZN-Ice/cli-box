@@ -331,7 +331,7 @@ printf '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion
 ```
 
 **预期输出**：三行 JSON-RPC 响应：
-1. `initialize` 返回 `{"serverInfo":{"name":"system-test-sandbox","version":"0.1.0"}}`
+1. `initialize` 返回 `{"serverInfo":{"name":"cli-box","version":"0.1.0"}}`
 2. `tools/list` 返回 18 个 MCP 工具定义
 3. `tools/call` 返回 `list_windows` 的结果
 
@@ -350,7 +350,7 @@ pnpm install
 pnpm tauri dev
 ```
 
-这会打开一个 1280x800 的 "System Test Sandbox" 窗口。
+这会打开一个 1280x800 的 "CLI Box" 窗口。
 
 ### 5.2 使用预置 YAML 场景
 

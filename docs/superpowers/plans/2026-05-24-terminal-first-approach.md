@@ -87,7 +87,7 @@ let config = SandboxConfig {
 
 - [ ] **Step 2: Run existing tests to verify no regression**
 
-Run: `cargo test -p system-test-sandbox`
+Run: `cargo test -p cli-box`
 Expected: All existing tests pass (the parse tests don't depend on default behavior)
 
 - [ ] **Step 3: Commit**

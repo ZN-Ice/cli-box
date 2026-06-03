@@ -181,8 +181,8 @@ export default defineConfig({
 ```javascript
 /** @type {import('electron-builder').Configuration} */
 const config = {
-  appId: "com.system-test-sandbox",
-  productName: "System Test Sandbox",
+  appId: "com.cli-box",
+  productName: "CLI Box",
   directories: {
     output: "../../dist/electron",
   },
@@ -214,7 +214,7 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
-    title: "System Test Sandbox",
+    title: "CLI Box",
     titleBarStyle: "hiddenInset",
     webPreferences: {
       preload: join(__dirname, "../preload/index.js"),
@@ -264,7 +264,7 @@ contextBridge.exposeInMainWorld("sandbox", {
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>System Test Sandbox</title>
+    <title>CLI Box</title>
   </head>
   <body class="bg-neutral-900 text-neutral-100">
     <div id="root"></div>
@@ -281,7 +281,7 @@ import ReactDOM from "react-dom/client";
 function App() {
   return (
     <div className="flex h-screen items-center justify-center">
-      <p>System Test Sandbox — Electron</p>
+      <p>CLI Box — Electron</p>
     </div>
   );
 }
@@ -295,7 +295,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(<App />);
 cd electron-app && pnpm install && pnpm dev
 ```
 
-Expected: Electron 窗口打开显示 "System Test Sandbox — Electron"
+Expected: Electron 窗口打开显示 "CLI Box — Electron"
 
 - [ ] **Step 11: Commit**
 
@@ -462,7 +462,7 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
-    title: "System Test Sandbox",
+    title: "CLI Box",
     titleBarStyle: "hiddenInset",
     show: false,
     webPreferences: {
@@ -1076,17 +1076,17 @@ fn find_electron_binary() -> anyhow::Result<PathBuf> {
     let exe_dir = exe_path.parent().context("No parent dir for exe")?;
 
     // Check for Electron binary in release directory
-    let electron_name = "System Test Sandbox";
+    let electron_name = "CLI Box";
     let app_bundle = exe_dir.join(format!("{electron_name}.app"));
     if app_bundle.exists() {
-        return Ok(app_bundle.join("Contents/MacOS/system-test-sandbox"));
+        return Ok(app_bundle.join("Contents/MacOS/cli-box"));
     }
 
     // Dev mode: check electron-app/dist
     let cwd = std::env::current_dir().unwrap_or_default();
-    let dev_bundle = cwd.join("dist/electron/mac-arm64/System Test Sandbox.app");
+    let dev_bundle = cwd.join("dist/electron/mac-arm64/CLI Box.app");
     if dev_bundle.exists() {
-        return Ok(dev_bundle.join("Contents/MacOS/system-test-sandbox"));
+        return Ok(dev_bundle.join("Contents/MacOS/cli-box"));
     }
 
     anyhow::bail!("Electron app not found. Build it first: cd electron-app && pnpm build && pnpm pack")

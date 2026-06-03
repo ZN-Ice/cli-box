@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # ============================================================
-# system-test-sandbox — Release Build Script
+# cli-box — Release Build Script
 # ============================================================
 # Builds the Electron sandbox app + CLI binary and packages
 # them into ./release/.
@@ -18,7 +18,7 @@ cd "$SCRIPT_DIR"
 
 RELEASE_DIR="$SCRIPT_DIR/release"
 VERSION="0.1.0"
-APP_NAME="System Test Sandbox"
+APP_NAME="CLI Box"
 
 # --- helpers ---
 info()  { echo "  ➜  $*"; }
@@ -61,7 +61,7 @@ if [ -f ~/.sandbox/daemon.json ]; then
 fi
 
 # Kill Electron app by exact process name
-pkill -x "System Test Sandbox" 2>/dev/null || true
+pkill -x "CLI Box" 2>/dev/null || true
 
 # Kill CLI processes by exact binary name
 pkill -x "sandbox" 2>/dev/null || true
@@ -142,7 +142,7 @@ info "Generating README.md..."
 BUILD_DATE="$(date '+%Y-%m-%d %H:%M')"
 
 cat > "$RELEASE_DIR/README.md" << 'RELEASEREADME'
-# System Test Sandbox — Release v${VERSION}
+# CLI Box — Release v${VERSION}
 
 macOS 桌面自动化沙箱。通过 CLI 启动 Electron 沙箱窗口，内置 xterm.js 终端运行命令行工具（如 Claude Code），支持截图和输入模拟。
 
@@ -152,7 +152,7 @@ macOS 桌面自动化沙箱。通过 CLI 启动 Electron 沙箱窗口，内置 x
 release/
 ├── sandbox                     # CLI 工具（命令行入口）
 ├── sandbox-daemon              # 守护进程（CLI 自动管理）
-├── System Test Sandbox.app/    # Electron 沙箱 macOS 应用
+├── CLI Box.app/    # Electron 沙箱 macOS 应用
 └── README.md                   # 本文件
 ```
 
@@ -172,7 +172,7 @@ release/
 
 授予方式：\`系统设置 → 隐私与安全性 → 辅助功能 / 屏幕录制\`。
 
-将 \`sandbox\` 和 \`System Test Sandbox.app\` 添加进去并勾选。
+将 \`sandbox\` 和 \`CLI Box.app\` 添加进去并勾选。
 
 ## 二、使用方法
 
@@ -274,7 +274,7 @@ A: 检查「屏幕录制」权限是否已授予。
 A: 检查「辅助功能」权限是否已授予。
 
 **Q: 无法启动沙箱？**
-A: 确保 \`System Test Sandbox.app\` 与 \`sandbox\` 在同一目录下。
+A: 确保 \`CLI Box.app\` 与 \`sandbox\` 在同一目录下。
 
 **Q: 沙箱窗口内终端空白？**
 A: 等待几秒让 CLI 工具启动，终端会自动连接 PTY 输出。

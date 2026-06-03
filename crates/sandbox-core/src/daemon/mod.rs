@@ -317,7 +317,7 @@ async fn create_sandbox_handler(
             };
 
             // Best-effort: discover Electron window for screenshots
-            let window_id = ScreenCapture::find_window_by_title("System Test Sandbox").ok();
+            let window_id = ScreenCapture::find_window_by_title("CLI Box").ok();
 
             let managed = ManagedSandbox {
                 id: id.clone(),
@@ -486,7 +486,7 @@ async fn screenshot_handler(
 
     // Re-discover the Electron window by title
     let new_wid =
-        tokio::task::spawn_blocking(|| ScreenCapture::find_window_by_title("System Test Sandbox"))
+        tokio::task::spawn_blocking(|| ScreenCapture::find_window_by_title("CLI Box"))
             .await
             .map_err(|e| AppError::Screenshot(format!("window discovery task failed: {e}")))??;
 
@@ -686,7 +686,7 @@ async fn screenshot_region_handler(
                 // Re-discover window
                 drop(s);
                 let new_wid = tokio::task::spawn_blocking(|| {
-                    ScreenCapture::find_window_by_title("System Test Sandbox")
+                    ScreenCapture::find_window_by_title("CLI Box")
                 })
                 .await
                 .map_err(|e| {
@@ -1085,7 +1085,7 @@ pub async fn run_daemon(port: u16) -> Result<(), Box<dyn std::error::Error>> {
     tokio::spawn(async move {
         tokio::time::sleep(std::time::Duration::from_secs(2)).await;
         let result = tokio::task::spawn_blocking(|| {
-            ScreenCapture::find_window_by_title("System Test Sandbox")
+            ScreenCapture::find_window_by_title("CLI Box")
         })
         .await;
         match result {

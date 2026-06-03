@@ -27,7 +27,7 @@ impl Default for SandboxConfig {
             args: Vec::new(),
             width: 1280,
             height: 800,
-            title: "System Test Sandbox".to_string(),
+            title: "CLI Box".to_string(),
         }
     }
 }

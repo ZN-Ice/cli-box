@@ -28,7 +28,7 @@ CLI 通过注册中心发现实例，通过 HTTP 通信。
 sandbox-cli start --cli "claude"
   ├─ 1. 生成 sandbox ID (generate_instance_id)
   ├─ 2. 分配可用端口 (bind 127.0.0.1:0)
-  ├─ 3. 启动 Tauri: open -n -a "System Test Sandbox" --args --sandbox-id=<id> --port=<port> --mode=cli --cmd=claude
+  ├─ 3. 启动 Tauri: open -n -a "CLI Box" --args --sandbox-id=<id> --port=<port> --mode=cli --cmd=claude
   ├─ 4. 轮询 http://127.0.0.1:<port>/health 等待就绪
   ├─ 5. 写入 ~/.sandbox/instances/<id>.json
   └─ 6. 打印 Sandbox ID

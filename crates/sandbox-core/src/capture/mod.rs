@@ -122,7 +122,7 @@ mod macos_impl {
         }
 
         /// Capture the sandbox window, optionally by a specific window ID.
-        /// If window_id is None, searches for a window titled "System Test Sandbox".
+        /// If window_id is None, searches for a window titled "CLI Box".
         pub fn capture_sandbox_by_id(window_id: Option<u32>) -> Result<Vec<u8>> {
             ensure_cg_initialized();
             let content = SCShareableContent::get().map_err(|e| {
@@ -143,7 +143,7 @@ mod macos_impl {
                     .iter()
                     .find(|w| {
                         w.title()
-                            .map(|t| t.contains("System Test Sandbox"))
+                            .map(|t| t.contains("CLI Box"))
                             .unwrap_or(false)
                     })
                     .ok_or_else(|| {

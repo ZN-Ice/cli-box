@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 将 system-test-sandbox 从 Tauri 多实例架构迁移到 Electron + Rust daemon 单进程多 Tab 架构，解决 WKWebView 终端渲染问题。
+**Goal:** 将 cli-box 从 Tauri 多实例架构迁移到 Electron + Rust daemon 单进程多 Tab 架构，解决 WKWebView 终端渲染问题。
 
 **Architecture:** Rust sandbox-daemon 作为独立后台进程管理所有沙箱（PTY、截图、输入模拟、APP 启动）。Electron 作为 UI 层，通过 HTTP/WebSocket 与 daemon 通信。CLI 直接与 daemon HTTP API 交互，不经过 Electron。
 

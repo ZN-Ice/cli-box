@@ -1,4 +1,4 @@
-# system-test-sandbox - CI门禁
+# cli-box - CI门禁
 # 在PR创建/更新及push到main时触发
 #
 # 门禁检查项 (Rust):
@@ -446,7 +446,7 @@ jobs:
       - name: 检查门禁结果
         run: |
           echo "============================================"
-          echo "  system-test-sandbox CI 门禁结果"
+          echo "  cli-box CI 门禁结果"
           echo "============================================"
           echo ""
 

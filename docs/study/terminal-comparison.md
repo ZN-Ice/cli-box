@@ -1,4 +1,4 @@
-# 终端实现对比分析：system-test-sandbox vs waveterm
+# 终端实现对比分析：cli-box vs waveterm
 
 > 分析日期：2026-05-27
 > 对比范围：PTY 管理、zsh 处理、子进程（claude/opencode）管理、前端渲染
@@ -7,7 +7,7 @@
 
 ## 一、架构对比总览
 
-| 维度 | system-test-sandbox | waveterm |
+| 维度 | cli-box | waveterm |
 |------|---------------------|----------|
 | 桌面框架 | Tauri 2.x (Rust) | Electron (Node.js) |
 | 后端语言 | Rust | Go |
@@ -21,7 +21,7 @@
 ### 架构差异图
 
 ```
-system-test-sandbox:
+cli-box:
 ┌──────────────┐     WebSocket      ┌──────────────┐     PTY      ┌──────────┐
 │  xterm.js    │ ◄───────────────► │  axum HTTP   │ ◄──────────► │  zsh     │
 │  (React)     │  ws://.../pty/ws  │  server      │  portable-pty│  (child) │
@@ -52,7 +52,7 @@ waveterm:
 
 ### 2.1 PTY 创建流程对比
 
-**system-test-sandbox**（`crates/sandbox-core/src/process/mod.rs`）：
+**cli-box**（`crates/sandbox-core/src/process/mod.rs`）：
 
 ```
 1. portable_pty::native_pty_system().open(PtySize{rows, cols})
@@ -80,7 +80,7 @@ waveterm:
 
 ### 2.2 关键差异
 
-| 方面 | system-test-sandbox | waveterm |
+| 方面 | cli-box | waveterm |
 |------|---------------------|----------|
 | PTY 库 | `portable-pty`（跨平台抽象） | `creack/pty`（Unix 原生） |
 | 读取模型 | 专用 `std::thread` + broadcast channel | Go goroutine + FileStore append |
@@ -89,14 +89,14 @@ waveterm:
 | 全局状态 | `LazyLock<Mutex<HashMap>>` | Block 级别的 ShellController |
 
 **设计哲学差异**：
-- system-test-sandbox 使用 **SQLite 作为 PTY 输出持久层**，天然支持重连回放、offset 查询
+- cli-box 使用 **SQLite 作为 PTY 输出持久层**，天然支持重连回放、offset 查询
 - waveterm 使用 **文件系统 + PubSub**，通过 FileStore 追加写入 + 事件订阅实现类似功能
 
 ---
 
 ## 三、zsh 处理方案对比
 
-### 3.1 system-test-sandbox 的 zsh 处理
+### 3.1 cli-box 的 zsh 处理
 
 **极简方案**——不做任何 shell 集成：
 
@@ -148,7 +148,7 @@ waveterm:
 
 ### 3.3 差异总结
 
-| 方面 | system-test-sandbox | waveterm |
+| 方面 | cli-box | waveterm |
 |------|---------------------|----------|
 | Shell 初始化 | 无特殊处理 | ZDOTDIR 重写 + 集成脚本 |
 | 命令追踪 | 无 | precmd/preexec hook via OSC 16162 |
@@ -162,7 +162,7 @@ waveterm:
 
 ## 四、进入 claude/opencode 等子进程的处理
 
-### 4.1 system-test-sandbox 的处理方式
+### 4.1 cli-box 的处理方式
 
 **完全透明**——PTY 将子进程视为纯粹的 I/O 流：
 
@@ -209,7 +209,7 @@ waveterm:
 
 ### 4.3 差异总结
 
-| 方面 | system-test-sandbox | waveterm |
+| 方面 | cli-box | waveterm |
 |------|---------------------|----------|
 | 子进程检测 | 无 | preexec hook + 命令解析 |
 | Claude 识别 | 无 | 正则匹配 + 专用 UI |
@@ -223,7 +223,7 @@ waveterm:
 
 ### 5.1 输出流（PTY → 前端）
 
-**system-test-sandbox**：
+**cli-box**：
 ```
 child stdout → PTY master FD
   → reader thread (std::thread, 4KB buffer)
@@ -247,7 +247,7 @@ child stdout → PTY
 
 ### 5.2 输入流（前端 → PTY）
 
-**system-test-sandbox**：
+**cli-box**：
 ```
 xterm.js onData → ws.send(text)
   → WebSocket recv_task → ProcessManager::send_input()
@@ -263,7 +263,7 @@ xterm.js onData → handleTermData() → base64 encode
 
 ### 5.3 Resize 流
 
-**system-test-sandbox**：
+**cli-box**：
 ```
 window resize → FitAddon.fit() → ws.send({"type":"resize","cols","rows"})
   → WebSocket → ProcessManager::resize_pty() → pty_master.resize()
@@ -279,7 +279,7 @@ ResizeObserver → fitAddon.fit() → RPC ControllerInputCommand{TermSize}
 
 ## 六、重连与回放机制对比
 
-### system-test-sandbox
+### cli-box
 
 WebSocket 重连时，`handle_pty_ws` 的 Phase 1：
 1. 从 PtyStore 读取全部历史输出（`store.read_all()`）
@@ -301,7 +301,7 @@ WebSocket 重连时，`handle_pty_ws` 的 Phase 1：
 
 ## 七、前端 xterm.js 使用对比
 
-| 方面 | system-test-sandbox | waveterm |
+| 方面 | cli-box | waveterm |
 |------|---------------------|----------|
 | xterm.js 版本 | `@xterm/xterm` (v5+) | `@xterm/xterm` |
 | Addons | FitAddon | FitAddon, SearchAddon, SerializeAddon, WebLinksAddon, WebglAddon |
@@ -347,7 +347,7 @@ WebSocket 重连时，`handle_pty_ws` 的 Phase 1：
 
 ## 附录：关键文件索引
 
-### system-test-sandbox
+### cli-box
 
 | 文件 | 功能 |
 |------|------|

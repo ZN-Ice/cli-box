@@ -1,4 +1,4 @@
-# system-test-sandbox - Release 发布工作流
+# cli-box - Release 发布工作流
 # 当创建 GitHub Release 时自动构建并上传产物
 #
 # 触发方式:
@@ -7,8 +7,8 @@
 #
 # 产物:
 #   - sandbox-cli                     CLI 二进制 (macOS aarch64)
-#   - System Test Sandbox.app.zip     macOS 桌面应用 (压缩)
-#   - System Test Sandbox_*_aarch64.dmg  macOS 安装包
+#   - CLI Box.app.zip     macOS 桌面应用 (压缩)
+#   - CLI Box_*_aarch64.dmg  macOS 安装包
 
 name: Release
 
@@ -91,7 +91,7 @@ jobs:
           cp target/release/sandbox release/
           find target/release/bundle/dmg -name "*.dmg" -maxdepth 1 -exec cp {} release/ \; 2>/dev/null || true
           cd release
-          find ../target/release/bundle/macos -name "*.app" -maxdepth 1 -exec zip -r "System Test Sandbox.app.zip" {} \; 2>/dev/null || true
+          find ../target/release/bundle/macos -name "*.app" -maxdepth 1 -exec zip -r "CLI Box.app.zip" {} \; 2>/dev/null || true
           echo "## 发布产物" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           ls -lh | tail -n +2 | awk '{printf "| %s | %s |\n", $NF, $5}' >> "$GITHUB_STEP_SUMMARY"
