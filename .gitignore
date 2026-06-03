@@ -8,6 +8,7 @@ dist/
 out/
 release/*
 !release/README.md
+!release/release-pipeline.md
 
 # Rust
 **/*.rs.bk
