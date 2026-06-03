@@ -45,12 +45,16 @@ else
 fi
 
 # ==================== Rust Format Check ====================
-info "Running cargo fmt check..."
-if cargo fmt --all -- --check 2>&1; then
-  ok "Rust format check passed"
+if [ "$(uname)" = "Linux" ] && [ -n "${CI:-}" ]; then
+  warn "Skipping Rust fmt on Linux CI (handled by separate CI job)"
 else
-  err "Rust format check FAILED — run: cargo fmt --all"
-  FAILED=1
+  info "Running cargo fmt check..."
+  if cargo fmt --all -- --check 2>&1; then
+    ok "Rust format check passed"
+  else
+    err "Rust format check FAILED — run: cargo fmt --all"
+    FAILED=1
+  fi
 fi
 
 # ==================== Frontend Type Check ====================
