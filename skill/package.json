@@ -1,0 +1,30 @@
+{
+  "name": "cli-box-skill",
+  "version": "0.2.0",
+  "description": "macOS desktop automation sandbox — skill package for Claude Code and OpenCode",
+  "bin": {
+    "cli-box-install": "./install.sh"
+  },
+  "scripts": {
+    "postinstall": "echo 'Run: bash install.sh to install cli-box'"
+  },
+  "keywords": [
+    "cli-box",
+    "macos",
+    "automation",
+    "sandbox",
+    "claude-code",
+    "opencode",
+    "skill",
+    "desktop",
+    "screenshot"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ZN-Ice/cli-box.git"
+  },
+  "author": "ZN-Ice",
+  "license": "Apache-2.0",
+  "os": ["darwin"],
+  "cpu": ["arm64", "x64"]
+}
