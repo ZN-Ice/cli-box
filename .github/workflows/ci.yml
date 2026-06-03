@@ -73,7 +73,7 @@ jobs:
           key: "v2-clippy"
 
       - name: 运行 cargo clippy
-        run: cargo clippy -p sandbox-core -p sandbox-cli --all-targets -- -D warnings
+        run: cargo clippy -p cli-box-core -p cli-box-cli --all-targets -- -D warnings
 
   # ==================== Rust 单元测试 (macOS) ====================
   rust-test:
@@ -105,7 +105,7 @@ jobs:
         run: cargo clean 2>/dev/null || true
 
       - name: 运行 cargo test
-        run: cargo test -p sandbox-core
+        run: cargo test -p cli-box-core
 
       - name: 安装 cargo-llvm-cov
         run: |
@@ -115,7 +115,7 @@ jobs:
       - name: 运行测试覆盖率
         run: |
           mkdir -p coverage
-          cargo llvm-cov -p sandbox-core --cobertura --output-path coverage/cobertura.xml
+          cargo llvm-cov -p cli-box-core --cobertura --output-path coverage/cobertura.xml
 
       - name: 生成覆盖率摘要
         if: always()
@@ -591,12 +591,12 @@ jobs:
           cache-on-failure: true
 
       - name: 构建 CLI 二进制 (release)
-        run: cargo build -p sandbox-cli --release
+        run: cargo build -p cli-box-cli --release
 
       - name: 整理构建产物
         run: |
           mkdir -p release
-          cp target/release/sandbox release/
+          cp target/release/cli-box release/
           echo "## 构建产物" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           ls -lh release/ | tail -n +2 | awk '{printf "| %s | %s |\n", $NF, $5}' >> "$GITHUB_STEP_SUMMARY"

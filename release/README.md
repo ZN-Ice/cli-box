@@ -6,8 +6,8 @@ macOS 桌面自动化沙箱。通过 CLI 启动 Electron 沙箱窗口，内置 x
 
 ```
 release/
-├── sandbox                     # CLI 工具（命令行入口）
-├── sandbox-daemon              # 守护进程（CLI 自动管理）
+├── cli-box                     # CLI 工具（命令行入口）
+├── cli-box-daemon              # 守护进程（CLI 自动管理）
 ├── CLI Box.app/    # Electron 沙箱 macOS 应用
 └── README.md                   # 本文件
 ```
@@ -21,14 +21,14 @@ release/
 
 ### 必须授予的权限
 
-> **没有这两个权限，sandbox 无法工作。**
+> **没有这两个权限，cli-box 无法工作。**
 
 1. **辅助功能 (Accessibility)**：用于 CGEvent 输入模拟 + AXUIElement UI 读取
 2. **屏幕录制 (Screen Recording)**：用于 ScreenCaptureKit 截图
 
 授予方式：\`系统设置 → 隐私与安全性 → 辅助功能 / 屏幕录制\`。
 
-将 \`sandbox\` 和 \`CLI Box.app\` 添加进去并勾选。
+将 \`cli-box\` 和 \`CLI Box.app\` 添加进去并勾选。
 
 ## 二、使用方法
 
@@ -36,76 +36,76 @@ release/
 
 \`\`\`bash
 # 在沙箱中启动 Claude Code（交互模式）
-./sandbox start claude
+./cli-box start claude
 
 # 非交互式：直接向 Claude 提问（约 30 秒响应）
-./sandbox start claude -- -p "你的问题"
+./cli-box start claude -- -p "你的问题"
 
 # 启动交互式 Shell
-./sandbox start zsh
-./sandbox start bash
+./cli-box start zsh
+./cli-box start bash
 
 # 启动其他 CLI 工具
-./sandbox start node
-./sandbox start npm -- test
+./cli-box start node
+./cli-box start npm -- test
 \`\`\`
 
-> **注意**：命令与参数之间用 \`--\` 分隔，如 \`./sandbox start <command> -- <args>\`。
+> **注意**：命令与参数之间用 \`--\` 分隔，如 \`./cli-box start <command> -- <args>\`。
 
 ### 截图
 
 \`\`\`bash
 # 截取指定沙箱窗口
-./sandbox screenshot --id <sandbox-id> -o screenshot.png
+./cli-box screenshot --id <cli-box-id> -o screenshot.png
 \`\`\`
 
 ### 其他命令
 
 \`\`\`bash
 # 列出所有沙箱
-./sandbox list
+./cli-box list
 
 # 查看沙箱详情
-./sandbox inspect <sandbox-id>
+./cli-box inspect <cli-box-id>
 
 # 关闭沙箱
-./sandbox close <sandbox-id>
+./cli-box close <cli-box-id>
 \`\`\`
 
 ### 示例工作流
 
 \`\`\`bash
 # 1. 启动 Claude Code（自动打开 Electron 窗口）
-./sandbox start claude
+./cli-box start claude
 
 # 2. 等待 Claude 启动（约 10 秒）
 sleep 10
 
 # 3. 截图查看状态
-./sandbox screenshot --id <ID> -o screenshot.png
+./cli-box screenshot --id <ID> -o screenshot.png
 
 # 4. 启动另一个沙箱（自动创建新 Tab）
-./sandbox start zsh
+./cli-box start zsh
 
 # 5. 列出所有沙箱
-./sandbox list
+./cli-box list
 
 # 6. 关闭指定沙箱
-./sandbox close <ID>
+./cli-box close <ID>
 \`\`\`
 
 ## 三、架构
 
 \`\`\`
-sandbox start claude
+cli-box start claude
        │
        ▼
-CLI (sandbox)
-       │ 1. 启动 sandbox-daemon（如未运行）
+CLI (cli-box)
+       │ 1. 启动 cli-box-daemon（如未运行）
        │ 2. 通过 HTTP 创建沙箱
        │ 3. 启动 Electron 窗口（如未运行）
        ▼
-sandbox-daemon (HTTP :15801)
+cli-box-daemon (HTTP :15801)
   - 管理 PTY 进程
   - 提供截图/输入 API
   - WebSocket PTY 终端
@@ -137,4 +137,4 @@ A: 等待几秒让 CLI 工具启动，终端会自动连接 PTY 输出。
 
 ---
 
-**版本**: v${VERSION} | **构建时间**: 2026-06-01 08:04
+**版本**: v${VERSION} | **构建时间**: 2026-06-03 08:15

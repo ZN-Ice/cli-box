@@ -254,7 +254,7 @@ conn.onOutput((data) => {
 
 | 步骤 | 操作 | 截图 | 结果 |
 |------|------|------|------|
-| 1 | `sandbox start opencode` | 01_initial.png | OpenCode UI 正确渲染 |
+| 1 | `cli-box start opencode` | 01_initial.png | OpenCode UI 正确渲染 |
 | 2 | PTY 输入 "你是谁？" | 03_after_type.png | 中文文本正确显示在输入框 |
 | 3 | 按 Enter 发送 | 04_after_enter.png | AI 成功响应，流式输出正常 |
 | 4 | 输入第二个问题 | 05_second_input.png | 多轮对话正常 |
@@ -375,15 +375,15 @@ WriteBuffer 内部用 setTimeout(0) 调度
 
 ```
 Tauri 多实例：
-├── sandbox start → CLI (Rust, ~5MB 内存)
+├── cli-box start → CLI (Rust, ~5MB 内存)
 │   └── Tauri window (~30MB)
-├── sandbox start → CLI (Rust, ~5MB 内存)
+├── cli-box start → CLI (Rust, ~5MB 内存)
 │   └── Tauri window (~30MB)
 └── 总计: ~70MB
 
 Electron 多实例：
-├── sandbox start → Electron process (~150MB)
-├── sandbox start → Electron process (~150MB)
+├── cli-box start → Electron process (~150MB)
+├── cli-box start → Electron process (~150MB)
 └── 总计: ~300MB+
 ```
 

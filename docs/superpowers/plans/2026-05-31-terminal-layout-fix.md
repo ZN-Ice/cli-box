@@ -252,7 +252,7 @@ cd electron-app && pnpm dev
 
 - [ ] **Step 2: Create a sandbox and verify terminal fills the window**
 
-Run: `sandbox start opencode` (or any CLI command)
+Run: `cli-box start opencode` (or any CLI command)
 
 Verify:
 1. No white area at the bottom of the window

@@ -7,7 +7,7 @@ test.describe("Tab Creation", () => {
   });
 
   test("creates tab and shows terminal", async ({ mockedPage: page }) => {
-    await page.route("**/sandbox/list", (route) => {
+    await page.route("**/box/list", (route) => {
       route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -29,7 +29,7 @@ test.describe("Tab Creation", () => {
   test("multiple tabs display correctly", async ({ mockedPage: page }, testInfo) => {
     // Skip screenshot comparison on CI — cross-platform rendering differs too much
     testInfo.skip(!!process.env.CI, "Visual regression snapshots are platform-specific");
-    await page.route("**/sandbox/list", (route) => {
+    await page.route("**/box/list", (route) => {
       route.fulfill({
         status: 200,
         contentType: "application/json",

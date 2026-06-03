@@ -12,7 +12,7 @@
 cli-box (Tauri 2.11.2)
 ├── Rust 后端：直接在 Tauri 进程内调用 macOS API
 ├── WKWebView 渲染：macOS 系统 WebKit（Safari 内核）
-└── 多实例：每个 sandbox start 启动一个独立 Tauri 进程
+└── 多实例：每个 cli-box start 启动一个独立 Tauri 进程
 ```
 
 每个沙箱 = 一个 Tauri 进程 (~30MB)，进程级强隔离。
@@ -47,8 +47,8 @@ macOS 上只能用 WKWebView 或换 Electron/CEF。
 ```
 ┌──────────────────────────────────────────────────────────────────┐
 │                     CLI / Agent / 用户                            │
-│  sandbox start          sandbox screenshot --id abc              │
-│  sandbox list           sandbox click --id abc 100 200           │
+│  cli-box start          cli-box screenshot --id abc              │
+│  cli-box list           cli-box click --id abc 100 200           │
 └───────────────────────────────┬──────────────────────────────────┘
                                 │ HTTP (localhost:port)
                                 ▼
@@ -99,7 +99,7 @@ macOS 上只能用 WKWebView 或换 Electron/CEF。
 
 1. **Rust daemon 做所有系统级工作** — PTY、截图、输入模拟、UI 检查、APP 启动
 2. **Electron 只做 UI** — Tab 管理、xterm.js 渲染、控制面板、DevTools
-3. **CLI 直连 daemon** — `sandbox screenshot --id abc` 不经过 Electron，直接 HTTP 到 daemon
+3. **CLI 直连 daemon** — `cli-box screenshot --id abc` 不经过 Electron，直接 HTTP 到 daemon
 4. **单 Electron 实例 + 单 daemon 实例** — 类似 waveterm 的 `requestSingleInstanceLock` 模式
 5. **守护进程保活** — 任一组件崩溃可恢复
 
@@ -308,7 +308,7 @@ Electron 启动时也通过同样机制发现 daemon 端口。
 
 **当前架构：**
 ```bash
-sandbox start claude
+cli-box start claude
   → CLI 解析参数
   → spawn 一个新的 Tauri 进程 (cli-box --mode=cli --cmd=claude)
   → Tauri 进程内嵌 HTTP server
@@ -317,7 +317,7 @@ sandbox start claude
 
 **新架构：**
 ```bash
-sandbox start claude
+cli-box start claude
   → CLI 解析参数
   → 检查 daemon 是否运行（读 ~/.sandbox/daemon.json + 验证 pid）
   → 如果 daemon 未运行：
@@ -336,10 +336,10 @@ sandbox start claude
 
 **CLI 操作命令（不变）：**
 ```bash
-sandbox screenshot --id abc    → HTTP GET daemon/sandbox/abc/screenshot
-sandbox click --id abc 100 200 → HTTP POST daemon/sandbox/abc/input/click
-sandbox list                   → HTTP GET daemon/sandbox/list
-sandbox close abc              → HTTP POST daemon/sandbox/abc/close → Electron 关闭对应 Tab
+cli-box screenshot --id abc    → HTTP GET daemon/sandbox/abc/screenshot
+cli-box click --id abc 100 200 → HTTP POST daemon/sandbox/abc/input/click
+cli-box list                   → HTTP GET daemon/sandbox/list
+cli-box close abc              → HTTP POST daemon/sandbox/abc/close → Electron 关闭对应 Tab
 ```
 
 CLI 操作不经过 Electron，直接与 daemon 通信。对于需要切换 Tab 的操作（如截图前切换），daemon 通过 WebSocket 通知 Electron 切换 Tab。
@@ -349,7 +349,7 @@ CLI 操作不经过 Electron，直接与 daemon 通信。对于需要切换 Tab 
 ### 4.1 CLI 模式沙箱
 
 ```
-用户: sandbox start claude
+用户: cli-box start claude
 
 1. CLI 检查 daemon → 未运行 → spawn sandbox-daemon → 打印端口
 2. CLI 检查 Electron → 未运行 → spawn electron-app
@@ -364,7 +364,7 @@ CLI 操作不经过 Electron，直接与 daemon 通信。对于需要切换 Tab 
 ### 4.2 APP 模式沙箱
 
 ```
-用户: sandbox start /Applications/cc-switch.app
+用户: cli-box start /Applications/cc-switch.app
 
 1-3. 同上
 4. Daemon: NSWorkspace.open("cc-switch.app")
@@ -380,7 +380,7 @@ CLI 操作不经过 Electron，直接与 daemon 通信。对于需要切换 Tab 
 ### 4.3 沙箱作用域操作
 
 ```
-用户: sandbox screenshot --id abc -o result.png
+用户: cli-box screenshot --id abc -o result.png
 
 1. CLI → HTTP GET daemon/sandbox/abc/screenshot
 2. Daemon: 通知 Electron 切换到 Tab abc（如果不在前台）
@@ -548,10 +548,10 @@ cli-box/
 1. 创建 `crates/sandbox-daemon/` binary crate
 2. 重构 `server/mod.rs` 为多沙箱路由（`/sandbox/:id/...`）
 3. 添加 daemon 生命周期管理（pid 文件、信号处理、优雅关闭）
-4. 修改 CLI：`sandbox start` → spawn daemon + 发送创建请求
+4. 修改 CLI：`cli-box start` → spawn daemon + 发送创建请求
 5. 验证：CLI 通过 daemon 的 HTTP API 完成 PTY 启动、截图、输入模拟
 
-**验证标准：** `sandbox start claude` 通过 daemon 启动 PTY，`sandbox screenshot` 通过 daemon 截图，无 Electron 参与。
+**验证标准：** `cli-box start claude` 通过 daemon 启动 PTY，`cli-box screenshot` 通过 daemon 截图，无 Electron 参与。
 
 ### Phase 2：Electron 壳
 
@@ -562,9 +562,9 @@ cli-box/
 3. 实现 Tab Manager：WebContentsView 管理，Tab 切换
 4. 修改前端：`api.ts` 连接 daemon，`Terminal.tsx` 去掉 writeDirect
 5. 实现 APP 模式控制面板 Tab
-6. 实现 `sandbox start` 时的 second-instance 处理（已有实例时创建新 Tab）
+6. 实现 `cli-box start` 时的 second-instance 处理（已有实例时创建新 Tab）
 
-**验证标准：** `sandbox start claude` 打开 Electron 窗口，xterm.js 使用标准 `term.write()` 正常渲染 Claude Code。
+**验证标准：** `cli-box start claude` 打开 Electron 窗口，xterm.js 使用标准 `term.write()` 正常渲染 Claude Code。
 
 ### Phase 3：守护与恢复
 

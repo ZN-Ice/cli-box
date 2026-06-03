@@ -248,7 +248,7 @@ function App() {
         <button
           className="tab-add"
           onClick={() => setShowNewDialog(true)}
-          title="New sandbox"
+          title="New CLI Box"
         >
           +
         </button>
@@ -258,9 +258,9 @@ function App() {
       {tabs.length === 0 ? (
         <div className="empty-state">
           <div className="empty-state-icon">⌘</div>
-          <div className="empty-state-text">No sandbox open</div>
+          <div className="empty-state-text">No CLI Box open</div>
           <div className="empty-state-hint">
-            Run <code>sandbox start</code> in your terminal to get started
+            Run <code>cli-box start</code> in your terminal to get started
           </div>
         </div>
       ) : (
@@ -307,7 +307,7 @@ function App() {
           <span>{connected ? `Daemon :${getDaemonPort()}` : "Disconnected"}</span>
         </div>
         <div className="statusbar-item">
-          <span>{tabs.length} sandbox{tabs.length !== 1 ? "es" : ""}</span>
+          <span>{tabs.length} CLI Box{tabs.length !== 1 ? "es" : ""}</span>
         </div>
         {activeTab && (
           <div className="statusbar-item">

@@ -656,7 +656,7 @@ git commit -m "feat(terminal): replace HTTP polling with WebSocket bidirectional
 ```bash
 cd /Users/zn-ice/2026/cli-box
 ./release.sh
-./target/release/sandbox start opencode
+./target/release/cli-box start opencode
 ```
 
 - [ ] **Step 2: Verify WebSocket connection**
@@ -686,8 +686,8 @@ curl -s -o release_test/ws_opencode_render.png http://127.0.0.1:5801/screenshot
 - [ ] **Step 6: Verify zsh and vim still work**
 
 ```bash
-./target/release/sandbox start zsh    # verify prompt renders
-./target/release/sandbox start vim    # verify ~ characters render
+./target/release/cli-box start zsh    # verify prompt renders
+./target/release/cli-box start vim    # verify ~ characters render
 ```
 
 ---
@@ -710,7 +710,7 @@ curl -s -o release_test/ws_opencode_render.png http://127.0.0.1:5801/screenshot
 | 使用场景 | 之前 | 之后 |
 |---------|------|------|
 | Tauri 前端 (xterm.js) | HTTP 50ms 轮询 | WebSocket 实时推送 |
-| CLI 工具 (`sandbox screenshot/click`) | HTTP API | HTTP API（不变） |
+| CLI 工具 (`cli-box screenshot/click`) | HTTP API | HTTP API（不变） |
 | MCP Agent | HTTP/MCP | HTTP/MCP（不变） |
 | curl 调试 PTY 输出 | `curl /pty/output/1000` | 需要 WebSocket 客户端 |
 | curl 发送 PTY 输入 | `curl -X POST /pty/write` | 需要 WebSocket 客户端 |

@@ -23,7 +23,7 @@ if [ "$(uname)" = "Linux" ] && [ -n "${CI:-}" ]; then
   warn "Skipping Rust tests on Linux CI (macOS frameworks required)"
 else
   info "Running Rust tests..."
-  if cargo test -p sandbox-core 2>&1; then
+  if cargo test -p cli-box-core 2>&1; then
     ok "Rust tests passed"
   else
     err "Rust tests FAILED"

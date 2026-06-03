@@ -399,6 +399,62 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c8d4a3bb8b1e0c1050499d1815f5ab16d04f0959b233085fb31653fbfc9d98f9"
 
 [[package]]
+name = "cli-box-cli"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "base64",
+ "clap",
+ "cli-box-core",
+ "futures-util",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tokio-tungstenite",
+ "tracing",
+]
+
+[[package]]
+name = "cli-box-core"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "axum",
+ "base64",
+ "core-foundation 0.10.1",
+ "core-graphics",
+ "futures-util",
+ "image",
+ "libc",
+ "nix 0.29.0",
+ "objc",
+ "portable-pty",
+ "rusqlite",
+ "screencapturekit",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tower",
+ "tower-http",
+ "tracing",
+ "tracing-appender",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
+name = "cli-box-daemon"
+version = "0.1.0"
+dependencies = [
+ "cli-box-core",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "color_quant"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2085,62 +2141,6 @@ name = "ryu"
 version = "1.0.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9774ba4a74de5f7b1c1451ed6cd5285a32eddb5cccb8cc655a4e50009e06477f"
-
-[[package]]
-name = "sandbox-cli"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "base64",
- "clap",
- "futures-util",
- "reqwest",
- "sandbox-core",
- "serde",
- "serde_json",
- "tokio",
- "tokio-tungstenite",
- "tracing",
-]
-
-[[package]]
-name = "sandbox-core"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "axum",
- "base64",
- "core-foundation 0.10.1",
- "core-graphics",
- "futures-util",
- "image",
- "libc",
- "nix 0.29.0",
- "objc",
- "portable-pty",
- "rusqlite",
- "screencapturekit",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "tokio",
- "tower",
- "tower-http",
- "tracing",
- "tracing-appender",
- "tracing-subscriber",
- "uuid",
-]
-
-[[package]]
-name = "sandbox-daemon"
-version = "0.1.0"
-dependencies = [
- "sandbox-core",
- "tokio",
- "tracing",
- "tracing-subscriber",
-]
 
 [[package]]
 name = "schannel"

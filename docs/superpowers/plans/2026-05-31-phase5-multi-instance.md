@@ -177,7 +177,7 @@ In `create_sandbox_handler`, after PTY is spawned, set status to `Running`:
 sandbox.status = InstanceStatus::Running;
 ```
 
-- [ ] **Step 2: Update status on sandbox close**
+- [ ] **Step 2: Update status on cli-box close**
 
 In `close_sandbox_handler`, before removing, set status to `Stopped`:
 
@@ -217,7 +217,7 @@ git commit -m "feat(daemon): proper instance status lifecycle transitions"
 
 - [ ] **Step 1: Build**
 
-Run: `cargo build -p sandbox-daemon && cargo build -p sandbox-cli`
+Run: `cargo build -p cli-box-daemon && cargo build -p sandbox-cli`
 
 - [ ] **Step 2: Start two sandboxes**
 

@@ -236,7 +236,7 @@ async fn spawn_app_handler(
 
 - [ ] **Step 3: Verify compilation**
 
-Run: `cargo check -p sandbox-core && cargo check -p sandbox-daemon`
+Run: `cargo check -p sandbox-core && cargo check -p cli-box-daemon`
 Expected: PASS
 
 - [ ] **Step 4: Commit**
@@ -318,14 +318,14 @@ Run: `cargo build --release`
 
 - [ ] **Step 2: Test screenshot**
 
-Run: `./target/release/sandbox start zsh`
+Run: `./target/release/cli-box start zsh`
 Wait for Electron window, then:
-Run: `./target/release/sandbox screenshot --id <id> -o test.png`
+Run: `./target/release/cli-box screenshot --id <id> -o test.png`
 Expected: Valid PNG file (not empty, not error)
 
 - [ ] **Step 3: Test region crop**
 
-Run: `./target/release/sandbox screenshot --id <id> -o region.png --region 0,0,400,300`
+Run: `./target/release/cli-box screenshot --id <id> -o region.png --region 0,0,400,300`
 Expected: Cropped PNG
 
 - [ ] **Step 4: Commit final state**

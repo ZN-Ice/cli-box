@@ -2,7 +2,7 @@
 
 **Generated**: 2026-05-16  
 **Branch**: main  
-**Target**: `sandbox-core` v0.1.0
+**Target**: `cli-box-core` v0.1.0
 
 ---
 
@@ -128,7 +128,7 @@
 | MCP `initialize` | ✅ | ✅ | 0 | ❌ | ✅ PASS | 协议版本 2024-11-05 |
 | MCP `tools/list` | ✅ | ✅ | 0 | ❌ | ✅ PASS | 18 个工具 |
 | MCP `tools/call` (list_windows) | ✅ | ✅ | 0 | ❌ | ✅ PASS | 147 个窗口 |
-| `sandbox-cli` CLI 子命令 | ✅ | ✅ | 0 | ❌ | ✅ PASS | windows/processes/spawn-cli/kill 等 |
+| `cli-box-cli` CLI 子命令 | ✅ | ✅ | 0 | ❌ | ✅ PASS | windows/processes/spawn-cli/kill 等 |
 
 ### 1.12 桌面应用 (Tauri Host) — `src-tauri/src/main.rs`
 
@@ -174,7 +174,7 @@
 | 架构 | arm64 (Apple Silicon) |
 | Swift | 6.3 (swiftlang-6.3.0.123.5) |
 | Rust | 1.88 (stable-aarch64-apple-darwin) |
-| 构建方式 | `cargo build -p sandbox-cli` |
+| 构建方式 | `cargo build -p cli-box-cli` |
 | 已知问题 | screencapturekit 需手动复制 `libswift_Concurrency.dylib` 到 build 目录 |
 
 ### 3.2 HTTP API 端点测试

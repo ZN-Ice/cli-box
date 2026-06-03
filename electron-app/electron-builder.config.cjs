@@ -12,8 +12,8 @@ const config = {
   files: ["out/**/*"],
   extraResources: [
     {
-      from: "../target/release/sandbox-daemon",
-      to: "sandbox-daemon",
+      from: "../target/release/cli-box-daemon",
+      to: "cli-box-daemon",
     },
   ],
 };

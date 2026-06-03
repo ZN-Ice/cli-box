@@ -2,7 +2,7 @@ import { test, expect } from "./fixtures";
 
 test.describe("Close Confirmation Dialog", () => {
   test("shows confirmation when closing running tab", async ({ mockedPage: page }) => {
-    await page.route("**/sandbox/list", (route) => {
+    await page.route("**/box/list", (route) => {
       route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -28,7 +28,7 @@ test.describe("Close Confirmation Dialog", () => {
   });
 
   test("cancel dismisses dialog without closing", async ({ mockedPage: page }) => {
-    await page.route("**/sandbox/list", (route) => {
+    await page.route("**/box/list", (route) => {
       route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -56,10 +56,10 @@ test.describe("Close Confirmation Dialog", () => {
     await expect(page.locator(".tab-item")).toHaveCount(1);
   });
 
-  test("close button calls POST /sandbox/{id}/close (not DELETE)", async ({ mockedPage: page }) => {
+  test("close button calls POST /box/{id}/close (not DELETE)", async ({ mockedPage: page }) => {
     const closeRequests: { method: string; url: string }[] = [];
 
-    await page.route("**/sandbox/list", (route) => {
+    await page.route("**/box/list", (route) => {
       route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -74,7 +74,7 @@ test.describe("Close Confirmation Dialog", () => {
     });
 
     // Track ALL requests to sandbox/sb-1* endpoints
-    await page.route("**/sandbox/sb-1**", (route) => {
+    await page.route("**/box/sb-1**", (route) => {
       const method = route.request().method();
       const url = route.request().url();
       closeRequests.push({ method, url });
@@ -96,17 +96,17 @@ test.describe("Close Confirmation Dialog", () => {
     // Wait for the close request to be made
     await page.waitForTimeout(1000);
 
-    // Verify POST /sandbox/sb-1/close was called — NOT DELETE /sandbox/sb-1
+    // Verify POST /box/sb-1/close was called — NOT DELETE /box/sb-1
     const postClose = closeRequests.find(r => r.method === "POST" && r.url.includes("/close"));
     const deleteWrong = closeRequests.find(r => r.method === "DELETE");
-    expect(postClose, "Expected POST /sandbox/{id}/close to be called").toBeTruthy();
+    expect(postClose, "Expected POST /box/{id}/close to be called").toBeTruthy();
     expect(deleteWrong, "Should NOT use DELETE method").toBeFalsy();
   });
 
   test("close button actually removes tab via polling", async ({ mockedPage: page }) => {
     let closed = false;
 
-    await page.route("**/sandbox/list", (route) => {
+    await page.route("**/box/list", (route) => {
       route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -122,8 +122,8 @@ test.describe("Close Confirmation Dialog", () => {
       });
     });
 
-    // Mock the correct close endpoint: POST /sandbox/{id}/close
-    await page.route("**/sandbox/sb-1/close", (route) => {
+    // Mock the correct close endpoint: POST /box/{id}/close
+    await page.route("**/box/sb-1/close", (route) => {
       if (route.request().method() === "POST") {
         closed = true;
         route.fulfill({ status: 200, body: JSON.stringify({ closed: "sb-1" }) });
@@ -143,10 +143,10 @@ test.describe("Close Confirmation Dialog", () => {
     await expect(page.locator(".empty-state-text")).toHaveText("No sandbox open", { timeout: 10000 });
   });
 
-  test("Close All Terminals calls POST /sandbox/{id}/close for each tab", async ({ mockedPage: page }) => {
+  test("Close All Terminals calls POST /box/{id}/close for each tab", async ({ mockedPage: page }) => {
     const closeRequests: { method: string; url: string }[] = [];
 
-    await page.route("**/sandbox/list", (route) => {
+    await page.route("**/box/list", (route) => {
       route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -158,7 +158,7 @@ test.describe("Close Confirmation Dialog", () => {
     });
 
     // Track ALL requests to sandbox endpoints
-    await page.route("**/sandbox/sb-**", (route) => {
+    await page.route("**/box/sb-**", (route) => {
       const method = route.request().method();
       const url = route.request().url();
       closeRequests.push({ method, url });
@@ -184,12 +184,12 @@ test.describe("Close Confirmation Dialog", () => {
     await page.getByRole("button", { name: "Close All Terminals" }).click();
     await page.waitForTimeout(1000);
 
-    // Verify POST /sandbox/{id}/close was called for BOTH sandboxes
+    // Verify POST /box/{id}/close was called for BOTH sandboxes
     const postClose1 = closeRequests.find(r => r.method === "POST" && r.url.includes("/sb-1/close"));
     const postClose2 = closeRequests.find(r => r.method === "POST" && r.url.includes("/sb-2/close"));
     const deleteWrong = closeRequests.find(r => r.method === "DELETE");
-    expect(postClose1, "Expected POST /sandbox/sb-1/close").toBeTruthy();
-    expect(postClose2, "Expected POST /sandbox/sb-2/close").toBeTruthy();
+    expect(postClose1, "Expected POST /box/sb-1/close").toBeTruthy();
+    expect(postClose2, "Expected POST /box/sb-2/close").toBeTruthy();
     expect(deleteWrong, "Should NOT use DELETE method").toBeFalsy();
   });
 });

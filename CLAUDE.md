@@ -11,14 +11,14 @@
 ```
 ┌──────────────────────────────────────────────────────────────┐
 │                  Agent / 用户 (CLI / MCP / HTTP)              │
-│  sandbox start / list / screenshot / click / type / key      │
+│  cli-box start / list / screenshot / click / type / key      │
 └───────────────────────────────┬───────────────────────────────┘
                                 │ HTTP (localhost:15801)
                                 ▼
 ┌──────────────────────────────────────────────────────────────┐
-│              sandbox-daemon (Rust, 单实例)                     │
+│              cli-box-daemon (Rust, 单实例)                     │
 │  PTY Manager + App Manager + Automation Engine                │
-│  Instance Registry (~/.sandbox/instances/)                    │
+│  Instance Registry (~/.cli-box/instances/)                    │
 └───────────────────────────────┬───────────────────────────────┘
                                 │ WebSocket (PTY 流)
                                 ▼
@@ -33,7 +33,7 @@
 2. **单 daemon 多沙箱**：一个 daemon 进程管理所有沙箱实例，通过 CLI 管理生命周期
 3. **窗口级截图**：ScreenCaptureKit 按窗口 ID 截图，不需要窗口在前台
 4. **双协议**：MCP (Agent CLI 原生) + HTTP (通用调用)
-5. **文件系统注册中心**：沙箱实例通过 `~/.sandbox/instances/<id>.json` 注册和发现
+5. **文件系统注册中心**：沙箱实例通过 `~/.cli-box/instances/<id>.json` 注册和发现
 
 **PTY Reader Thread**: Each PTY session spawns a dedicated background thread that continuously reads output into a shared buffer. The HTTP `/pty/output/:pid` endpoint drains from this buffer non-blocking. This replaces the earlier take/read/put-back pattern that blocked on idle TUI apps (opencode, vim, etc.).
 
@@ -41,8 +41,8 @@
 
 | 项目属性 | 规范值 |
 |---------|--------|
-| 核心库 | Rust (Edition 2021, >=1.88), `sandbox-core` library crate |
-| CLI | Rust, `sandbox-cli` binary crate |
+| 核心库 | Rust (Edition 2021, >=1.88), `cli-box-core` library crate |
+| CLI | Rust, `cli-box-cli` binary crate |
 | 桌面框架 | Electron (Chromium) |
 | 桌面前端 | React 18 + TS + Vite + xterm.js |
 | 异步运行时 | tokio |
@@ -58,7 +58,7 @@
 cli-box/
 ├── Cargo.toml                    # Workspace 根
 ├── crates/
-│   ├── sandbox-core/             # 🔑 自动化核心 (library)
+│   ├── cli-box-core/             # 🔑 自动化核心 (library)
 │   │   └── src/
 │   │       ├── lib.rs, error.rs
 │   │       ├── automation/       # CGEvent 输入模拟 + AXUIElement UI 检查
@@ -74,12 +74,12 @@ cli-box/
 │   │       │   └── mod.rs
 │   │       └── server/           # NEW: HTTP API 服务器 (library)
 │   │           └── mod.rs
-│   └── sandbox-cli/              # 🖥️ CLI (binary)
+│   └── cli-box-cli/              # 🖥️ CLI (binary)
 │       └── src/
 │           ├── main.rs           # start/list/close + 所有子命令
 │           ├── client.rs         # NEW: HTTP 客户端 (与沙箱实例通信)
 │           └── mcp_server.rs     # MCP stdio 服务器
-├── sandbox-web/                  # 🌐 沙箱窗口前端 (xterm.js + React)
+├── electron-app/                 # 🌐 沙箱窗口前端 (xterm.js + React)
 │   └── src/
 │       ├── main.tsx, api.ts
 │       └── components/           # Terminal, ControlPanel, StatusBar, RecordControls
@@ -95,38 +95,38 @@ cli-box/
 
 ## 四、核心接口
 
-### CLI 命令 (sandbox-cli)
+### CLI 命令 (cli-box-cli)
 
 ```bash
 # 多实例管理
-sandbox start                                # 启动沙箱，打开 zsh 终端（默认）
-sandbox start claude                         # 启动沙箱，直接运行 Claude Code
-sandbox start --shell                        # 等同于 sandbox start（快捷方式）
-sandbox start /path/to/App.app               # 启动沙箱，运行 macOS 应用
-sandbox list                                 # 列出所有活跃沙箱及其状态
-sandbox close <sandbox-id>                   # 关闭指定沙箱
-sandbox inspect <sandbox-id>                 # 查看沙箱详情
+cli-box start                                # 启动沙箱，打开 zsh 终端（默认）
+cli-box start claude                         # 启动沙箱，直接运行 Claude Code
+cli-box start --shell                        # 等同于 cli-box start（快捷方式）
+cli-box start /path/to/App.app               # 启动沙箱，运行 macOS 应用
+cli-box list                                 # 列出所有活跃沙箱及其状态
+cli-box close <sandbox-id>                   # 关闭指定沙箱
+cli-box inspect <sandbox-id>                 # 查看沙箱详情
 
 # 沙箱作用域操作 (通过 --id 指定目标沙箱)
-sandbox screenshot --id <id>                 # 截取沙箱截图
-sandbox screenshot --id <id> -o result.png   # 截图并指定输出路径
-sandbox click --id <id> 100 200              # 在沙箱内模拟点击
-sandbox type --id <id> "hello world"         # 在沙箱内模拟输入
-sandbox key --id <id> Return --modifiers cmd # 在沙箱内模拟按键
+cli-box screenshot --id <id>                 # 截取沙箱截图
+cli-box screenshot --id <id> -o result.png   # 截图并指定输出路径
+cli-box click --id <id> 100 200              # 在沙箱内模拟点击
+cli-box type --id <id> "hello world"         # 在沙箱内模拟输入
+cli-box key --id <id> Return --modifiers cmd # 在沙箱内模拟按键
 
 # 进程管理 (沙箱内)
-sandbox windows --id <id>                    # 列出沙箱内窗口
-sandbox processes --id <id>                  # 列出沙箱内进程
+cli-box windows --id <id>                    # 列出沙箱内窗口
+cli-box processes --id <id>                  # 列出沙箱内进程
 
 # 独立模式 (无多实例，向后兼容)
-sandbox serve --port 5801                    # 启动独立 HTTP + MCP 服务器
-sandbox mcp-serve                            # MCP stdio 模式
+cli-box serve --port 5801                    # 启动独立 HTTP + MCP 服务器
+cli-box mcp-serve                            # MCP stdio 模式
 ```
 
 ### 实例注册中心 (文件系统)
 
 ```
-~/.sandbox/instances/
+~/.cli-box/instances/
 ├── abc123.json    # {id, port, pid, kind, title, status, created_at, window_id}
 ├── def456.json
 └── ...
@@ -197,11 +197,11 @@ POST /diff                       截图差异对比
 WS   /pty/ws/{pid}               PTY WebSocket (文本=输入, JSON=resize)
 ```
 
-### Rust API (sandbox-core)
+### Rust API (cli-box-core)
 
 ```rust
 // 实例管理
-use sandbox_core::instance::{InstanceRegistry, SandboxInstance, generate_instance_id};
+use cli_box_core::instance::{InstanceRegistry, SandboxInstance, generate_instance_id};
 let registry = InstanceRegistry::default();
 let instance = SandboxInstance::new(id, port, kind);
 registry.register(&instance)?;
@@ -209,26 +209,26 @@ let all_instances = registry.list()?;
 registry.unregister("abc123")?;
 
 // 输入模拟
-use sandbox_core::automation::cg_event::InputSimulator;
+use cli_box_core::automation::cg_event::InputSimulator;
 InputSimulator::click(100.0, 200.0, MouseButton::Left)?;
 InputSimulator::type_text("Hello")?;
 InputSimulator::press_key("Return", &["cmd"])?;
 
 // 截图
-use sandbox_core::capture::ScreenCapture;
+use cli_box_core::capture::ScreenCapture;
 let png_bytes = ScreenCapture::capture_window(window_id)?;
 
 // UI 检查
-use sandbox_core::automation::ax_ui::UiInspector;
+use cli_box_core::automation::ax_ui::UiInspector;
 let tree = UiInspector::inspect_window(window_id)?;
 
 // 进程管理
-use sandbox_core::process::ProcessManager;
+use cli_box_core::process::ProcessManager;
 ProcessManager::spawn_app("/path/to/App.app")?;
 ProcessManager::spawn_cli("claude", &["--help".into()])?;
 
 // 沙箱管理 (多实例)
-use sandbox_core::sandbox::{Sandbox, SandboxConfig};
+use cli_box_core::sandbox::{Sandbox, SandboxConfig};
 let config = SandboxConfig {
     id: Some("abc123".into()),
     port: Some(15801),
@@ -280,32 +280,32 @@ fix(server): 修复 HTTP API 端口冲突
 
 ```bash
 # 1. 启动沙箱（默认打开 zsh 终端）
-sandbox start
+cli-box start
 # → 自动打开沙箱窗口，xterm.js 中运行 zsh
 # → 可在终端中输入 claude、opencode 等命令
 
 # 2. 启动沙箱（直接运行指定命令）
-sandbox start claude
+cli-box start claude
 # → 自动打开沙箱窗口，直接运行 claude
 
 # 3. 启动沙箱（运行 macOS 应用）
-sandbox start /Applications/cc-switch.app
+cli-box start /Applications/cc-switch.app
 # → 打开沙箱窗口，启动 cc-switch，关联其窗口
 
 # 4. 查看所有沙箱
-sandbox list
+cli-box list
 # → ID      TITLE              KIND  STATUS   PORT   CREATED
 # → abc123  "claude"           CLI   Running  15801  2026-05-16 10:30
 # → def456  "cc-switch"        APP   Running  15802  2026-05-16 10:31
 
 # 5. 操作指定沙箱
-sandbox screenshot --id abc123 -o sandbox.png  # 截图
-sandbox click --id abc123 100 200               # 点击
-sandbox type --id abc123 --pty "帮我写一个函数"  # PTY 输入
-sandbox key --id abc123 --pty Return            # PTY 按键
+cli-box screenshot --id abc123 -o sandbox.png  # 截图
+cli-box click --id abc123 100 200               # 点击
+cli-box type --id abc123 --pty "帮我写一个函数"  # PTY 输入
+cli-box key --id abc123 --pty Return            # PTY 按键
 
 # 6. 关闭沙箱
-sandbox close abc123
+cli-box close abc123
 # → 关闭沙箱窗口，清理注册信息，终止关联进程
 ```
 
@@ -318,11 +318,11 @@ cargo fmt --all -- --check && cargo clippy --all-targets \
   && pnpm typecheck && pnpm format:check && pnpm test:unit
 
 # 构建 Tauri 应用
-cd sandbox-web && pnpm install && pnpm build && cd ..
-cargo build --release -p sandbox-cli
+cd electron-app && pnpm install && pnpm build && cd ..
+cargo build --release -p cli-box-cli
 
 # 使用 CLI 启动沙箱（默认 zsh）
-cargo run -p sandbox-cli -- start
+cargo run -p cli-box-cli -- start
 
 # 通过 HTTP 直接调用 (已知端口)
 curl http://127.0.0.1:5801/screenshot -o screenshot.png
@@ -341,21 +341,21 @@ curl -X POST http://127.0.0.1:5801/input/click \
 - ✅ 目标应用不需要任何适配
 - ✅ Accessibility 和 Screen Recording 权限需用户手动授权
 - ✅ 每实例 HTTP API 仅监听 `127.0.0.1`，不暴露外部网络
-- ✅ 实例注册中心仅存储在本地文件系统 `~/.sandbox/instances/`
+- ✅ 实例注册中心仅存储在本地文件系统 `~/.cli-box/instances/`
 - ✅ 沙箱关闭时自动清理注册信息并终止关联进程
 
 ## 目录速查
 
 | 内容 | 路径 |
 |------|------|
-| 核心库 | `/crates/sandbox-core/src/` |
-| 实例管理 | `/crates/sandbox-core/src/instance/` |
-| HTTP 服务器 | `/crates/sandbox-core/src/server/` |
-| CLI 入口 | `/crates/sandbox-cli/src/main.rs` |
-| HTTP 客户端 | `/crates/sandbox-cli/src/client.rs` |
+| 核心库 | `/crates/cli-box-core/src/` |
+| 实例管理 | `/crates/cli-box-core/src/instance/` |
+| HTTP 服务器 | `/crates/cli-box-core/src/server/` |
+| CLI 入口 | `/crates/cli-box-cli/src/main.rs` |
+| HTTP 客户端 | `/crates/cli-box-cli/src/client.rs` |
 | Tauri 宿主 | `/src-tauri/src/main.rs` |
-| 沙箱前端 | `/sandbox-web/src/` |
-| 前端 API 层 | `/sandbox-web/src/api.ts` |
+| 沙箱前端 | `/electron-app/src/` |
+| 前端 API 层 | `/electron-app/src/api.ts` |
 | 设计文档 | `/docs/design/` |
 | 任务管理 | `/docs/task/` |
 | 本文件 | `/CLAUDE.md` |

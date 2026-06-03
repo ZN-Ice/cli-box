@@ -2,21 +2,21 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Replace the Tauri window with an Electron shell that renders xterm.js terminals via Chromium, eliminating WKWebView rendering artifacts. The Electron app connects to the existing sandbox-daemon via HTTP/WebSocket and manages multiple sandbox tabs in a single window.
+**Goal:** Replace the Tauri window with an Electron shell that renders xterm.js terminals via Chromium, eliminating WKWebView rendering artifacts. The Electron app connects to the existing cli-box-daemon via HTTP/WebSocket and manages multiple sandbox tabs in a single window.
 
-**Architecture:** Electron main process spawns sandbox-daemon as a child process. Each sandbox gets a WebContentsView tab containing xterm.js that connects directly to the daemon's PTY WebSocket. CLI mode sandboxes render in xterm.js using standard `term.write()` (no writeDirect hack). Tab switching positions WebContentsViews off-screen (waveterm strategy). `sandbox start` CLI command launches Electron if not running and triggers new-tab creation via daemon event.
+**Architecture:** Electron main process spawns cli-box-daemon as a child process. Each sandbox gets a WebContentsView tab containing xterm.js that connects directly to the daemon's PTY WebSocket. CLI mode sandboxes render in xterm.js using standard `term.write()` (no writeDirect hack). Tab switching positions WebContentsViews off-screen (waveterm strategy). `cli-box start` CLI command launches Electron if not running and triggers new-tab creation via daemon event.
 
 **Tech Stack:** Electron 34.x, TypeScript, electron-vite, React 18, @xterm/xterm 6.x, Vite 6
 
 **Spec:** `docs/design/electron-rust-architecture.md` (Section 3.2, 3.3, Phase 2 in Section 9)
 
-**Depends on:** Phase 1 complete (`sandbox-daemon` running with HTTP API on port 15801–15899, CLI `sandbox start/type/key --pty` all working)
+**Depends on:** Phase 1 complete (`cli-box-daemon` running with HTTP API on port 15801–15899, CLI `cli-box start/type/key --pty` all working)
 
 ---
 
 ## Scope
 
-本计划覆盖 Phase 2 的完整实现。完成后 `sandbox start claude` 会打开 Electron 窗口，xterm.js 用标准 `term.write()` 渲染 Claude Code（Chromium 引擎，无 WKWebView 问题）。
+本计划覆盖 Phase 2 的完整实现。完成后 `cli-box start claude` 会打开 Electron 窗口，xterm.js 用标准 `term.write()` 渲染 Claude Code（Chromium 引擎，无 WKWebView 问题）。
 
 Phase 3（守护与恢复、心跳检测、崩溃恢复、系统托盘）将在 Phase 2 完成后另写计划。
 
@@ -193,8 +193,8 @@ const config = {
   files: ["dist/**/*"],
   extraResources: [
     {
-      from: "../../target/release/sandbox-daemon",
-      to: "sandbox-daemon",
+      from: "../../target/release/cli-box-daemon",
+      to: "cli-box-daemon",
     },
   ],
 };
@@ -314,7 +314,7 @@ git commit -m "feat(electron): scaffold electron-app with electron-vite"
 
 - [ ] **Step 1: 创建 daemon-bridge.ts**
 
-负责发现和启动 sandbox-daemon。
+负责发现和启动 cli-box-daemon。
 
 ```typescript
 import { spawn, ChildProcess } from "child_process";
@@ -364,13 +364,13 @@ export function findRunningDaemon(): number | null {
 
 function findDaemonBinary(): string {
   // Dev mode: relative to project
-  const devPath = join(__dirname, "..", "..", "..", "target", "release", "sandbox-daemon");
+  const devPath = join(__dirname, "..", "..", "..", "target", "release", "cli-box-daemon");
   if (existsSync(devPath)) return devPath;
   // Production: bundled in app resources
-  const prodPath = join(process.resourcesPath, "sandbox-daemon");
+  const prodPath = join(process.resourcesPath, "cli-box-daemon");
   if (existsSync(prodPath)) return prodPath;
   // Same directory as electron binary
-  return join(dirname(app.getPath("exe")), "sandbox-daemon");
+  return join(dirname(app.getPath("exe")), "cli-box-daemon");
 }
 
 export async function ensureDaemon(): Promise<number> {
@@ -518,7 +518,7 @@ Expected: Electron 窗口打开，终端日志显示 `Daemon started on port 158
 
 ```bash
 git add electron-app/src/main/
-git commit -m "feat(electron): single-instance lock + spawn sandbox-daemon"
+git commit -m "feat(electron): single-instance lock + spawn cli-box-daemon"
 ```
 
 ---
@@ -1060,7 +1060,7 @@ git commit -m "feat(electron): renderer with xterm.js terminal using standard te
 
 ---
 
-## Task 5: CLI 集成 — `sandbox start` 启动 Electron + 创建 Tab
+## Task 5: CLI 集成 — `cli-box start` 启动 Electron + 创建 Tab
 
 **Files:**
 - Modify: `crates/sandbox-cli/src/main.rs` (添加 Electron spawn 逻辑)
@@ -1144,7 +1144,7 @@ Expected: PASS
 
 ```bash
 git add crates/sandbox-cli/src/main.rs
-git commit -m "feat(cli): spawn Electron app when running sandbox start"
+git commit -m "feat(cli): spawn Electron app when running cli-box start"
 ```
 
 ---
@@ -1216,16 +1216,16 @@ app.on("second-instance", async () => {
 
 手动测试流程：
 1. 运行 `pnpm dev`，Electron 窗口打开
-2. 在另一个终端运行 `./release/sandbox start zsh`
+2. 在另一个终端运行 `./release/cli-box start zsh`
 3. Expected: Electron 窗口获得焦点，出现新的 zsh Tab
-4. 再运行 `./release/sandbox start claude`
+4. 再运行 `./release/cli-box start claude`
 5. Expected: Electron 窗口获得焦点，出现新的 Claude Tab
 
 - [ ] **Step 3: Commit**
 
 ```bash
 git add electron-app/src/main/index.ts
-git commit -m "feat(electron): auto-create tabs from daemon sandbox list on second-instance"
+git commit -m "feat(electron): auto-create tabs from daemon cli-box list on second-instance"
 ```
 
 ---
@@ -1239,11 +1239,11 @@ git commit -m "feat(electron): auto-create tabs from daemon sandbox list on seco
 
 ```bash
 # Build daemon + CLI (release)
-cargo build --release -p sandbox-daemon -p sandbox-cli
+cargo build --release -p cli-box-daemon -p sandbox-cli
 cp target/release/sandbox release/sandbox
-cp target/release/sandbox-daemon release/sandbox-daemon
-chmod +x release/sandbox release/sandbox-daemon
-codesign --force --sign - release/sandbox release/sandbox-daemon
+cp target/release/cli-box-daemon release/cli-box-daemon
+chmod +x release/sandbox release/cli-box-daemon
+codesign --force --sign - release/sandbox release/cli-box-daemon
 
 # Build Electron app (dev mode)
 cd electron-app && pnpm dev
@@ -1253,7 +1253,7 @@ cd electron-app && pnpm dev
 
 在另一个终端运行：
 ```bash
-./release/sandbox start zsh
+./release/cli-box start zsh
 ```
 
 Expected:
@@ -1264,7 +1264,7 @@ Expected:
 - [ ] **Step 3: 测试场景二 — CLI 启动 Claude Code**
 
 ```bash
-./release/sandbox start claude
+./release/cli-box start claude
 ```
 
 Expected:
@@ -1277,11 +1277,11 @@ Expected:
 
 ```bash
 # 已经有 2 个 Tab
-./release/sandbox list
+./release/cli-box list
 # 记录两个 sandbox ID
 
 # CLI 截图
-./release/sandbox screenshot --id <ID> -o test.png
+./release/cli-box screenshot --id <ID> -o test.png
 ```
 
 Expected: 截图功能正常（通过 daemon 的 ScreenCaptureKit）
@@ -1289,7 +1289,7 @@ Expected: 截图功能正常（通过 daemon 的 ScreenCaptureKit）
 - [ ] **Step 5: 测试场景四 — 关闭 Tab**
 
 ```bash
-./release/sandbox close <ID>
+./release/cli-box close <ID>
 ```
 
 Expected: Electron 窗口中对应 Tab 被关闭，其他 Tab 不受影响
@@ -1320,7 +1320,7 @@ git commit -m "test(electron): Phase 2 end-to-end integration verified"
 | Tab 切换 (off-screen 定位) | Task 3 |
 | 前端连接 daemon (api.ts) | Task 4 |
 | xterm.js 标准 term.write() (去掉 writeDirect) | Task 4 |
-| CLI `sandbox start` spawn Electron | Task 5 |
+| CLI `cli-box start` spawn Electron | Task 5 |
 | second-instance 处理（已有实例时创建新 Tab） | Task 6 |
 | 端到端验证 | Task 7 |
 

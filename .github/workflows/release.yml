@@ -6,7 +6,7 @@
 #   2. 手动触发: Actions → Release → Run workflow → 输入 tag (如 v0.1.0)
 #
 # 产物:
-#   - sandbox-cli                     CLI 二进制 (macOS aarch64)
+#   - cli-box-cli                     CLI 二进制 (macOS aarch64)
 #   - CLI Box.app.zip     macOS 桌面应用 (压缩)
 #   - CLI Box_*_aarch64.dmg  macOS 安装包
 
@@ -72,11 +72,11 @@ jobs:
             ${{ runner.os }}-pnpm-
 
       - name: 安装前端依赖
-        working-directory: sandbox-web
+        working-directory: electron-app
         run: pnpm install --frozen-lockfile
 
       - name: 构建 CLI 二进制 (release)
-        run: cargo build -p sandbox-cli --release
+        run: cargo build -p cli-box-cli --release
 
       - name: 构建前端 + Tauri 桌面应用
         run: |
@@ -88,7 +88,7 @@ jobs:
       - name: 整理发布产物
         run: |
           mkdir -p release
-          cp target/release/sandbox release/
+          cp target/release/cli-box release/
           find target/release/bundle/dmg -name "*.dmg" -maxdepth 1 -exec cp {} release/ \; 2>/dev/null || true
           cd release
           find ../target/release/bundle/macos -name "*.app" -maxdepth 1 -exec zip -r "CLI Box.app.zip" {} \; 2>/dev/null || true

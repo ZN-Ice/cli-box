@@ -1,6 +1,6 @@
 /**
  * Daemon API client for Electron renderer.
- * Connects to sandbox-daemon HTTP/WebSocket API.
+ * Connects to cli-box-daemon HTTP/WebSocket API.
  */
 
 let _port = 15801;
@@ -26,7 +26,7 @@ export interface SandboxInfo {
 }
 
 export async function fetchSandboxList(): Promise<SandboxInfo[]> {
-  const res = await fetch(`${getBaseUrl()}/sandbox/list`);
+  const res = await fetch(`${getBaseUrl()}/box/list`);
   return res.json();
 }
 
@@ -42,7 +42,7 @@ export function connectPty(sandboxId: string, ptyPid: number): PtyConnection {
 
   function ensureWs() {
     if (ws) return;
-    ws = new WebSocket(`ws://127.0.0.1:${_port}/sandbox/${sandboxId}/pty/ws/${ptyPid}`);
+    ws = new WebSocket(`ws://127.0.0.1:${_port}/box/${sandboxId}/pty/ws/${ptyPid}`);
     ws.binaryType = "arraybuffer";
     ws.onopen = () => {
       if (pendingResize) {
@@ -89,7 +89,7 @@ export async function createSandbox(
   command: string,
   args: string[] = []
 ): Promise<{ sandbox_id: string; pty_pid: number | null; window_id: number | null }> {
-  const res = await fetch(`${getBaseUrl()}/sandbox/create`, {
+  const res = await fetch(`${getBaseUrl()}/box/create`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ mode, command, args }),
@@ -99,18 +99,18 @@ export async function createSandbox(
 }
 
 export async function takeScreenshot(sandboxId: string): Promise<Blob> {
-  const res = await fetch(`${getBaseUrl()}/sandbox/${sandboxId}/screenshot`);
+  const res = await fetch(`${getBaseUrl()}/box/${sandboxId}/screenshot`);
   if (!res.ok) throw new Error(`Screenshot failed: ${res.status}`);
   return res.blob();
 }
 
 export async function closeSandbox(sandboxId: string): Promise<void> {
-  const res = await fetch(`${getBaseUrl()}/sandbox/${sandboxId}/close`, { method: "POST" });
+  const res = await fetch(`${getBaseUrl()}/box/${sandboxId}/close`, { method: "POST" });
   if (!res.ok) throw new Error(`Close failed: ${res.status}`);
 }
 
 export async function setWindowId(sandboxId: string, windowId: number): Promise<void> {
-  const res = await fetch(`${getBaseUrl()}/sandbox/${sandboxId}/window`, {
+  const res = await fetch(`${getBaseUrl()}/box/${sandboxId}/window`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ window_id: windowId }),

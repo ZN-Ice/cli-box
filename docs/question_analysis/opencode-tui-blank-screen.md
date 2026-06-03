@@ -44,7 +44,7 @@ read_output(pid)
 
 | 维度 | cargo test | Tauri 应用 |
 |------|-----------|-----------|
-| 运行方式 | `cargo test` (终端) | `sandbox start` → CLI → Tauri app |
+| 运行方式 | `cargo test` (终端) | `cli-box start` → CLI → Tauri app |
 | 进程环境 | 完整 shell 环境 | 继承 CLI 环境 |
 | TERM | xterm-256color | 取决于启动方式 |
 | PATH | 完整 | 取决于启动方式 |
@@ -75,7 +75,7 @@ as_command() {
 
 | 启动方式 | 环境 | opencode 能否工作 |
 |---------|------|------------------|
-| `sandbox start opencode` (CLI) | 完整 shell 环境 (PATH, TERM, HOME, ...) | 应该可以 |
+| `cli-box start opencode` (CLI) | 完整 shell 环境 (PATH, TERM, HOME, ...) | 应该可以 |
 | 双击 `.app` / `open` | 最小 GUI 环境 (仅 /usr/bin:/bin:/usr/sbin:/sbin) | 可能不行 |
 
 **但用户是通过 CLI 启动的，理论上环境应该正确。**
@@ -150,8 +150,8 @@ GET /pty/status/{pid}
 用 `vim`、`htop`、`nano` 等测试，确认是否是 opencode 特有问题：
 
 ```bash
-./sandbox start vim
-./sandbox start htop
+./cli-box start vim
+./cli-box start htop
 ```
 
 **优点：** 快速判断是 opencode 特有问题还是通用问题

@@ -757,10 +757,10 @@ Expected: 构建成功
 - [ **Step 3: 测试 zsh — 启动后立即可见**
 
 ```bash
-./release/sandbox start zsh
+./release/cli-box start zsh
 sleep 5
-./release/sandbox list
-./release/sandbox screenshot --id <id> -o test_zsh_sqlite.png
+./release/cli-box list
+./release/cli-box screenshot --id <id> -o test_zsh_sqlite.png
 ```
 
 Expected: 截图中立即显示 zsh prompt（`zn-ice@MacBook-Neo ~ %`）
@@ -768,10 +768,10 @@ Expected: 截图中立即显示 zsh prompt（`zn-ice@MacBook-Neo ~ %`）
 - [ ] **Step 4: 测试 claude — 启动后立即可见**
 
 ```bash
-./release/sandbox start claude
+./release/cli-box start claude
 sleep 8
-./release/sandbox list
-./release/sandbox screenshot --id <id> -o test_claude_sqlite.png
+./release/cli-box list
+./release/cli-box screenshot --id <id> -o test_claude_sqlite.png
 ```
 
 Expected: 截图中显示 claude 的 "Welcome back!" 界面
@@ -780,18 +780,18 @@ Expected: 截图中显示 claude 的 "Welcome back!" 界面
 
 ```bash
 # 启动 zsh，发送命令
-./release/sandbox start zsh
+./release/cli-box start zsh
 sleep 5
-ID=$(./release/sandbox list | grep -o '[a-f0-9]\{8\}' | head -1)
-./release/sandbox type --id $ID --pty 'echo "before disconnect"'
-./release/sandbox key --id $ID Return
+ID=$(./release/cli-box list | grep -o '[a-f0-9]\{8\}' | head -1)
+./release/cli-box type --id $ID --pty 'echo "before disconnect"'
+./release/cli-box key --id $ID Return
 sleep 2
 
 # 截图确认输出存在
-./release/sandbox screenshot --id $ID -o before_disconnect.png
+./release/cli-box screenshot --id $ID -o before_disconnect.png
 
 # 关闭再重新打开（模拟断连）
-./release/sandbox close $ID
+./release/cli-box close $ID
 sleep 2
 # 注意：SQLite 在内存中，关闭即丢失。这是已知限制。
 ```

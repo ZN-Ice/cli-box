@@ -47,10 +47,10 @@ cli-box/
 ### 已实现的命令
 
 ```bash
-sandbox start <command> [args...]      # 在 Terminal.app 中启动命令
-sandbox screenshot [-o output] [--window-id ID]  # 截取沙箱窗口截图
-sandbox windows                         # 列出所有可见窗口
-sandbox shutdown                        # 关闭 Terminal 窗口
+cli-box start <command> [args...]      # 在 Terminal.app 中启动命令
+cli-box screenshot [-o output] [--window-id ID]  # 截取沙箱窗口截图
+cli-box windows                         # 列出所有可见窗口
+cli-box shutdown                        # 关闭 Terminal 窗口
 ```
 
 ### 实现细节
@@ -90,12 +90,12 @@ sandbox read [--port PORT]                               # 读取 PTY 输出
 
 ```
 Terminal 1: sandbox serve --command claude
-Terminal 2: sandbox screenshot -o before.png
+Terminal 2: cli-box screenshot -o before.png
 Terminal 2: sandbox type --text "Write a hello world in Rust"
 Terminal 2: sandbox enter
 Terminal 2: sleep 5
 Terminal 2: sandbox read
-Terminal 2: sandbox screenshot -o after.png
+Terminal 2: cli-box screenshot -o after.png
 ```
 
 ## Phase 3 (Planned): macOS Desktop Automation
@@ -109,8 +109,8 @@ sandbox spawn-app <path>                               # 启动 macOS .app
 sandbox click <x> <y> [--button left|right|middle]      # 鼠标点击
 sandbox type-text <text> [--target-pid PID]             # CGEvent 文本输入
 sandbox press-key <key> [--modifiers cmd,shift...]       # 按键
-sandbox screenshot-window <window_id> [-o output]        # 截取指定窗口
-sandbox screenshot-region <x> <y> <w> <h> [-o output]   # 截取屏幕区域
+cli-box screenshot-window <window_id> [-o output]        # 截取指定窗口
+cli-box screenshot-region <x> <y> <w> <h> [-o output]   # 截取屏幕区域
 ```
 
 ### 实现要点
@@ -123,12 +123,12 @@ sandbox screenshot-region <x> <y> <w> <h> [-o output]   # 截取屏幕区域
 
 ```bash
 sandbox spawn-app /System/Applications/Calculator.app
-sandbox windows | grep -i calculator
-sandbox screenshot-window <ID> -o calc.png
+cli-box windows | grep -i calculator
+cli-box screenshot-window <ID> -o calc.png
 sandbox click 300 400
 sandbox type-text "123+456"
 sandbox press-key Return
-sandbox screenshot-region 0 0 500 500 -o top_left.png
+cli-box screenshot-region 0 0 500 500 -o top_left.png
 ```
 
 ## Server HTTP API (17 routes)
@@ -184,10 +184,10 @@ GET  /ui/value                  # 获取元素值
 
 ### Phase 1
 - [x] `cargo build -p sandbox-cli` succeeds
-- [ ] `sandbox start claude` opens Terminal with Claude Code (requires macOS)
-- [ ] `sandbox screenshot -o test.png` saves a valid PNG (requires macOS + permissions)
-- [ ] `sandbox windows` lists system windows (requires macOS + permissions)
-- [ ] `sandbox shutdown` closes the Terminal (requires macOS)
+- [ ] `cli-box start claude` opens Terminal with Claude Code (requires macOS)
+- [ ] `cli-box screenshot -o test.png` saves a valid PNG (requires macOS + permissions)
+- [ ] `cli-box windows` lists system windows (requires macOS + permissions)
+- [ ] `cli-box shutdown` closes the Terminal (requires macOS)
 
 ### Phase 2 (to be verified)
 - [ ] `sandbox serve --command claude` starts HTTP server + PTY
@@ -197,8 +197,8 @@ GET  /ui/value                  # 获取元素值
 
 ### Phase 3 (to be verified)
 - [ ] `sandbox spawn-app /System/Applications/Calculator.app` launches Calculator
-- [ ] `sandbox screenshot-window <ID>` captures Calculator
+- [ ] `cli-box screenshot-window <ID>` captures Calculator
 - [ ] `sandbox click 300 400` clicks in Calculator
 - [ ] `sandbox type-text "123+456"` types via CGEvent
 - [ ] `sandbox press-key Return` presses Enter
-- [ ] `sandbox screenshot-region 0 0 500 500` captures desktop region
+- [ ] `cli-box screenshot-region 0 0 500 500` captures desktop region
