@@ -289,6 +289,24 @@ sed -i '' "s/__BUILD_DATE__/${BUILD_DATE}/" "$RELEASE_DIR/README.md"
 
 ok "README.md generated"
 
+# --- step 7: package skill tarball ---
+echo ""
+info "Packaging skill tarball..."
+SKILL_PKG_DIR="$SCRIPT_DIR/skill-pkg"
+rm -rf "$SKILL_PKG_DIR"
+mkdir -p "$SKILL_PKG_DIR/bin"
+
+cp "$SCRIPT_DIR/skill/SKILL.md" "$SKILL_PKG_DIR/"
+cp "$SCRIPT_DIR/skill/install.sh" "$SKILL_PKG_DIR/"
+chmod +x "$SKILL_PKG_DIR/install.sh"
+cp "$CLI_BIN" "$SKILL_PKG_DIR/bin/"
+cp "$DAEMON_BIN" "$SKILL_PKG_DIR/bin/"
+chmod +x "$SKILL_PKG_DIR/bin/*"
+
+cd "$SKILL_PKG_DIR" && tar czf "$RELEASE_DIR/cli-box-skill.tar.gz" . && cd "$SCRIPT_DIR"
+rm -rf "$SKILL_PKG_DIR"
+ok "cli-box-skill.tar.gz packaged"
+
 # --- done ---
 echo ""
 echo "=============================================="
