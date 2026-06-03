@@ -1,0 +1,13 @@
+[package]
+name = "cli-box-daemon"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Sandbox daemon process — manages all sandbox instances"
+
+[dependencies]
+cli-box-core = { workspace = true, features = ["screencapturekit"] }
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true

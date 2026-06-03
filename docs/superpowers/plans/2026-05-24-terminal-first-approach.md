@@ -26,11 +26,11 @@
 **What we gain:**
 - Simpler mental model: sandbox = terminal window
 - Users control what runs (claude, opencode, htop, etc.)
-- No need for `--cli "claude"` — just `sandbox start`
+- No need for `--cli "claude"` — just `cli-box start`
 - Screenshots naturally capture whatever is on screen
 
 **What we lose (intentionally):**
-- Auto-spawn of specific CLI (user can still `sandbox start --cli "claude"`)
+- Auto-spawn of specific CLI (user can still `cli-box start --cli "claude"`)
 - Process lifecycle tied to specific command (now tied to zsh)
 
 ---
@@ -87,7 +87,7 @@ let config = SandboxConfig {
 
 - [ ] **Step 2: Run existing tests to verify no regression**
 
-Run: `cargo test -p system-test-sandbox`
+Run: `cargo test -p cli-box`
 Expected: All existing tests pass (the parse tests don't depend on default behavior)
 
 - [ ] **Step 3: Commit**
@@ -148,7 +148,7 @@ Expected: Pass
 git add crates/sandbox-cli/src/main.rs
 git commit -m "feat(cli): add --shell flag for quick zsh sandbox launch
 
-'sandbox start --shell' is shorthand for 'sandbox start --cli zsh'"
+'cli-box start --shell' is shorthand for 'cli-box start --cli zsh'"
 ```
 
 ---
@@ -301,13 +301,13 @@ Update the CLI examples section to show the simplified usage:
 
 ```bash
 # Quick start — opens zsh shell
-sandbox start
+cli-box start
 
 # Start with specific command
-sandbox start --cli "claude"
+cli-box start --cli "claude"
 
 # Start macOS app
-sandbox start --app "/Applications/cc-switch.app"
+cli-box start --app "/Applications/cc-switch.app"
 ```
 
 - [ ] **Step 3: Commit**
@@ -338,13 +338,13 @@ git push -u origin feat/terminal-first-approach
 ```bash
 gh pr create --title "feat: terminal-first sandbox approach" --body "$(cat <<'EOF'
 ## Summary
-- Default to zsh shell when no command specified (`sandbox start` just works)
+- Default to zsh shell when no command specified (`cli-box start` just works)
 - Add `--shell` convenience flag as shorthand for `--cli zsh`
 - Propagate terminal resize to PTY backend for proper shell rendering
 - Reduce PTY polling interval from 100ms to 50ms for snappier feel
 
 ## Motivation
-Simplify the sandbox to a pure terminal-first approach. Instead of requiring users to specify `--cli "claude"`, they can just run `sandbox start` to get a zsh shell, then type `claude`/`opencode`/whatever themselves. Screenshots and rendering naturally capture the terminal output.
+Simplify the sandbox to a pure terminal-first approach. Instead of requiring users to specify `--cli "claude"`, they can just run `cli-box start` to get a zsh shell, then type `claude`/`opencode`/whatever themselves. Screenshots and rendering naturally capture the terminal output.
 
 ## Test plan
 - [ ] `cargo test --all` passes

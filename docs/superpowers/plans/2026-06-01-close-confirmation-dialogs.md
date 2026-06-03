@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add confirmation dialogs when closing tabs or windows to prevent orphaned sandbox processes.
+**Goal:** Add confirmation dialogs when closing tabs or windows to prevent orphaned cli-box processes.
 
 **Architecture:** Two dialog flows — tab close (renderer-only, checks sandbox status) and window close (main↔renderer IPC coordination). All changes are in the Electron frontend; no daemon/Rust changes needed.
 
@@ -117,7 +117,7 @@ mainWindow.on("closed", () => {
 mainWindow.on("close", (e) => {
   if (!mainWindow) return;
 
-  // Query renderer for sandbox list, then wait for user's choice
+  // Query renderer for cli-box list, then wait for user's choice
   e.preventDefault();
 
   mainWindow.webContents.send("window-closing");
@@ -374,7 +374,7 @@ gh pr create --title "feat: add close confirmation dialogs for tabs and windows"
 ## Summary
 - Tab close: if sandbox is Running, show confirmation dialog before closing
 - Window close: show 3-option dialog (Cancel / Close Window Only / Close All Terminals)
-- Prevents orphaned sandbox processes when closing the Electron app
+- Prevents orphaned cli-box processes when closing the Electron app
 
 ## Test plan
 - [ ] Open a sandbox tab, click × → confirmation dialog appears
@@ -382,8 +382,8 @@ gh pr create --title "feat: add close confirmation dialogs for tabs and windows"
 - [ ] Click Close → tab and sandbox are closed
 - [ ] Open multiple sandboxes, close the window → 3-option dialog appears
 - [ ] Click Cancel → window stays open
-- [ ] Click Close Window Only → window closes, `sandbox list` shows sandboxes still running
-- [ ] Click Close All Terminals → window closes, `sandbox list` shows no sandboxes
+- [ ] Click Close Window Only → window closes, `cli-box list` shows sandboxes still running
+- [ ] Click Close All Terminals → window closes, `cli-box list` shows no sandboxes
 - [ ] Close window with no sandboxes open → window closes immediately (no dialog)
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)

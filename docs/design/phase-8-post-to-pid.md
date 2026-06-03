@@ -66,11 +66,11 @@ InputSimulator::click(x, y, btn, Some(pid))
 
 | 文件 | 变更 |
 |------|------|
-| `crates/sandbox-core/src/automation/cg_event.rs` | 所有方法添加 `target_pid` 参数，内部 `post_event` helper |
-| `crates/sandbox-core/src/server/mod.rs` | AppState 添加 `target_pid`，handlers 传递给 InputSimulator |
-| `crates/sandbox-core/src/player.rs` | ActionPlayer 添加 `target_pid`，传递给 InputSimulator |
-| `crates/sandbox-cli/src/mcp_server.rs` | 调用点传递 `None`（MCP 无 PID 上下文） |
-| `crates/sandbox-cli/src/main.rs` | `start` 命令设置 `target_pid`，本地操作传 `None` |
+| `crates/cli-box-core/src/automation/cg_event.rs` | 所有方法添加 `target_pid` 参数，内部 `post_event` helper |
+| `crates/cli-box-core/src/server/mod.rs` | AppState 添加 `target_pid`，handlers 传递给 InputSimulator |
+| `crates/cli-box-core/src/player.rs` | ActionPlayer 添加 `target_pid`，传递给 InputSimulator |
+| `crates/cli-box-cli/src/mcp_server.rs` | 调用点传递 `None`（MCP 无 PID 上下文） |
+| `crates/cli-box-cli/src/main.rs` | `start` 命令设置 `target_pid`，本地操作传 `None` |
 
 ### Standalone 模式保护
 

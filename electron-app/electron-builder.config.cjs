@@ -1,7 +1,7 @@
 /** @type {import('electron-builder').Configuration} */
 const config = {
-  appId: "com.system-test-sandbox",
-  productName: "System Test Sandbox",
+  appId: "com.cli-box",
+  productName: "CLI Box",
   directories: {
     output: "../dist/electron",
   },
@@ -12,8 +12,8 @@ const config = {
   files: ["out/**/*"],
   extraResources: [
     {
-      from: "../target/release/sandbox-daemon",
-      to: "sandbox-daemon",
+      from: "../target/release/cli-box-daemon",
+      to: "cli-box-daemon",
     },
   ],
 };

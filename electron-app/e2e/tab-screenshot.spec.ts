@@ -4,7 +4,7 @@ test.describe("Tab Screenshot Capture", () => {
   test("terminal area has dark theme, not white background", async ({ mockedPage: page }) => {
     await page.emulateMedia({ colorScheme: "dark" });
 
-    await page.route("**/sandbox/list", (route) => {
+    await page.route("**/box/list", (route) => {
       route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -40,7 +40,7 @@ test.describe("Tab Screenshot Capture", () => {
     testInfo.skip(!!process.env.CI, "Visual regression snapshots are platform-specific");
     await page.emulateMedia({ colorScheme: "dark" });
 
-    await page.route("**/sandbox/list", (route) => {
+    await page.route("**/box/list", (route) => {
       route.fulfill({
         status: 200,
         contentType: "application/json",

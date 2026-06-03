@@ -13,7 +13,7 @@ interface DaemonInfo {
 
 function daemonJsonPath(): string {
   const home = process.env.HOME || "/tmp";
-  return join(home, ".sandbox", "daemon.json");
+  return join(home, ".cli-box", "daemon.json");
 }
 
 function readDaemonInfo(): DaemonInfo | null {
@@ -44,13 +44,13 @@ export function findRunningDaemon(): number | null {
 
 function findDaemonBinary(): string {
   // Dev mode: relative to project
-  const devPath = join(__dirname, "..", "..", "..", "target", "release", "sandbox-daemon");
+  const devPath = join(__dirname, "..", "..", "..", "target", "release", "cli-box-daemon");
   if (existsSync(devPath)) return devPath;
   // Production: bundled in app resources
-  const prodPath = join(process.resourcesPath, "sandbox-daemon");
+  const prodPath = join(process.resourcesPath, "cli-box-daemon");
   if (existsSync(prodPath)) return prodPath;
   // Same directory as electron binary
-  return join(dirname(app.getPath("exe")), "sandbox-daemon");
+  return join(dirname(app.getPath("exe")), "cli-box-daemon");
 }
 
 export async function ensureDaemon(): Promise<number> {

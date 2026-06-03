@@ -3,11 +3,11 @@ import { test, expect } from "./fixtures";
 test.describe("Tab Creation", () => {
   test("shows empty state when no sandboxes", async ({ mockedPage: page }) => {
     await page.goto("/");
-    await expect(page.locator(".empty-state-text")).toHaveText("No sandbox open");
+    await expect(page.locator(".empty-state-text")).toHaveText("No CLI Box open");
   });
 
   test("creates tab and shows terminal", async ({ mockedPage: page }) => {
-    await page.route("**/sandbox/list", (route) => {
+    await page.route("**/box/list", (route) => {
       route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -29,7 +29,7 @@ test.describe("Tab Creation", () => {
   test("multiple tabs display correctly", async ({ mockedPage: page }, testInfo) => {
     // Skip screenshot comparison on CI — cross-platform rendering differs too much
     testInfo.skip(!!process.env.CI, "Visual regression snapshots are platform-specific");
-    await page.route("**/sandbox/list", (route) => {
+    await page.route("**/box/list", (route) => {
       route.fulfill({
         status: 200,
         contentType: "application/json",

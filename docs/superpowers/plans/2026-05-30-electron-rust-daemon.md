@@ -2,11 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 将 system-test-sandbox 从 Tauri 多实例架构迁移到 Electron + Rust daemon 单进程多 Tab 架构，解决 WKWebView 终端渲染问题。
+**Goal:** 将 cli-box 从 Tauri 多实例架构迁移到 Electron + Rust daemon 单进程多 Tab 架构，解决 WKWebView 终端渲染问题。
 
-**Architecture:** Rust sandbox-daemon 作为独立后台进程管理所有沙箱（PTY、截图、输入模拟、APP 启动）。Electron 作为 UI 层，通过 HTTP/WebSocket 与 daemon 通信。CLI 直接与 daemon HTTP API 交互，不经过 Electron。
+**Architecture:** Rust cli-box-daemon 作为独立后台进程管理所有沙箱（PTY、截图、输入模拟、APP 启动）。Electron 作为 UI 层，通过 HTTP/WebSocket 与 daemon 通信。CLI 直接与 daemon HTTP API 交互，不经过 Electron。
 
-**Tech Stack:** Rust (sandbox-daemon binary), Electron + TypeScript (UI), axum (HTTP+WS), React + xterm.js (前端)
+**Tech Stack:** Rust (cli-box-daemon binary), Electron + TypeScript (UI), axum (HTTP+WS), React + xterm.js (前端)
 
 **Spec:** `docs/design/electron-rust-architecture.md`
 
@@ -14,7 +14,7 @@
 
 ## Scope
 
-本计划覆盖 Phase 1（sandbox-daemon）的完整实现。Phase 1 完成后，所有 Rust 侧的系统能力（PTY、截图、输入模拟、APP 启动）都通过 daemon 的 HTTP API 可用，CLI 可以不依赖任何 UI 直接完成沙箱管理。
+本计划覆盖 Phase 1（cli-box-daemon）的完整实现。Phase 1 完成后，所有 Rust 侧的系统能力（PTY、截图、输入模拟、APP 启动）都通过 daemon 的 HTTP API 可用，CLI 可以不依赖任何 UI 直接完成沙箱管理。
 
 Phase 2（Electron 壳替换 Tauri）将在 Phase 1 完成后另写计划。
 
@@ -23,7 +23,7 @@ Phase 2（Electron 壳替换 Tauri）将在 Phase 1 完成后另写计划。
 ```
 新增/修改文件清单:
 
-crates/sandbox-daemon/                   # 🆕 Daemon binary crate
+crates/cli-box-daemon/                   # 🆕 Daemon binary crate
 ├── Cargo.toml
 └── src/
     └── main.rs                          # Daemon 入口：端口分配、HTTP server、信号处理
@@ -49,19 +49,19 @@ crates/sandbox-core/src/
 
 ---
 
-## Task 1: 创建 sandbox-daemon binary crate
+## Task 1: 创建 cli-box-daemon binary crate
 
 **Files:**
-- Create: `crates/sandbox-daemon/Cargo.toml`
-- Create: `crates/sandbox-daemon/src/main.rs`
+- Create: `crates/cli-box-daemon/Cargo.toml`
+- Create: `crates/cli-box-daemon/src/main.rs`
 - Modify: `Cargo.toml` (workspace members)
 
 - [ ] **Step 1: 创建 Cargo.toml**
 
 ```toml
-# crates/sandbox-daemon/Cargo.toml
+# crates/cli-box-daemon/Cargo.toml
 [package]
-name = "sandbox-daemon"
+name = "cli-box-daemon"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -81,7 +81,7 @@ uuid.workspace = true
 - [ ] **Step 2: 创建 main.rs 骨架**
 
 ```rust
-// crates/sandbox-daemon/src/main.rs
+// crates/cli-box-daemon/src/main.rs
 use sandbox_core::daemon::DaemonState;
 
 fn main() {
@@ -101,18 +101,18 @@ fn main() {
 
 - [ ] **Step 3: 添加 workspace member**
 
-在根 `Cargo.toml` 的 `[workspace] members` 中添加 `"crates/sandbox-daemon"`。
+在根 `Cargo.toml` 的 `[workspace] members` 中添加 `"crates/cli-box-daemon"`。
 
 - [ ] **Step 4: 验证编译**
 
-Run: `cargo check -p sandbox-daemon`
+Run: `cargo check -p cli-box-daemon`
 Expected: 编译错误（`sandbox_core::daemon` 模块不存在），这是预期的。Task 2 解决。
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add crates/sandbox-daemon/ Cargo.toml
-git commit -m "feat(daemon): scaffold sandbox-daemon binary crate"
+git add crates/cli-box-daemon/ Cargo.toml
+git commit -m "feat(daemon): scaffold cli-box-daemon binary crate"
 ```
 
 ---
@@ -645,7 +645,7 @@ tower-http = { version = "0.6", features = ["cors"] }
 
 - [ ] **Step 5: 验证编译**
 
-Run: `cargo check -p sandbox-daemon`
+Run: `cargo check -p cli-box-daemon`
 Expected: PASS
 
 - [ ] **Step 6: Commit**
@@ -660,7 +660,7 @@ git commit -m "feat(daemon): implement daemon lifecycle and multi-sandbox HTTP A
 ## Task 3: 验证 daemon 端口发现和生命周期
 
 **Files:**
-- Test: `crates/sandbox-daemon/src/main.rs` (内联测试)
+- Test: `crates/cli-box-daemon/src/main.rs` (内联测试)
 
 - [ ] **Step 1: 写端口发现测试**
 
@@ -728,7 +728,7 @@ Expected: 全部 PASS
 
 - [ ] **Step 3: 手动测试 daemon 启动和关闭**
 
-Run: `cargo run -p sandbox-daemon`
+Run: `cargo run -p cli-box-daemon`
 Expected: 打印 `Sandbox daemon started on port 15801`
 
 在另一个终端运行: `curl http://localhost:15801/health`
@@ -745,7 +745,7 @@ git commit -m "test(daemon): add port discovery and lifecycle tests"
 
 ---
 
-## Task 4: 重构 CLI — `sandbox start` 改为 spawn daemon + HTTP create
+## Task 4: 重构 CLI — `cli-box start` 改为 spawn daemon + HTTP create
 
 **Files:**
 - Modify: `crates/sandbox-cli/src/main.rs`
@@ -766,10 +766,10 @@ fn cmd_start_daemon(command: Option<&str>, args: &[String]) -> Result<()> {
             // 2. Spawn daemon in background
             let daemon_bin = std::env::current_exe()
                 .map_err(|e| anyhow::anyhow!("Cannot find current exe: {e}"))?;
-            // Assume sandbox-daemon is in the same directory
+            // Assume cli-box-daemon is in the same directory
             let daemon_path = daemon_bin.parent()
                 .unwrap_or(Path::new("."))
-                .join("sandbox-daemon");
+                .join("cli-box-daemon");
 
             let mut child = std::process::Command::new(&daemon_path)
                 .stdout(std::process::Stdio::piped())
@@ -850,7 +850,7 @@ Expected: PASS
 
 ```bash
 git add crates/sandbox-cli/src/main.rs crates/sandbox-cli/Cargo.toml
-git commit -m "feat(cli): sandbox start spawns daemon and creates sandbox via HTTP"
+git commit -m "feat(cli): cli-box start spawns daemon and creates sandbox via HTTP"
 ```
 
 ---
@@ -869,7 +869,7 @@ git commit -m "feat(cli): sandbox start spawns daemon and creates sandbox via HT
 /// Resolve sandbox port by reading daemon.json
 pub fn resolve_daemon_port() -> Result<u16> {
     sandbox_core::daemon::find_running_daemon()
-        .ok_or_else(|| anyhow::anyhow!("No sandbox daemon running. Run `sandbox start` first."))
+        .ok_or_else(|| anyhow::anyhow!("No sandbox daemon running. Run `cli-box start` first."))
 }
 
 /// Build base URL for daemon API
@@ -958,16 +958,16 @@ git commit -m "feat(cli): adapt operation commands to daemon HTTP API"
 
 - [ ] **Step 1: 构建 daemon 和 CLI**
 
-Run: `cargo build -p sandbox-daemon -p sandbox-cli`
+Run: `cargo build -p cli-box-daemon -p sandbox-cli`
 Expected: PASS
 
 - [ ] **Step 2: 复制 daemon 二进制到 CLI 同目录**
 
 ```bash
-cp target/debug/sandbox-daemon target/debug/
+cp target/debug/cli-box-daemon target/debug/
 ```
 
-- [ ] **Step 3: 测试 sandbox start**
+- [ ] **Step 3: 测试 cli-box start**
 
 Run: `cargo run -p sandbox-cli -- start zsh`
 Expected:
@@ -977,24 +977,24 @@ Sandbox abc123 created (port 15801)
 PTY pid: 45678
 ```
 
-- [ ] **Step 4: 测试 sandbox list**
+- [ ] **Step 4: 测试 cli-box list**
 
 Run: `cargo run -p sandbox-cli -- list`
 Expected: 列出刚创建的沙箱
 
-- [ ] **Step 5: 测试 sandbox screenshot**
+- [ ] **Step 5: 测试 cli-box screenshot**
 
 Run: `cargo run -p sandbox-cli -- screenshot --id <id> -o test.png`
 Expected: `test.png` 生成
 
-- [ ] **Step 6: 测试 sandbox close**
+- [ ] **Step 6: 测试 cli-box close**
 
 Run: `cargo run -p sandbox-cli -- close <id>`
 Expected: 沙箱被关闭，PTY 进程终止
 
 - [ ] **Step 7: 测试端口自动递增**
 
-手动占用 15801 端口后再次运行 `sandbox start`，验证端口自动切到 15802。
+手动占用 15801 端口后再次运行 `cli-box start`，验证端口自动切到 15802。
 
 - [ ] **Step 8: Commit 整体状态**
 

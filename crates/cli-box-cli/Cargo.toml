@@ -1,0 +1,24 @@
+[package]
+name = "cli-box-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "macOS desktop automation sandbox CLI"
+
+[[bin]]
+name = "cli-box"
+path = "src/main.rs"
+
+[dependencies]
+cli-box-core = { workspace = true, features = ["screencapturekit"] }
+tokio.workspace = true
+clap.workspace = true
+anyhow.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+tokio-tungstenite.workspace = true
+futures-util.workspace = true
+base64.workspace = true

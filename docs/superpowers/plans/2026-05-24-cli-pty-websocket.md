@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 将 CLI 的 PTY 写入从已删除的 HTTP `POST /pty/write` 端点切换到 WebSocket `/pty/ws/{pid}` 端点，修复 `sandbox type --pty` 和 `sandbox key --pty` 命令。
+**Goal:** 将 CLI 的 PTY 写入从已删除的 HTTP `POST /pty/write` 端点切换到 WebSocket `/pty/ws/{pid}` 端点，修复 `cli-box type --pty` 和 `cli-box key --pty` 命令。
 
 **Architecture:** CLI 客户端 `SandboxClient` 添加 `tokio-tungstenite` WebSocket 连接能力。`pty_write` 方法改为：连接 WebSocket → 发送文本消息 → 关闭连接。`pty_write_auto` 保持不变（自动发现 PID 后调用 `pty_write`）。
 
@@ -134,7 +134,7 @@ git commit -m "fix(cli): switch pty_write from HTTP POST to WebSocket
 
 The /pty/write HTTP endpoint was replaced by /pty/ws/{pid} WebSocket
 in commit cecd18e. Update the CLI client to use WebSocket for PTY
-input, restoring 'sandbox type --pty' and 'sandbox key --pty' functionality."
+input, restoring 'cli-box type --pty' and 'cli-box key --pty' functionality."
 ```
 
 ---
@@ -152,23 +152,23 @@ Expected: 构建成功
 
 ```bash
 # 启动沙箱
-./target/release/sandbox start zsh
+./target/release/cli-box start zsh
 sleep 5
 
 # 获取 sandbox ID
-./target/release/sandbox list
+./target/release/cli-box list
 
 # 通过 PTY 发送文本（替换 <id> 为实际 ID）
-./target/release/sandbox type --id <id> --pty "hello from PTY"
+./target/release/cli-box type --id <id> --pty "hello from PTY"
 
 # 通过 PTY 按键
-./target/release/sandbox key --id <id> Return --pty
+./target/release/cli-box key --id <id> Return --pty
 
 # 截图验证
-./target/release/sandbox screenshot --id <id> -o test_pty_ws.png
+./target/release/cli-box screenshot --id <id> -o test_pty_ws.png
 
 # 清理
-./target/release/sandbox close <id>
+./target/release/cli-box close <id>
 ```
 
 Expected: 文本成功发送到 PTY，截图显示输入内容
@@ -176,9 +176,9 @@ Expected: 文本成功发送到 PTY，截图显示输入内容
 - [ ] **Step 3: 测试中文输入**
 
 ```bash
-./target/release/sandbox type --id <id> --pty "你好世界"
-./target/release/sandbox key --id <id> Return --pty
-./target/release/sandbox screenshot --id <id> -o test_chinese_pty.png
+./target/release/cli-box type --id <id> --pty "你好世界"
+./target/release/cli-box key --id <id> Return --pty
+./target/release/cli-box screenshot --id <id> -o test_chinese_pty.png
 ```
 
 Expected: 中文文本成功发送

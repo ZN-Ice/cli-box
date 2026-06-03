@@ -256,10 +256,10 @@ Expected: 构建成功
 - [ ] **Step 2: 测试 zsh 启动后立即可见**
 
 ```bash
-./release/sandbox start zsh
+./release/cli-box start zsh
 sleep 5
-./release/sandbox list  # 获取 ID
-./release/sandbox screenshot --id <id> -o test_zsh_replay.png
+./release/cli-box list  # 获取 ID
+./release/cli-box screenshot --id <id> -o test_zsh_replay.png
 ```
 
 Expected: 截图中立即显示 zsh prompt，无需按 Enter
@@ -267,10 +267,10 @@ Expected: 截图中立即显示 zsh prompt，无需按 Enter
 - [ ] **Step 3: 测试 claude 启动后立即可见**
 
 ```bash
-./release/sandbox start claude
+./release/cli-box start claude
 sleep 8
-./release/sandbox list
-./release/sandbox screenshot --id <id> -o test_claude_replay.png
+./release/cli-box list
+./release/cli-box screenshot --id <id> -o test_claude_replay.png
 ```
 
 Expected: 截图中显示 claude 的 "Welcome back!" 界面

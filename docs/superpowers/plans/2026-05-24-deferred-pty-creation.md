@@ -695,9 +695,9 @@ pnpm build && cargo build --release -p sandbox-cli && cargo tauri build
 - [ ] **Step 2: 启动 opencode 并截图**
 
 ```bash
-./target/release/sandbox start opencode
+./target/release/cli-box start opencode
 sleep 8
-./target/release/sandbox screenshot --id <id> -o release_test/ws_deferred_pty.png
+./target/release/cli-box screenshot --id <id> -o release_test/ws_deferred_pty.png
 ```
 
 预期：opencode TUI 填满整个终端区域，无右侧/底部空白。
@@ -705,9 +705,9 @@ sleep 8
 - [ ] **Step 3: 启动 zsh 验证回归**
 
 ```bash
-./target/release/sandbox start zsh
+./target/release/cli-box start zsh
 sleep 5
-./target/release/sandbox screenshot --id <id> -o release_test/ws_deferred_zsh.png
+./target/release/cli-box screenshot --id <id> -o release_test/ws_deferred_zsh.png
 ```
 
 预期：zsh prompt 正常显示。

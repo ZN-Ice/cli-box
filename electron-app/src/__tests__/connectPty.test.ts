@@ -43,7 +43,7 @@ describe("connectPty", () => {
     const conn = connectPty("abc123", 42);
     conn.onOutput(() => {});
     expect(lastWs).not.toBeNull();
-    expect(lastWs!.url).toBe("ws://127.0.0.1:15801/sandbox/abc123/pty/ws/42");
+    expect(lastWs!.url).toBe("ws://127.0.0.1:15801/box/abc123/pty/ws/42");
     conn.close();
   });
 

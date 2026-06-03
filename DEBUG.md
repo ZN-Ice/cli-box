@@ -78,7 +78,7 @@ console.log("pending data:", writeBuffer?._pendingData);
 Tauri 构建后前端资源可能被 WKWebView 缓存，修改前端代码后必须清理：
 
 ```bash
-rm -rf ~/Library/Caches/com.system-test-sandbox*
+rm -rf ~/Library/Caches/com.cli-box*
 ```
 
 ### 1.5 强制 Tauri 重新嵌入前端资源
@@ -90,7 +90,7 @@ rm -rf ~/Library/Caches/com.system-test-sandbox*
 bash release.sh
 
 # 方法 2：修改 build.rs 时间戳触发重构建
-touch src-tauri/build.rs && cargo build --release -p system-test-sandbox
+touch src-tauri/build.rs && cargo build --release -p cli-box
 ```
 
 ## 二、服务端调试
@@ -100,15 +100,15 @@ touch src-tauri/build.rs && cargo build --release -p system-test-sandbox
 每个沙箱实例启动时会打印日志路径。日志按日期和 sandbox_id 组织：
 
 ```
-~/.sandbox/logs/<date>/<sandbox_id>.log.<date>
+~/.cli-box/logs/<date>/<sandbox_id>.log.<date>
 ```
 
 ```bash
 # 查看最新实例的日志
-ls -lt ~/.sandbox/logs/$(date +%Y-%m-%d)/ | head -5
+ls -lt ~/.cli-box/logs/$(date +%Y-%m-%d)/ | head -5
 
 # 实时跟踪日志
-tail -f ~/.sandbox/logs/2026-05-29/0dbeaf79.log.2026-05-29
+tail -f ~/.cli-box/logs/2026-05-29/0dbeaf79.log.2026-05-29
 ```
 
 **关键日志标签：**
@@ -140,10 +140,10 @@ curl -X POST http://127.0.0.1:5801/pty/write/1000 \
 
 ```bash
 # 列出所有注册的沙箱实例
-./release/sandbox list
+./release/cli-box list
 
 # 查看实例注册文件
-cat ~/.sandbox/instances/*.json
+cat ~/.cli-box/instances/*.json
 ```
 
 ## 三、构建与发布调试
@@ -161,10 +161,10 @@ bash release.sh
 
 ```bash
 # 检查 CLI 版本
-./release/sandbox --version
+./release/cli-box --version
 
 # 检查 Tauri app 大小
-ls -lh release/system-test-sandbox 2>/dev/null || ls -lh "release/System Test Sandbox.app"
+ls -lh release/cli-box 2>/dev/null || ls -lh "release/CLI Box.app"
 ```
 
 ## 四、端到端测试流程
@@ -173,28 +173,28 @@ ls -lh release/system-test-sandbox 2>/dev/null || ls -lh "release/System Test Sa
 
 ```bash
 # 1. 清理环境
-pkill -f "system-test-sandbox" 2>/dev/null
-rm -rf ~/Library/Caches/com.system-test-sandbox* 2>/dev/null
+pkill -f "cli-box" 2>/dev/null
+rm -rf ~/Library/Caches/com.cli-box* 2>/dev/null
 
 # 2. 构建并启动
 bash release.sh
-./release/sandbox start opencode
+./release/cli-box start opencode
 
 # 3. 等待启动，截图验证
 sleep 10
-SANDBOX_ID=$(./release/sandbox list | grep -o '^\S*' | head -1)
-./release/sandbox screenshot --id $SANDBOX_ID -o test_screenshot.png
+SANDBOX_ID=$(./release/cli-box list | grep -o '^\S*' | head -1)
+./release/cli-box screenshot --id $SANDBOX_ID -o test_screenshot.png
 
 # 4. PTY 交互测试
-./release/sandbox type --id $SANDBOX_ID --pty "测试文本"
-./release/sandbox key --id $SANDBOX_ID --pty Return
+./release/cli-box type --id $SANDBOX_ID --pty "测试文本"
+./release/cli-box key --id $SANDBOX_ID --pty Return
 
 # 5. 再次截图验证
 sleep 3
-./release/sandbox screenshot --id $SANDBOX_ID -o test_result.png
+./release/cli-box screenshot --id $SANDBOX_ID -o test_result.png
 
 # 6. 清理
-./release/sandbox close $SANDBOX_ID
+./release/cli-box close $SANDBOX_ID
 ```
 
 ### 4.2 PTY 输入注意事项
@@ -203,10 +203,10 @@ CLI 沙箱中输入文字必须使用 `--pty` 标志：
 
 ```bash
 # ✅ 正确：直接写入 PTY
-./release/sandbox type --id xxx --pty "你好"
+./release/cli-box type --id xxx --pty "你好"
 
 # ❌ 错误：使用 CGEvent 模拟（在 CLI 沙箱中不可用）
-./release/sandbox type --id xxx "你好"
+./release/cli-box type --id xxx "你好"
 ```
 
 ## 五、常见问题排查
@@ -221,11 +221,11 @@ CLI 沙箱中输入文字必须使用 `--pty` 标志：
 
 1. 是否执行了 `release.sh`（而不是单独 `cargo build`）
 2. 是否清理了 WKWebView 缓存
-3. 确认 `sandbox-web/dist/` 目录的构建时间是最新的
+3. 确认 `electron-app/dist/` 目录的构建时间是最新的
 
 ### 5.3 WebSocket 连接失败
 
-1. 检查沙箱实例是否在运行：`./release/sandbox list`
+1. 检查沙箱实例是否在运行：`./release/cli-box list`
 2. 检查端口是否正确：实例注册文件中的 port 字段
 3. 检查服务端日志是否有错误
 

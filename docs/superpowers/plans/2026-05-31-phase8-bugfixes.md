@@ -131,7 +131,7 @@ tokio::spawn(async move {
     // Wait a bit for Electron to launch
     tokio::time::sleep(std::time::Duration::from_secs(2)).await;
 
-    match ScreenCapture::find_window_by_title("System Test Sandbox") {
+    match ScreenCapture::find_window_by_title("CLI Box") {
         Ok(window_id) => {
             tracing::info!("Discovered Electron window_id={}", window_id);
             // Store in daemon state for reference
@@ -157,7 +157,7 @@ In `create_sandbox_handler`, after creating the sandbox, try to discover the win
 ```rust
 // After sandbox is created, try to find window_id
 if sandbox.window_id.is_none() {
-    if let Ok(wid) = ScreenCapture::find_window_by_title("System Test Sandbox") {
+    if let Ok(wid) = ScreenCapture::find_window_by_title("CLI Box") {
         sandbox.window_id = Some(wid);
     }
 }
@@ -236,7 +236,7 @@ async fn spawn_app_handler(
 
 - [ ] **Step 3: Verify compilation**
 
-Run: `cargo check -p sandbox-core && cargo check -p sandbox-daemon`
+Run: `cargo check -p sandbox-core && cargo check -p cli-box-daemon`
 Expected: PASS
 
 - [ ] **Step 4: Commit**
@@ -318,14 +318,14 @@ Run: `cargo build --release`
 
 - [ ] **Step 2: Test screenshot**
 
-Run: `./target/release/sandbox start zsh`
+Run: `./target/release/cli-box start zsh`
 Wait for Electron window, then:
-Run: `./target/release/sandbox screenshot --id <id> -o test.png`
+Run: `./target/release/cli-box screenshot --id <id> -o test.png`
 Expected: Valid PNG file (not empty, not error)
 
 - [ ] **Step 3: Test region crop**
 
-Run: `./target/release/sandbox screenshot --id <id> -o region.png --region 0,0,400,300`
+Run: `./target/release/cli-box screenshot --id <id> -o region.png --region 0,0,400,300`
 Expected: Cropped PNG
 
 - [ ] **Step 4: Commit final state**

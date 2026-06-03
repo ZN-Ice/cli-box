@@ -19,7 +19,7 @@ export const test = base.extend<{ mockedPage: Page }>({
     });
 
     // Mock daemon HTTP API
-    await page.route("**/sandbox/list", (route) => {
+    await page.route("**/box/list", (route) => {
       route.fulfill({
         status: 200,
         contentType: "application/json",

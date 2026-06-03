@@ -356,12 +356,12 @@ Replace the architecture diagram section to reflect Electron:
 ```
 ┌──────────────────────────────────────────────────────────────┐
 │                  Agent / 用户 (CLI / MCP / HTTP)              │
-│  sandbox start / list / screenshot / click / type / key      │
+│  cli-box start / list / screenshot / click / type / key      │
 └───────────────────────────────┬───────────────────────────────┘
                                 │ HTTP (localhost:15801)
                                 ▼
 ┌──────────────────────────────────────────────────────────────┐
-│              sandbox-daemon (Rust, 单实例)                     │
+│              cli-box-daemon (Rust, 单实例)                     │
 │  PTY Manager + App Manager + Automation Engine                │
 │  Instance Registry (~/.sandbox/instances/)                    │
 └───────────────────────────────┬───────────────────────────────┘
@@ -393,7 +393,7 @@ cd electron-app && pnpm install && pnpm build && cd ..
 
 ```bash
 # 启动沙箱（自动启动 daemon + Electron）
-./target/release/sandbox start claude
+./target/release/cli-box start claude
 ```
 ```
 

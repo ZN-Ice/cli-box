@@ -30,7 +30,7 @@
 ls /Library/Developer/CommandLineTools/usr/lib/swift-5.5/macosx/libswift_Concurrency.dylib
 
 # 先编译一次项目（让 build 目录创建）
-cargo build -p sandbox-cli
+cargo build -p cli-box-cli
 
 # 复制 dylib
 cp /Library/Developer/CommandLineTools/usr/lib/swift-5.5/macosx/libswift_Concurrency.dylib \
@@ -47,14 +47,14 @@ cp /Library/Developer/CommandLineTools/usr/lib/swift-5.5/macosx/libswift_Concurr
 
 ```bash
 # 运行全部沙箱核心测试 (67 个)
-cargo test -p sandbox-core
+cargo test -p cli-box-core
 
 # 分别运行各个集成测试
-cargo test -p sandbox-core --test diff_integration      # 图片对比 (10 tests)
-cargo test -p sandbox-core --test scenario_integration   # 场景引擎 (14 tests)
-cargo test -p sandbox-core --test sandbox_integration    # 沙箱管理 (15 tests)
-cargo test -p sandbox-core --test recorder_integration   # 录制回放 (10 tests)
-cargo test -p sandbox-core --test error_integration      # 错误类型 (5 tests)
+cargo test -p cli-box-core --test diff_integration      # 图片对比 (10 tests)
+cargo test -p cli-box-core --test scenario_integration   # 场景引擎 (14 tests)
+cargo test -p cli-box-core --test sandbox_integration    # 沙箱管理 (15 tests)
+cargo test -p cli-box-core --test recorder_integration   # 录制回放 (10 tests)
+cargo test -p cli-box-core --test error_integration      # 错误类型 (5 tests)
 ```
 
 **预期结果**：67 passed, 0 failed
@@ -66,7 +66,7 @@ cargo test -p sandbox-core --test error_integration      # 错误类型 (5 tests
 ### 2.1 列出所有窗口
 
 ```bash
-cargo run -p sandbox-cli -- windows
+cargo run -p cli-box-cli -- windows
 ```
 
 **预期**：列出现有所有窗口 ID 和标题。终端输出示例：
@@ -82,18 +82,18 @@ Total: 147 windows
 
 ```bash
 # 启动 CLI 进程
-cargo run -p sandbox-cli -- spawn-cli -- echo "hello sandbox"
+cargo run -p cli-box-cli -- spawn-cli -- echo "hello sandbox"
 ```
 
 **预期输出**：
 ```
 CLI spawned: PID=1000, name=echo
-Use 'sandbox-cli kill 1000' to terminate
+Use 'cli-box-cli kill 1000' to terminate
 ```
 
 ```bash
 # 查看进程
-cargo run -p sandbox-cli -- processes
+cargo run -p cli-box-cli -- processes
 ```
 
 **预期输出**：`Total: 0 processes` — 这是正常的，因为每个 CLI 命令是独立进程，SESSIONS 不共享。需要持久化管理请使用 HTTP Server 模式（测试 3）。
@@ -102,10 +102,10 @@ cargo run -p sandbox-cli -- processes
 
 ```bash
 # 通过 title 搜索沙箱窗口截图（首先需要启动 Tauri app 才有效）
-cargo run -p sandbox-cli -- screenshot
+cargo run -p cli-box-cli -- screenshot
 
 # 指定输出路径
-cargo run -p sandbox-cli -- screenshot -o /tmp/my_screenshot.png
+cargo run -p cli-box-cli -- screenshot -o /tmp/my_screenshot.png
 ```
 
 **如果没有 Tauri 窗口运行**，会返回错误 `Sandbox window not found`，这是预期的。
@@ -117,7 +117,7 @@ cargo run -p sandbox-cli -- screenshot -o /tmp/my_screenshot.png
 ### 3.1 启动服务器
 
 ```bash
-cargo run -p sandbox-cli -- serve --port 5801
+cargo run -p cli-box-cli -- serve --port 5801
 ```
 
 看到以下输出表示启动成功：
@@ -327,11 +327,11 @@ pkill -f "sandbox serve"
 
 ```bash
 # 发送 initialize + tools/list + tools/call
-printf '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}\n{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}\n{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"list_windows","arguments":{}}}\n' | cargo run -p sandbox-cli -- mcp-serve 2>/dev/null | head -3
+printf '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}\n{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}\n{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"list_windows","arguments":{}}}\n' | cargo run -p cli-box-cli -- mcp-serve 2>/dev/null | head -3
 ```
 
 **预期输出**：三行 JSON-RPC 响应：
-1. `initialize` 返回 `{"serverInfo":{"name":"system-test-sandbox","version":"0.1.0"}}`
+1. `initialize` 返回 `{"serverInfo":{"name":"cli-box","version":"0.1.0"}}`
 2. `tools/list` 返回 18 个 MCP 工具定义
 3. `tools/call` 返回 `list_windows` 的结果
 
@@ -350,12 +350,12 @@ pnpm install
 pnpm tauri dev
 ```
 
-这会打开一个 1280x800 的 "System Test Sandbox" 窗口。
+这会打开一个 1280x800 的 "CLI Box" 窗口。
 
 ### 5.2 使用预置 YAML 场景
 
 ```bash
-cargo run -p sandbox-cli -- serve --port 5801 &
+cargo run -p cli-box-cli -- serve --port 5801 &
 sleep 2
 
 # 用完整的 11 步 YAML 场景测试（需要 macOS，因为涉及 click/type 等）
@@ -385,9 +385,9 @@ PYEOF
 
 | 测试 | 命令 | 不需要 macOS |
 |------|------|-------------|
-| 集成测试 | `cargo test -p sandbox-core` | ✅ |
-| CLI windows | `cargo run -p sandbox-cli -- windows` | ❌ |
-| CLI spawn-cli | `cargo run -p sandbox-cli -- spawn-cli -- echo hi` | ❌ |
+| 集成测试 | `cargo test -p cli-box-core` | ✅ |
+| CLI windows | `cargo run -p cli-box-cli -- windows` | ❌ |
+| CLI spawn-cli | `cargo run -p cli-box-cli -- spawn-cli -- echo hi` | ❌ |
 | HTTP /health | `curl http://127.0.0.1:5801/health` | ❌ |
 | HTTP /windows | `curl http://127.0.0.1:5801/windows` | ❌ |
 | HTTP screenshot/region | `curl "http://127.0.0.1:5801/screenshot/region?x=0&y=0&width=100&height=100"` | ❌ |
@@ -395,7 +395,7 @@ PYEOF
 | HTTP /input/* | `curl -X POST .../input/click -d '{...}'` | ❌ |
 | HTTP /diff | `curl -X POST .../diff -d '{...}'` | ✅ |
 | HTTP /scenario/run | `curl -X POST .../scenario/run -d '{...}'` | ❌ |
-| MCP    | `echo '...' \| cargo run -p sandbox-cli -- mcp-serve` | ❌ |
+| MCP    | `echo '...' \| cargo run -p cli-box-cli -- mcp-serve` | ❌ |
 
 ---
 

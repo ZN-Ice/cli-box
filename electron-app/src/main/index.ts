@@ -3,10 +3,10 @@ import { join } from "path";
 import { writeFileSync, unlinkSync, mkdirSync } from "fs";
 import { ensureDaemon, killDaemon } from "./daemon-bridge";
 
-const ELECTRON_JSON_PATH = join(process.env.HOME || "/tmp", ".sandbox", "electron.json");
+const ELECTRON_JSON_PATH = join(process.env.HOME || "/tmp", ".cli-box", "electron.json");
 
 function writeElectronJson(port: number) {
-  const dir = join(process.env.HOME || "/tmp", ".sandbox");
+  const dir = join(process.env.HOME || "/tmp", ".cli-box");
   mkdirSync(dir, { recursive: true });
   writeFileSync(ELECTRON_JSON_PATH, JSON.stringify({ pid: process.pid, port }));
 }
@@ -71,7 +71,7 @@ function createWindow() {
     height: 800,
     minWidth: 600,
     minHeight: 400,
-    title: "System Test Sandbox",
+    title: "CLI Box",
     titleBarStyle: "hiddenInset",
     vibrancy: "sidebar",
     backgroundColor: "#1e1e1e",
