@@ -99,6 +99,15 @@ else
   FAILED=1
 fi
 
+# ==================== E2E Skill Installation Tests ====================
+info "Running E2E skill installation tests..."
+if bash tests/e2e-skill-install.sh 2>&1; then
+  ok "E2E skill installation tests passed"
+else
+  err "E2E skill installation tests FAILED"
+  FAILED=1
+fi
+
 # ==================== Rename Remnant Check ====================
 info "Checking for 'sandbox' remnants in user-facing strings..."
 # Check specific files that were renamed for leftover "sandbox" references
