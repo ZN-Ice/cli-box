@@ -176,9 +176,11 @@ jobs:
 
           # Set version from git tag
           VERSION="${GITHUB_REF_NAME#v}"
-          npm version "$VERSION" --no-git-tag-version -w packages/cli-box-darwin-arm64
-          npm version "$VERSION" --no-git-tag-version -w packages/cli-box-electron-darwin-arm64
-          npm version "$VERSION" --no-git-tag-version -w packages/cli-box-skill
+          sed -i '' "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" packages/cli-box-darwin-arm64/package.json
+          sed -i '' "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" packages/cli-box-electron-darwin-arm64/package.json
+          sed -i '' "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" packages/cli-box-skill/package.json
+          sed -i '' "s/\"cli-box-darwin-arm64\": \"[^\"]*\"/\"cli-box-darwin-arm64\": \"$VERSION\"/" packages/cli-box-skill/package.json
+          sed -i '' "s/\"cli-box-electron-darwin-arm64\": \"[^\"]*\"/\"cli-box-electron-darwin-arm64\": \"$VERSION\"/" packages/cli-box-skill/package.json
 
           npm publish packages/cli-box-darwin-arm64 --access public
           npm publish packages/cli-box-electron-darwin-arm64 --access public
