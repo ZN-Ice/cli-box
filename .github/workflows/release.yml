@@ -170,10 +170,6 @@ jobs:
         run: |
           echo "//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}" > ~/.npmrc
 
-          # Configure git to use HTTPS instead of SSH
-          git config --global url."https://github.com/".insteadOf "ssh://git@github.com/"
-          git config --global url."https://github.com/".insteadOf "git@github.com:"
-
           # Set version from git tag
           VERSION="${GITHUB_REF_NAME#v}"
 
@@ -200,6 +196,7 @@ jobs:
           "
 
           # Publish platform packages first, then main package
-          npm publish packages/cli-box-darwin-arm64 --access public --registry https://registry.npmjs.org
-          npm publish packages/cli-box-electron-darwin-arm64 --access public --registry https://registry.npmjs.org
-          npm publish packages/cli-box-skill --access public --registry https://registry.npmjs.org
+          # Note: must use ./ prefix to prevent npm from treating path as git reference
+          npm publish ./packages/cli-box-darwin-arm64 --access public
+          npm publish ./packages/cli-box-electron-darwin-arm64 --access public
+          npm publish ./packages/cli-box-skill --access public
