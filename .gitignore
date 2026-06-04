@@ -38,3 +38,5 @@ coverage/
 
 # Release test artifacts
 release_test/
+!release/release-pipeline.md
+.claude
