@@ -8,6 +8,11 @@ dist/
 out/
 release/*
 !release/README.md
+!release/release-pipeline.md
+
+# npm platform package build artifacts (CI populates at publish time)
+packages/*/bin/
+packages/*/app/
 
 # Rust
 **/*.rs.bk
@@ -37,3 +42,5 @@ coverage/
 
 # Release test artifacts
 release_test/
+!release/release-pipeline.md
+.claude

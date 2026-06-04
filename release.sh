@@ -116,8 +116,12 @@ ok "Electron app built: $(du -sh "$ELECTRON_BUNDLE" | cut -f1)"
 # --- step 5: assemble release folder ---
 echo ""
 info "Assembling release artifacts -> $RELEASE_DIR"
-rm -rf "$RELEASE_DIR"
 mkdir -p "$RELEASE_DIR"
+
+# Remove only build artifacts, preserve tracked files (release-pipeline.md, README.md is regenerated)
+rm -rf "$RELEASE_DIR/cli-box" "$RELEASE_DIR/cli-box-daemon" \
+       "$RELEASE_DIR/CLI Box.app" "$RELEASE_DIR/CLI-Box-app-macos-arm64.tar.gz" \
+       "$RELEASE_DIR/cli-box-skill.tar.gz" 2>/dev/null || true
 
 # Copy CLI
 cp "$CLI_BIN" "$RELEASE_DIR/cli-box"
@@ -288,6 +292,42 @@ RELEASEREADME
 sed -i '' "s/__BUILD_DATE__/${BUILD_DATE}/" "$RELEASE_DIR/README.md"
 
 ok "README.md generated"
+
+# --- step 7: package skill tarball ---
+echo ""
+info "Packaging skill tarball..."
+SKILL_PKG_DIR="$SCRIPT_DIR/skill-pkg"
+rm -rf "$SKILL_PKG_DIR"
+mkdir -p "$SKILL_PKG_DIR/bin"
+
+cp "$SCRIPT_DIR/packages/cli-box-skill/skill/SKILL.md" "$SKILL_PKG_DIR/"
+cp "$SCRIPT_DIR/packages/cli-box-skill/skill/install.sh" "$SKILL_PKG_DIR/"
+chmod +x "$SKILL_PKG_DIR/install.sh"
+cp "$CLI_BIN" "$SKILL_PKG_DIR/bin/"
+cp "$DAEMON_BIN" "$SKILL_PKG_DIR/bin/"
+chmod +x "$SKILL_PKG_DIR/bin/cli-box" "$SKILL_PKG_DIR/bin/cli-box-daemon"
+
+cd "$SKILL_PKG_DIR" && tar czf "$RELEASE_DIR/cli-box-skill.tar.gz" . && cd "$SCRIPT_DIR"
+rm -rf "$SKILL_PKG_DIR"
+ok "cli-box-skill.tar.gz packaged"
+
+# --- step 8: package Electron standalone tarball ---
+echo ""
+info "Packaging Electron standalone tarball..."
+cd "$RELEASE_DIR" && tar czf "CLI-Box-app-macos-arm64.tar.gz" "CLI Box.app" && cd "$SCRIPT_DIR"
+ok "CLI-Box-app-macos-arm64.tar.gz packaged"
+
+# --- step 9: populate npm platform packages ---
+echo ""
+info "Populating npm platform packages..."
+mkdir -p "$SCRIPT_DIR/packages/cli-box-darwin-arm64/bin"
+cp "$CLI_BIN" "$SCRIPT_DIR/packages/cli-box-darwin-arm64/bin/"
+cp "$DAEMON_BIN" "$SCRIPT_DIR/packages/cli-box-darwin-arm64/bin/"
+chmod +x "$SCRIPT_DIR/packages/cli-box-darwin-arm64/bin/cli-box" "$SCRIPT_DIR/packages/cli-box-darwin-arm64/bin/cli-box-daemon"
+
+mkdir -p "$SCRIPT_DIR/packages/cli-box-electron-darwin-arm64/app"
+cp -R "$RELEASE_DIR/CLI Box.app" "$SCRIPT_DIR/packages/cli-box-electron-darwin-arm64/app/"
+ok "npm platform packages populated"
 
 # --- done ---
 echo ""

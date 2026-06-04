@@ -1,14 +1,16 @@
-# cli-box - Release 发布工作流
-# 当创建 GitHub Release 时自动构建并上传产物
+# cli-box - Release Workflow
+# Builds Rust binaries + Electron app, packages skill tarball, uploads to GitHub Release.
 #
-# 触发方式:
-#   1. 在 GitHub 上创建 Release (自动)
-#   2. 手动触发: Actions → Release → Run workflow → 输入 tag (如 v0.1.0)
+# Triggers:
+#   1. GitHub Release published (automatic)
+#   2. Manual: Actions → Release → Run workflow → enter tag (e.g. v0.2.0)
 #
-# 产物:
-#   - cli-box-cli                     CLI 二进制 (macOS aarch64)
-#   - CLI Box.app.zip     macOS 桌面应用 (压缩)
-#   - CLI Box_*_aarch64.dmg  macOS 安装包
+# Artifacts:
+#   - cli-box                          CLI binary (macOS aarch64)
+#   - cli-box-daemon                   Daemon binary (macOS aarch64)
+#   - CLI Box.app.zip                  Electron desktop app (compressed)
+#   - CLI Box_*_aarch64.dmg            macOS installer
+#   - cli-box-skill.tar.gz             Skill package (SKILL.md + binaries + install.sh)
 
 name: Release
 
@@ -18,7 +20,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Release tag (e.g. v0.1.0)'
+        description: 'Release tag (e.g. v0.2.0)'
         required: true
 
 permissions:
@@ -26,80 +28,148 @@ permissions:
 
 env:
   NODE_VERSION: '22'
-  PNPM_VERSION: '9'
+  PNPM_VERSION: '10'
   RUST_VERSION: '1.88'
 
 jobs:
   build-and-release:
-    name: 构建并发布
+    name: Build and Release
     runs-on: macos-latest
     timeout-minutes: 30
 
     steps:
-      - name: 检出代码
+      - name: Checkout
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', github.event.inputs.tag) || github.ref }}
 
-      - name: 设置 Node.js ${{ env.NODE_VERSION }}
+      - name: Setup Node.js ${{ env.NODE_VERSION }}
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
 
-      - name: 安装 pnpm
+      - name: Install pnpm
         uses: pnpm/action-setup@v4
         with:
           version: ${{ env.PNPM_VERSION }}
 
-      - name: 安装 Rust ${{ env.RUST_VERSION }}
+      - name: Install Rust ${{ env.RUST_VERSION }}
         uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ env.RUST_VERSION }}
 
-      - name: 设置 Rust 缓存
+      - name: Rust cache
         uses: Swatinem/rust-cache@v2
         with:
           cache-on-failure: true
 
-      - name: 设置前端依赖缓存
+      - name: Frontend dependencies cache
         uses: actions/cache@v4
         with:
           path: |
             ~/.pnpm-store
-            node_modules
-          key: ${{ runner.os }}-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
+            electron-app/node_modules
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('electron-app/pnpm-lock.yaml') }}
           restore-keys: |
             ${{ runner.os }}-pnpm-
 
-      - name: 安装前端依赖
+      - name: Install frontend dependencies
         working-directory: electron-app
         run: pnpm install --frozen-lockfile
 
-      - name: 构建 CLI 二进制 (release)
-        run: cargo build -p cli-box-cli --release
+      - name: Build CLI + daemon binaries (release)
+        run: cargo build --release -p cli-box-cli -p cli-box-daemon
 
-      - name: 构建前端 + Tauri 桌面应用
+      - name: Build Electron app
+        working-directory: electron-app
         run: |
-          if ! cargo tauri --version &>/dev/null; then
-            cargo install tauri-cli --version "^2" --locked
-          fi
-          cargo tauri build
+          pnpm build
+          ELECTRON_MIRROR="${ELECTRON_MIRROR:-}" pnpm run pack
 
-      - name: 整理发布产物
+      - name: Collect release artifacts
         run: |
           mkdir -p release
-          cp target/release/cli-box release/
-          find target/release/bundle/dmg -name "*.dmg" -maxdepth 1 -exec cp {} release/ \; 2>/dev/null || true
-          cd release
-          find ../target/release/bundle/macos -name "*.app" -maxdepth 1 -exec zip -r "CLI Box.app.zip" {} \; 2>/dev/null || true
-          echo "## 发布产物" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          ls -lh | tail -n +2 | awk '{printf "| %s | %s |\n", $NF, $5}' >> "$GITHUB_STEP_SUMMARY"
 
-      - name: 上传到 GitHub Release
+          # CLI binary
+          cp target/release/cli-box release/
+          chmod +x release/cli-box
+          codesign --force --sign - release/cli-box 2>/dev/null || true
+
+          # Daemon binary
+          cp target/release/cli-box-daemon release/
+          chmod +x release/cli-box-daemon
+          codesign --force --sign - release/cli-box-daemon 2>/dev/null || true
+
+          # Electron .app bundle
+          APP_BUNDLE=""
+          for dir in \
+            electron-app/dist/electron/mac-arm64/CLI\ Box.app \
+            electron-app/dist/electron/mac/CLI\ Box.app \
+            dist/electron/mac-arm64/CLI\ Box.app \
+            dist/electron/mac/CLI\ Box.app; do
+            if [ -d "$dir" ]; then
+              APP_BUNDLE="$dir"
+              break
+            fi
+          done
+
+          if [ -n "$APP_BUNDLE" ]; then
+            cp -R "$APP_BUNDLE" "release/CLI Box.app"
+            cd release && zip -r "CLI Box.app.zip" "CLI Box.app" && cd ..
+          fi
+
+          # DMG
+          find electron-app/dist/electron -name "*.dmg" -maxdepth 2 -exec cp {} release/ \; 2>/dev/null || true
+          find dist/electron -name "*.dmg" -maxdepth 2 -exec cp {} release/ \; 2>/dev/null || true
+
+          # Skill tarball
+          mkdir -p skill-pkg/bin
+          cp skill/SKILL.md skill-pkg/
+          cp skill/install.sh skill-pkg/
+          chmod +x skill-pkg/install.sh
+          cp target/release/cli-box skill-pkg/bin/
+          cp target/release/cli-box-daemon skill-pkg/bin/
+          chmod +x skill-pkg/bin/*
+          cd skill-pkg && tar czf ../release/cli-box-skill.tar.gz . && cd ..
+
+          echo "## Release Artifacts" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          ls -lh release/ | tail -n +2 | awk '{printf "| %s | %s |\n", $NF, $5}' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref_name }}
           files: release/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Package npm platform packages
+        run: |
+          # Copy Rust binaries to platform package
+          mkdir -p packages/cli-box-darwin-arm64/bin
+          cp target/release/cli-box packages/cli-box-darwin-arm64/bin/
+          cp target/release/cli-box-daemon packages/cli-box-darwin-arm64/bin/
+          chmod +x packages/cli-box-darwin-arm64/bin/*
+
+          # Copy Electron .app to platform package
+          mkdir -p packages/cli-box-electron-darwin-arm64/app
+          if [ -d "release/CLI Box.app" ]; then
+            cp -R "release/CLI Box.app" packages/cli-box-electron-darwin-arm64/app/
+          fi
+
+          # Create Electron standalone tarball
+          cd packages/cli-box-electron-darwin-arm64/app && \
+            tar czf ../../../release/CLI-Box-app-macos-arm64.tar.gz "CLI Box.app" && \
+            cd ../../..
+
+      - name: Publish npm packages
+        if: github.event_name == 'release'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          echo "//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}" > ~/.npmrc
+
+          npm publish packages/cli-box-darwin-arm64 --access public
+          npm publish packages/cli-box-electron-darwin-arm64 --access public
+          npm publish packages/cli-box-skill --access public

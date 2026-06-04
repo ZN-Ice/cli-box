@@ -1,0 +1,40 @@
+{
+  "name": "cli-box-skill",
+  "version": "0.2.0",
+  "description": "macOS desktop automation sandbox for AI agents",
+  "main": "postinstall.mjs",
+  "bin": {
+    "cli-box": "./bin/cli-box-wrapper.js"
+  },
+  "scripts": {
+    "postinstall": "node postinstall.mjs"
+  },
+  "optionalDependencies": {
+    "cli-box-darwin-arm64": "0.2.0",
+    "cli-box-electron-darwin-arm64": "0.2.0"
+  },
+  "files": [
+    "skill/SKILL.md",
+    "skill/install.sh",
+    "postinstall.mjs",
+    "bin/",
+    "README.md"
+  ],
+  "keywords": [
+    "cli-box",
+    "macos",
+    "automation",
+    "sandbox",
+    "claude-code",
+    "opencode",
+    "skill",
+    "desktop",
+    "screenshot"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ZN-Ice/cli-box.git"
+  },
+  "author": "ZN-Ice",
+  "license": "Apache-2.0"
+}
