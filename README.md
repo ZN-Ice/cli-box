@@ -45,7 +45,7 @@ cli-box close abc123    # → clean up
 | You want | Run | What happens |
 | :--- | :--- | :--- |
 | **Quick install** | `bash <(curl -fsSL https://raw.githubusercontent.com/ZN-Ice/cli-box/main/skill/install.sh)` | Downloads binaries to `~/.cli-box/bin/`, installs skill to `.claude/skills/cli-box/` |
-| **npm** | `npx cli-box-skill install` | Same as above, via npm |
+| **npm** | `npm install -g cli-box-skill` | Same as above, via npm |
 | **Manual** | [GitHub Releases](https://github.com/ZN-Ice/cli-box/releases) | Download `cli-box-skill.tar.gz`, extract, copy binaries |
 
 ### For Humans
