@@ -26,6 +26,12 @@ ok()    { echo -e "${GREEN}✓${NC} $*"; }
 
 FAILED=0
 
+# ==================== Skip on Linux CI (macOS frameworks required) ====================
+if [ "$(uname)" = "Linux" ] && [ -n "${CI:-}" ]; then
+  warn "Skipping E2E skill installation tests on Linux CI (macOS frameworks required)"
+  exit 0
+fi
+
 # ==================== Setup: ensure platform package has binaries ====================
 ensure_platform_binaries() {
   local PKG_BIN="$REPO_ROOT/packages/cli-box-darwin-arm64/bin"
@@ -36,6 +42,15 @@ ensure_platform_binaries() {
   info "Populating platform package bin/ with built binaries..."
   mkdir -p "$PKG_BIN"
 
+  # Build binaries if not found
+  if [ ! -f "$REPO_ROOT/target/release/cli-box" ] && [ ! -f "$REPO_ROOT/target/debug/cli-box" ]; then
+    info "  No built binaries found. Building with cargo..."
+    if ! cargo build -p cli-box-cli -p cli-box-daemon 2>&1; then
+      err "  cargo build failed"
+      exit 1
+    fi
+  fi
+
   if [ -f "$REPO_ROOT/target/release/cli-box" ]; then
     ln -sf "$REPO_ROOT/target/release/cli-box" "$PKG_BIN/cli-box"
     ln -sf "$REPO_ROOT/target/release/cli-box-daemon" "$PKG_BIN/cli-box-daemon"
@@ -43,7 +58,7 @@ ensure_platform_binaries() {
     ln -sf "$REPO_ROOT/target/debug/cli-box" "$PKG_BIN/cli-box"
     ln -sf "$REPO_ROOT/target/debug/cli-box-daemon" "$PKG_BIN/cli-box-daemon"
   else
-    err "No built binaries found. Run 'cargo build' first."
+    err "No built binaries found even after cargo build."
     exit 1
   fi
 
@@ -171,6 +186,12 @@ test_install_sh() {
 
   cp "$REPO_ROOT/packages/cli-box-skill/skill/SKILL.md" "$SKILL_PKG_DIR/"
 
+  # Build binaries if not found
+  if [ ! -f "$REPO_ROOT/target/release/cli-box" ] && [ ! -f "$REPO_ROOT/target/debug/cli-box" ]; then
+    info "  Building binaries with cargo..."
+    cargo build -p cli-box-cli -p cli-box-daemon >/dev/null 2>&1
+  fi
+
   # Use release binaries if available, fallback to debug
   if [ -f "$REPO_ROOT/target/release/cli-box" ]; then
     cp "$REPO_ROOT/target/release/cli-box" "$SKILL_PKG_DIR/bin/"
@@ -179,7 +200,7 @@ test_install_sh() {
     cp "$REPO_ROOT/target/debug/cli-box" "$SKILL_PKG_DIR/bin/"
     cp "$REPO_ROOT/target/debug/cli-box-daemon" "$SKILL_PKG_DIR/bin/"
   else
-    err "  No built binaries found. Run 'cargo build' first."
+    err "  No built binaries found even after cargo build."
     FAILED=1
     return
   fi
@@ -259,12 +280,23 @@ test_post_install_verify() {
   local SKILL_PKG_DIR="$TMP_DIR/skill-pkg"
   mkdir -p "$SKILL_PKG_DIR/bin"
   cp "$REPO_ROOT/packages/cli-box-skill/skill/SKILL.md" "$SKILL_PKG_DIR/"
+
+  # Build binaries if not found
+  if [ ! -f "$REPO_ROOT/target/release/cli-box" ] && [ ! -f "$REPO_ROOT/target/debug/cli-box" ]; then
+    info "  Building binaries with cargo..."
+    cargo build -p cli-box-cli -p cli-box-daemon >/dev/null 2>&1
+  fi
+
   if [ -f "$REPO_ROOT/target/release/cli-box" ]; then
     cp "$REPO_ROOT/target/release/cli-box" "$SKILL_PKG_DIR/bin/"
     cp "$REPO_ROOT/target/release/cli-box-daemon" "$SKILL_PKG_DIR/bin/"
-  else
+  elif [ -f "$REPO_ROOT/target/debug/cli-box" ]; then
     cp "$REPO_ROOT/target/debug/cli-box" "$SKILL_PKG_DIR/bin/"
     cp "$REPO_ROOT/target/debug/cli-box-daemon" "$SKILL_PKG_DIR/bin/"
+  else
+    err "  No built binaries found even after cargo build."
+    FAILED=1
+    return
   fi
   chmod +x "$SKILL_PKG_DIR/bin/"*
   (cd "$SKILL_PKG_DIR" && tar czf "$TMP_DIR/cli-box-skill.tar.gz" .)
