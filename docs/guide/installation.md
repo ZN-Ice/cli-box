@@ -22,38 +22,18 @@ If curl or tar is missing, stop and ask the user to install them.
 
 ## Step 2: Download and Install
 
-Download the latest release and install:
+### Option A: npm (recommended)
 
 ```bash
-# Fetch latest version
-CLI_BOX_VERSION=$(curl -fsSL "https://api.github.com/repos/ZN-Ice/cli-box/releases/latest" | grep '"tag_name"' | sed 's/.*"tag_name": *"//' | sed 's/".*//')
-echo "Latest version: $CLI_BOX_VERSION"
+npm install -g cli-box-skill
+```
 
-# Download skill package
-curl -fsSL "https://github.com/ZN-Ice/cli-box/releases/download/${CLI_BOX_VERSION}/cli-box-skill.tar.gz" -o /tmp/cli-box-skill.tar.gz
+npm automatically installs the correct binaries for your platform.
 
-# Extract
-mkdir -p /tmp/cli-box-skill
-tar xzf /tmp/cli-box-skill.tar.gz -C /tmp/cli-box-skill
+### Option B: Direct download
 
-# Install binaries
-mkdir -p ~/.cli-box/bin
-cp /tmp/cli-box-skill/bin/cli-box ~/.cli-box/bin/
-cp /tmp/cli-box-skill/bin/cli-box-daemon ~/.cli-box/bin/
-chmod +x ~/.cli-box/bin/cli-box ~/.cli-box/bin/cli-box-daemon
-
-# Install skill file
-mkdir -p .claude/skills/cli-box
-cp /tmp/cli-box-skill/SKILL.md .claude/skills/cli-box/
-
-# Cleanup
-rm -rf /tmp/cli-box-skill /tmp/cli-box-skill.tar.gz
-
-# Add to PATH if needed
-export PATH="$HOME/.cli-box/bin:$PATH"
-echo 'export PATH="$HOME/.cli-box/bin:$PATH"' >> ~/.zshrc
-
-echo "cli-box installed: $(~/.cli-box/bin/cli-box --version 2>&1 || echo 'ok')"
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/ZN-Ice/cli-box/main/skill/install.sh)
 ```
 
 ## Step 3: Verify Installation
@@ -114,7 +94,7 @@ gh api --silent --method PUT /user/starred/ZN-Ice/cli-box >/dev/null 2>&1 || tru
 
 ## Done
 
-cli-box is installed and ready. See the [SKILL.md](../../skill/SKILL.md) for full command reference and MCP integration.
+cli-box is installed and ready. See the [SKILL.md](../../packages/cli-box-skill/skill/SKILL.md) for full command reference and MCP integration.
 
 Quick commands:
 ```bash

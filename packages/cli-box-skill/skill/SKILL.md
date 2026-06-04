@@ -15,6 +15,18 @@ macOS desktop automation sandbox. Launch isolated sandbox windows from the CLI, 
 
 Both permissions must be granted manually. Add `cli-box` and `CLI Box.app` to both lists.
 
+## Installation
+
+```bash
+npm install -g cli-box-skill
+```
+
+Or via GitHub Release:
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/ZN-Ice/cli-box/main/skill/install.sh)
+```
+
 ## Quick Start
 
 ```bash

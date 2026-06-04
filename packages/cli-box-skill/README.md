@@ -1,20 +1,38 @@
 # cli-box-skill
 
-macOS desktop automation sandbox — skill package for [cli-box](https://github.com/ZN-Ice/cli-box).
+macOS desktop automation sandbox for AI agents.
 
 ## Install
 
 ```bash
-npx cli-box-skill install
+npm install -g cli-box-skill
 ```
-
-Or download from [GitHub Releases](https://github.com/ZN-Ice/cli-box/releases).
 
 ## What is cli-box?
 
 A macOS sandbox that lets AI agents (Claude Code, OpenCode, etc.) run CLI tools in isolated windows with screenshot feedback and input simulation.
 
-See the [full README](https://github.com/ZN-Ice/cli-box#readme) for details.
+## Quick start
+
+```bash
+cli-box start claude    # Start Claude Code sandbox
+cli-box start zsh       # Start zsh sandbox
+cli-box list            # List active sandboxes
+cli-box screenshot --id <id> -o shot.png  # Screenshot
+cli-box close <id>      # Close sandbox
+```
+
+## No npm?
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/ZN-Ice/cli-box/main/skill/install.sh)
+```
+
+## Links
+
+- [GitHub](https://github.com/ZN-Ice/cli-box)
+- [Full README](https://github.com/ZN-Ice/cli-box#readme)
+- [Installation Guide](https://github.com/ZN-Ice/cli-box/blob/main/docs/guide/installation.md)
 
 ## License
 
