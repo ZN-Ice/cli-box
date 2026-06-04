@@ -10,6 +10,10 @@ release/*
 !release/README.md
 !release/release-pipeline.md
 
+# npm platform package build artifacts (CI populates at publish time)
+packages/*/bin/
+packages/*/app/
+
 # Rust
 **/*.rs.bk
 *.pdb
