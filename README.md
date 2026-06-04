@@ -19,24 +19,7 @@
 
 [![cli-box preview — Claude Code running in sandbox](./.github/assets/hero.png)](https://github.com/ZN-Ice/cli-box#cli-box)
 
-*Claude Code running inside a cli-box sandbox. Multi-tab, screenshot feedback, zero invasion.*
-
 </div>
-
-## What is this?
-
-You're building AI agents that need to interact with CLI tools. They need to see the screen, type commands, and read results.
-
-cli-box gives them an isolated sandbox window per tool. Screenshot to see. Type to interact. Close when done. No API integration needed — it works at the OS level.
-
-```bash
-cli-box start claude    # → sandbox window with Claude Code
-cli-box start opencode  # → sandbox window with OpenCode
-cli-box start zsh       # → sandbox window with zsh
-cli-box list            # → see all active sandboxes
-cli-box screenshot --id abc123 -o state.png  # → see what's on screen
-cli-box close abc123    # → clean up
-```
 
 ## Installation
 
@@ -44,32 +27,28 @@ cli-box close abc123    # → clean up
 
 | You want | Run | What happens |
 | :--- | :--- | :--- |
-| **Quick install** | `bash <(curl -fsSL https://raw.githubusercontent.com/ZN-Ice/cli-box/main/skill/install.sh)` | Downloads binaries to `~/.cli-box/bin/`, installs skill to `.claude/skills/cli-box/` |
-| **npm** | `npm install -g cli-box-skill` | Same as above, via npm |
-| **Manual** | [GitHub Releases](https://github.com/ZN-Ice/cli-box/releases) | Download `cli-box-skill.tar.gz`, extract, copy binaries |
+| **npm** | `npm install -g cli-box-skill` | Binaries + skill installed automatically |
+| **Shell** | `bash <(curl -fsSL https://raw.githubusercontent.com/ZN-Ice/cli-box/main/skill/install.sh)` | Downloads to `~/.cli-box/bin/`, installs skill |
+| **Manual** | [GitHub Releases](https://github.com/ZN-Ice/cli-box/releases) | Download and extract manually |
 
 ### For Humans
 
-Paste this into your terminal:
-
-```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/ZN-Ice/cli-box/main/skill/install.sh)
-```
-
-Then grant macOS permissions when prompted:
-1. **System Settings → Privacy & Security → Accessibility** → add `cli-box`
-2. **System Settings → Privacy & Security → Screen Recording** → add `cli-box`
-
-### For LLM Agents
-
-Paste this into Claude Code, OpenCode, Cursor, or any agent:
+Paste this into **Claude Code** — it will download, install, configure permissions, and verify everything:
 
 ```
 Install cli-box by following the instructions here:
 https://raw.githubusercontent.com/ZN-Ice/cli-box/main/docs/guide/installation.md
 ```
 
-The agent will download, install, verify, and configure everything automatically.
+> The agent handles macOS permissions, PATH setup, and a quick test run. Just approve when prompted.
+
+### For LLM Agents
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ZN-Ice/cli-box/main/docs/guide/installation.md
+```
+
+Follow the guide step by step.
 
 ### Add to PATH
 
@@ -78,118 +57,82 @@ echo 'export PATH="$HOME/.cli-box/bin:$PATH"' >> ~/.zshrc
 source ~/.zshrc
 ```
 
-## How it works
+## Demo
+
+**Start Claude Code in a sandbox, interact, get screenshots:**
 
 ```
-cli-box start claude
-       │
-       ▼
-cli-box CLI
-       │ 1. Start cli-box-daemon (if not running)
-       │ 2. Create sandbox via HTTP API
-       │ 3. Launch Electron window (if not running)
-       ▼
-cli-box-daemon (HTTP :15801)
-  - Manages PTY processes
-  - Screenshot + input APIs
-  - WebSocket PTY terminal
-       │
-       ▼
-Electron Window (Chromium)
-  ┌────────────────────────────────────┐
-  │  Tab: claude   Tab: zsh   Tab: ... │
-  ├────────────────────────────────────┤
-  │  xterm.js terminal                 │
-  │  ← PTY WebSocket connection        │
-  │  Standard term.write() rendering   │
-  └────────────────────────────────────┘
+$ cli-box start claude
+Sandbox started: 0cd60ad4
+
+$ cli-box screenshot --id 0cd60ad4 -o state.png
 ```
 
-**Zero invasion.** The target app needs no adaptation. All operations happen at the OS level (CGEvent + AXUIElement + ScreenCaptureKit).
+[![Claude Code sandbox — trust dialog](./.github/assets/demo-claude-start.png)](https://github.com/ZN-Ice/cli-box#demo)
+
+[![Claude Code responds in sandbox](./.github/assets/demo-claude-reply.png)](https://github.com/ZN-Ice/cli-box#demo)
+
+**Multi-tab — run Claude Code, OpenCode, zsh in parallel:**
+
+[![Multi-tab sandboxes](./.github/assets/demo-multi-tab.png)](https://github.com/ZN-Ice/cli-box#demo)
+
+**Works with any CLI tool:**
+
+[![OpenCode in sandbox](./.github/assets/demo-opencode.png)](https://github.com/ZN-Ice/cli-box#demo)
+
+```bash
+cli-box start claude    # Claude Code
+cli-box start opencode  # OpenCode
+cli-box start zsh       # Shell
+cli-box start node      # Node.js
+```
 
 ## Features
 
-| | Feature | What it does |
-| :---: | :--- | :--- |
-| 🖥️ | **Multi-instance sandboxes** | Run Claude Code, OpenCode, zsh, any CLI — each in its own sandbox tab |
-| 📸 | **Window-level screenshots** | ScreenCaptureKit captures by window ID, no need to be in foreground |
-| ⌨️ | **PTY keyboard input** | Direct PTY write for reliable CLI input (supports Chinese, all key combos) |
-| 🖱️ | **Mouse simulation** | CGEvent click/drag/scroll for GUI app sandboxes |
-| 🔌 | **MCP integration** | Claude Code and OpenCode can call cli-box as an MCP tool |
-| 🏗️ | **Single daemon** | One daemon manages all sandboxes, auto-starts on first use |
-| ♻️ | **Electron reuse** | Second `cli-box start` reuses existing window, adds a new tab |
-| 🎯 | **Zero invasion** | Target apps need no adaptation — works at OS level |
+| | What | |
+|:---:|:---|:---:|
+| Multi-instance | Run any CLI in its own sandbox tab | |
+| Screenshot | Window-level capture via ScreenCaptureKit, no foreground needed | |
+| PTY input | Direct terminal input, supports Chinese and all key combos | |
+| MCP integration | Claude Code / OpenCode call cli-box as an MCP tool | |
+| Zero invasion | Target app needs no adaptation — works at OS level | |
 
-## CLI Commands
+## Quick Reference
 
 ```bash
 # Sandbox lifecycle
-cli-box start [command]       # Start sandbox (default: zsh)
-cli-box start claude          # Start Claude Code sandbox
-cli-box start opencode        # Start OpenCode sandbox
-cli-box start /path/App.app   # Start macOS app sandbox
-cli-box list                  # List active sandboxes
-cli-box close <id>            # Close sandbox
-cli-box inspect <id>          # Show sandbox details
+cli-box start [command]         # Start sandbox (default: zsh)
+cli-box list                    # List active sandboxes
+cli-box close <id>              # Close sandbox
 
-# Screenshot
-cli-box screenshot --id <id>              # Screenshot to stdout (base64)
-cli-box screenshot --id <id> -o shot.png  # Screenshot to file
+# Screenshot + input
+cli-box screenshot --id <id> -o shot.png
+cli-box type --id <id> --pty "hello world"
+cli-box key --id <id> --pty Return
+cli-box click --id <id> 100 200
 
-# Input (PTY mode — for CLI tools)
-cli-box type --id <id> --pty "text"       # Type text
-cli-box key --id <id> --pty Return        # Press key
-cli-box key --id <id> --pty ctrl+c        # Ctrl+C
-cli-box key --id <id> --pty up            # Arrow keys
-
-# Input (CGEvent mode — for GUI apps)
-cli-box click --id <id> 100 200           # Mouse click
-cli-box type --id <id> "text"             # Type via CGEvent
+# MCP config (add to .claude/settings.json)
+# { "mcpServers": { "cli-box": { "command": "cli-box", "args": ["mcp-serve"] } } }
 ```
-
-## MCP Integration
-
-Add to `.claude/settings.json`:
-
-```json
-{
-  "mcpServers": {
-    "cli-box": {
-      "command": "cli-box",
-      "args": ["mcp-serve"]
-    }
-  }
-}
-```
-
-Available MCP tools: `start_sandbox`, `screenshot`, `click`, `type_text`, `press_key`, `close_sandbox`, `list_sandboxes`.
 
 ## macOS Permissions
 
-| Permission | Purpose | Grant in |
+| Permission | Why | Grant in |
 |:---|:---|:---|
-| **Accessibility** | CGEvent input simulation + AXUIElement UI inspection | System Settings → Privacy & Security → Accessibility |
-| **Screen Recording** | ScreenCaptureKit screenshots | System Settings → Privacy & Security → Screen Recording |
+| **Accessibility** | Input simulation + UI inspection | System Settings → Privacy & Security |
+| **Screen Recording** | Window screenshots | System Settings → Privacy & Security |
 
-Both permissions must be granted manually. Add `cli-box` and `CLI Box.app` to both lists.
+Add `cli-box` and `CLI Box.app` to both lists. Permissions must be granted manually.
 
 ## Tech Stack
 
 | Component | Technology |
 |:---|:---|
-| Core library | Rust (Edition 2021, ≥1.88), `cli-box-core` |
+| Core | Rust (≥1.88), `cli-box-core` |
 | CLI | Rust, `cli-box-cli` binary |
-| Desktop framework | Electron (Chromium) |
-| Desktop frontend | React 18 + TypeScript + Vite + xterm.js |
+| Desktop | Electron + React 18 + TypeScript + Vite + xterm.js |
 | macOS APIs | CoreGraphics (CGEvent), ApplicationServices (AXUIElement), ScreenCaptureKit |
-| Package management | Cargo Workspace + pnpm |
-| Testing | cargo test (Rust) + vitest (TypeScript) |
-| Target platform | macOS 14+ (Apple Silicon preferred) |
 | License | Apache 2.0 |
-
-## License
-
-Apache 2.0
 
 ---
 

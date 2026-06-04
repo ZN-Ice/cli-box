@@ -1,322 +1,143 @@
 [English](README.md) | **简体中文**
 
 ---
+
+> [!TIP]
+> **一行命令。任意 CLI 工具。隔离沙箱。**
+>
+> ```bash
+> cli-box start claude
+> ```
+> 就这样。Claude Code 在独立沙箱窗口中运行。截图。自动化。关闭。
+
+<div align="center">
+
 # cli-box
 
-macOS 桌面自动化沙箱 — 支持多实例管理，通过 CLI 命令启动独立沙箱窗口，在其中运行任意 CLI 或 macOS 应用，模拟人类操作并获取截图反馈。
+**macOS 桌面自动化沙箱 — AI Agent 专用**
+
+[![GitHub Release](https://img.shields.io/github/v/release/ZN-Ice/cli-box?color=369eff&labelColor=black&logo=github&style=flat-square)](https://github.com/ZN-Ice/cli-box/releases)
+[![License](https://img.shields.io/badge/license-Apache--2.0-white?labelColor=black&style=flat-square)](https://github.com/ZN-Ice/cli-box/blob/main/LICENSE)
+[![macOS](https://img.shields.io/badge/platform-macOS%2014%2B-black?style=flat-square&logo=apple)](https://github.com/ZN-Ice/cli-box)
+[![GitHub Stars](https://img.shields.io/github/stars/ZN-Ice/cli-box?color=ffcb47&labelColor=black&style=flat-square)](https://github.com/ZN-Ice/cli-box/stargazers)
+
+[![cli-box 预览 — Claude Code 在沙箱中运行](./.github/assets/hero.png)](https://github.com/ZN-Ice/cli-box#cli-box)
+
+</div>
+
+## 安装
+
+### TL;DR
+
+| 你想 | 运行 | 效果 |
+| :--- | :--- | :--- |
+| **npm** | `npm install -g cli-box-skill` | 自动安装二进制 + skill |
+| **Shell** | `bash <(curl -fsSL https://raw.githubusercontent.com/ZN-Ice/cli-box/main/skill/install.sh)` | 下载到 `~/.cli-box/bin/`，安装 skill |
+| **手动** | [GitHub Releases](https://github.com/ZN-Ice/cli-box/releases) | 手动下载解压 |
+
+### 给人类用户
+
+把这段命令粘贴到 **Claude Code** 里 — 它会自动下载、安装、配置权限、验证运行：
+
+```
+Install cli-box by following the instructions here:
+https://raw.githubusercontent.com/ZN-Ice/cli-box/main/docs/guide/installation.md
+```
+
+> Agent 会处理 macOS 权限、PATH 配置和快速测试。只需在提示时确认即可。
+
+### 给 LLM Agent
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ZN-Ice/cli-box/main/docs/guide/installation.md
+```
+
+按指引逐步执行。
+
+### 添加 PATH
+
+```bash
+echo 'export PATH="$HOME/.cli-box/bin:$PATH"' >> ~/.zshrc
+source ~/.zshrc
+```
+
+## 演示
+
+**启动 Claude Code 沙箱，交互，获取截图：**
+
+```
+$ cli-box start claude
+Sandbox started: 0cd60ad4
+
+$ cli-box screenshot --id 0cd60ad4 -o state.png
+```
+
+[![Claude Code 沙箱 — 信任对话框](./.github/assets/demo-claude-start.png)](https://github.com/ZN-Ice/cli-box#演示)
+
+[![Claude Code 在沙箱中回复](./.github/assets/demo-claude-reply.png)](https://github.com/ZN-Ice/cli-box#演示)
+
+**多 Tab — 同时运行 Claude Code、OpenCode、zsh：**
+
+[![多 Tab 沙箱](./.github/assets/demo-multi-tab.png)](https://github.com/ZN-Ice/cli-box#演示)
+
+**支持任意 CLI 工具：**
+
+[![OpenCode 在沙箱中](./.github/assets/demo-opencode.png)](https://github.com/ZN-Ice/cli-box#演示)
+
+```bash
+cli-box start claude    # Claude Code
+cli-box start opencode  # OpenCode
+cli-box start zsh       # Shell
+cli-box start node      # Node.js
+```
 
 ## 特性
 
-- **多实例管理**：`cli-box-cli start --cli "claude"` 一键启动沙箱，返回唯一 ID
-- **零侵入**：目标应用不需要任何适配，所有操作在 OS 层面完成
-- **窗口级截图**：ScreenCaptureKit 按窗口 ID 截图，不需要窗口在前台
-- **双协议**：MCP (Agent CLI 原生) + HTTP (通用调用)
-- **可复用**：不限于特定项目，任何 macOS 应用/CLI 都能用
+| | 功能 | |
+|:---:|:---|:---:|
+| 多实例 | 每个 CLI 工具独立沙箱 Tab | |
+| 窗口截图 | ScreenCaptureKit 按窗口 ID 截图，无需前台 | |
+| PTY 输入 | 直接终端输入，支持中文和所有按键组合 | |
+| MCP 集成 | Claude Code / OpenCode 通过 MCP 调用 cli-box | |
+| 零侵入 | 目标应用无需适配，OS 层面操作 | |
 
-## 架构
-
-```
-cli-box start claude
-    │
-    ├─ 确保 daemon 运行 (cli-box-daemon, 端口 15801)
-    ├─ POST /sandbox/create → 创建 PTY 沙箱
-    ├─ 启动 Electron 应用 (如未运行)
-    └─ 写入注册中心 ~/.cli-box/instances/<id>.json
-
-cli-box screenshot --id <id>
-    └─ GET http://127.0.0.1:15801/sandbox/<id>/screenshot → PNG
-
-cli-box close <id>
-    ├─ POST http://127.0.0.1:15801/sandbox/<id>/close
-    └─ 清理注册信息, 终止关联进程
-```
-
-## 快速开始
-
-### 安装
+## 快速参考
 
 ```bash
-# 克隆项目
-git clone https://github.com/ZN-Ice/cli-box.git
-cd cli-box
+# 沙箱生命周期
+cli-box start [command]         # 启动沙箱（默认 zsh）
+cli-box list                    # 列出活跃沙箱
+cli-box close <id>              # 关闭沙箱
 
-# 构建 daemon + CLI
-cargo build --release
-
-# 构建 Electron 应用
-cd electron-app && pnpm install && pnpm build && cd ..
-```
-
-### 启动沙箱
-
-```bash
-# 启动沙箱，运行 Claude Code
-cli-box start claude
-# → 打开 "CLI Box" 窗口
-# → xterm.js 终端中运行 claude
-# → 输出: Sandbox started: abc123
-
-# 启动沙箱，运行 macOS 应用
-cli-box start /Applications/cc-switch.app
-# → 打开沙箱窗口，启动 cc-switch
-# → 输出: Sandbox started: def456
-
-# 启动沙箱，运行带参数的 CLI
-cli-box start npm -- run test
-```
-
-### 管理沙箱
-
-```bash
-# 查看所有活跃沙箱
-cli-box list
-# → ID      TITLE              KIND  STATUS   PORT   CREATED
-# → abc123  "claude"           CLI   Running  15801  2026-05-16 10:30
-# → def456  "cc-switch"        APP   Running  15802  2026-05-16 10:31
-
-# 查看沙箱详情
-cli-box inspect abc123
-
-# 截取沙箱截图
-cli-box screenshot --id abc123 -o sandbox.png
-
-# 列出沙箱内进程
-cli-box processes --id abc123
-
-# 关闭沙箱
-cli-box close abc123
-```
-
-### 键盘与鼠标操作
-
-> **CLI 沙箱（如 Claude Code、zsh）请始终使用 `--pty` 模式。** CGEvent 模式将键盘事件发送到 Tauri 窗口进程，而非 PTY 子进程，因此对 CLI 程序无效。
-
-```bash
-# ─── 输入文本 ──────────────────────────────────────────
-
-# PTY 直写（推荐，CLI 沙箱专用）
-cli-box type --id abc123 --pty "帮我写一个函数"
-
-# CGEvent 模式（仅适用于 GUI 应用沙箱，对 CLI 沙箱无效）
-cli-box type --id abc123 "帮我写一个函数"
-
-# ─── 按键 ──────────────────────────────────────────────
-
-# PTY 按键（推荐，CLI 沙箱专用）
-cli-box key --id abc123 --pty Return
-cli-box key --id abc123 --pty Tab
-cli-box key --id abc123 --pty Escape
-cli-box key --id abc123 --pty ctrl+c      # 发送 Ctrl+C
-cli-box key --id abc123 --pty ctrl+l      # 清屏
-cli-box key --id abc123 --pty up          # 上箭头
-cli-box key --id abc123 --pty down        # 下箭头
-cli-box key --id abc123 --pty left        # 左箭头
-cli-box key --id abc123 --pty right       # 右箭头（接受补全）
-cli-box key --id abc123 --pty home        # Home
-cli-box key --id abc123 --pty end         # End
-cli-box key --id abc123 --pty f1          # F1~F12
-
-# PTY 带修饰符按键
-cli-box key --id abc123 --pty c -m ctrl   # 等同 ctrl+c
-cli-box key --id abc123 --pty up -m shift  # Shift+上（选择模式）
-cli-box key --id abc123 --pty tab -m shift # Shift+Tab
-cli-box key --id abc123 --pty a -m alt    # Alt+A（ESC 前缀）
-
-# CGEvent 按键（仅适用于 GUI 应用沙箱）
-cli-box key --id abc123 Return
-cli-box key --id abc123 Return --modifiers cmd
-
-# ─── 鼠标点击（仅 CGEvent，适用于所有沙箱）──────────
-
-cli-box click --id abc123 100 200
-cli-box click --id abc123 100 200 --button right
-```
-
-#### PTY 支持的按键映射
-
-| 按键 | PTY 字节序列 | 说明 |
-|------|-------------|------|
-| Return / Enter | `\r` | 提交输入 |
-| Tab | `\t` | 自动补全 |
-| Escape / Esc | `\x1b` | 取消 |
-| Backspace / Delete | `\x7f` | 删除 |
-| Up / Down / Left / Right | `\x1b[A/B/C/D` | 方向键 |
-| Home / End | `\x1b[H` / `\x1b[F` | 行首/行尾 |
-| PageUp / PageDown | `\x1b[5~` / `\x1b[6~` | 翻页 |
-| F1~F12 | `\x1bOP`~`\x1b[24~` | 功能键 |
-| Ctrl+A ~ Ctrl+Z | `\x01`~`\x1a` | 控制组合键 |
-| Ctrl+C | `\x03` | 中断 |
-| Ctrl+D | `\x04` | EOF |
-| Ctrl+R | `\x12` | 历史搜索 |
-| Ctrl+L | `\x0c` | 清屏 |
-| Ctrl+W | `\x17` | 删除单词 |
-
-#### 输入路径说明
-
-CLI 沙箱有两种键盘输入路径：
-
-| 路径 | 机制 | 适用场景 | 可靠性 |
-|------|------|---------|--------|
-| **PTY 直写** (`--pty`) | 写入 PTY master → 子进程 stdin | CLI 沙箱 | 可靠 |
-| **CGEvent** (默认) | CGEvent → Tauri 窗口进程 | GUI 应用沙箱 | 依赖窗口焦点 |
-
-CGEvent 模式将键盘事件发送到 Tauri 进程（`target_pid = std::process::id()`），而非 CLI 子进程。WKWebView 不一定能将合成 CGEvent 正确转换为 xterm.js 能处理的 DOM 键盘事件，因此对 CLI 沙箱不可靠。
-
-### 完整场景示例
-
-```bash
-# 场景一：在沙箱中与 Claude Code 交互
-cli-box start claude
-# → 用 cli-box list 获取 ID
-cli-box type --id <id> --pty "你是谁？"
+# 截图 + 输入
+cli-box screenshot --id <id> -o shot.png
+cli-box type --id <id> --pty "你好世界"
 cli-box key --id <id> --pty Return
-# 等待回复后截图
-cli-box screenshot --id <id> -o claude_response.png
+cli-box click --id <id> 100 200
 
-# 场景二：在沙箱中执行 Shell 命令
-cli-box start zsh
-cli-box type --id <id> --pty 'echo "hello world"'
-cli-box key --id <id> --pty Return
-cli-box screenshot --id <id> -o shell_output.png
-
-# 场景三：使用快捷键操作 Claude Code
-cli-box key --id <id> --pty ctrl+c     # 中断当前操作
-cli-box key --id <id> --pty up          # 查看上一条命令
-cli-box key --id <id> --pty ctrl+l      # 清屏
-cli-box key --id <id> --pty ctrl+r      # 搜索历史
-```
-
-### Agent 调用示例
-
-**通过 HTTP API（每个沙箱独立端口）：**
-
-```bash
-# 获取沙箱信息
-curl http://127.0.0.1:15801/health
-
-# 截图
-curl http://127.0.0.1:15801/screenshot -o sandbox.png
-
-# 鼠标点击
-curl -X POST http://127.0.0.1:15801/input/click \
-  -H "Content-Type: application/json" \
-  -d '{"x": 100, "y": 200}'
-
-# 键盘输入
-curl -X POST http://127.0.0.1:15801/input/type \
-  -H "Content-Type: application/json" \
-  -d '{"text": "Hello World"}'
-
-# 列出窗口
-curl http://127.0.0.1:15801/windows | jq
-
-# 读取 UI 树
-curl http://127.0.0.1:15801/ui/inspect/12345 | jq
-```
-
-**通过 MCP（Claude Code）：**
-
-在 `.claude/settings.json` 中配置：
-
-```json
-{
-  "mcpServers": {
-    "mac-sandbox": {
-      "command": "cli-box-cli",
-      "args": ["mcp-serve"]
-    }
-  }
-}
-```
-
-然后 Agent 可以直接调用：
-
-```
-start_sandbox(cli="claude") → 启动沙箱，返回 ID
-screenshot(sandbox_id="abc123") → 获取沙箱截图
-click(100, 200, sandbox_id="abc123") → 点击指定坐标
-type_text("hello", sandbox_id="abc123") → 输入文本
-close_sandbox("abc123") → 关闭沙箱
+# MCP 配置（添加到 .claude/settings.json）
+# { "mcpServers": { "cli-box": { "command": "cli-box", "args": ["mcp-serve"] } } }
 ```
 
 ## macOS 权限
 
-首次使用需要在 **系统设置 → 隐私与安全** 中授权：
+| 权限 | 用途 | 授权位置 |
+|:---|:---|:---|
+| **辅助功能** | 输入模拟 + UI 检查 | 系统设置 → 隐私与安全性 |
+| **屏幕录制** | 窗口截图 | 系统设置 → 隐私与安全性 |
 
-1. **辅助功能** (Accessibility) → 输入模拟 + UI 检查
-2. **屏幕录制** (Screen Recording) → 窗口截图
-
-## 日志与调试
-
-CLI 和 Tauri 沙箱均使用 `tracing` 输出结构化日志。设置 `RUST_LOG` 环境变量控制日志级别：
-
-```bash
-# 查看详细输入管线日志
-RUST_LOG=info cli-box type --id <id> --pty "hello"
-# → [cli] type: text_len=5, id=abc123, pty=true
-# → [pty] write: pid=1001, len=5, preview="hello"
-# → [pty] send_input: written and flushed to pid=1001
-
-# 不使用 --pty 时会看到警告
-RUST_LOG=info cli-box type --id <id> "hello"
-# → [cli] type: using CGEvent path... Consider using --pty for CLI sandboxes.
-# → [input] type_text: len=5, target_pid=9999
-# → [cg_event] press_key: key=h, target_pid=Some(9999)
-
-# 更详细的 CGEvent 日志
-RUST_LOG=trace cli-box key --id <id> "a"
-
-# 查看 Tauri 沙箱进程的日志（在沙箱启动的终端中可见）
-RUST_LOG=info ./CLI\ Box.app/Contents/MacOS/cli-box --mode=cli --cmd=claude
-```
-
-关键日志前缀：
-- `[cli]` — CLI 命令入口，显示参数和路径选择
-- `[input]` — HTTP API 输入处理，显示 target_pid
-- `[cg_event]` — CGEvent 层，显示按键码和目标 PID
-- `[pty]` — PTY 层，显示写入数据和可用 PID 列表
-- `[setup]` — Tauri 启动初始化，显示沙箱配置和窗口发现
+将 `cli-box` 和 `CLI Box.app` 添加到两个列表中。权限需手动授予。
 
 ## 技术栈
 
-| 项目属性 | 规范值 |
-|---------|--------|
-| 核心库 | Rust (Edition 2021, >=1.88), `cli-box-core` library crate |
-| CLI | Rust, `cli-box-cli` binary crate |
-| 桌面框架 | Electron (Chromium) |
-| 桌面前端 | React 18 + TS + Vite + xterm.js |
-| 异步运行时 | tokio |
+| 组件 | 技术 |
+|:---|:---|
+| 核心 | Rust (≥1.88), `cli-box-core` |
+| CLI | Rust, `cli-box-cli` 二进制 |
+| 桌面 | Electron + React 18 + TypeScript + Vite + xterm.js |
 | macOS API | CoreGraphics (CGEvent), ApplicationServices (AXUIElement), ScreenCaptureKit |
-| 包管理 | Cargo Workspace + pnpm |
-| 测试 | cargo test (Rust) + vitest (TS) |
-| 目标平台 | macOS (Apple Silicon 优先) |
 | License | Apache 2.0 |
 
-## 项目结构
+---
 
-```
-cli-box/
-├── Cargo.toml                    # Workspace 根
-├── crates/
-│   ├── cli-box-core/             # 自动化核心 (library)
-│   │   └── src/
-│   │       ├── automation/       # CGEvent + AXUIElement
-│   │       ├── capture/          # ScreenCaptureKit 截图
-│   │       ├── process/          # PTY + NSWorkspace 进程管理
-│   │       ├── daemon/           # HTTP daemon (单实例管理所有沙箱)
-│   │       ├── instance/         # 实例注册中心
-│   │       └── server/           # HTTP API 服务器
-│   └── cli-box-cli/              # CLI 工具
-│       └── src/
-│           ├── main.rs           # start/list/close + MCP stdio
-│           └── client.rs         # HTTP 客户端
-├── electron-app/                 # Electron GUI 前端
-│   └── src/renderer/
-│       ├── main.tsx, api.ts
-│       └── components/           # Terminal, AppPanel
-└── docs/                         # 设计文档 + 任务管理
-```
-
-## License
-
-Apache 2.0
+[English](README.md) · [GitHub Issues](https://github.com/ZN-Ice/cli-box/issues)
