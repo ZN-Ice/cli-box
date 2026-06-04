@@ -170,6 +170,10 @@ jobs:
         run: |
           echo "//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}" > ~/.npmrc
 
+          # Configure git to use HTTPS instead of SSH
+          git config --global url."https://github.com/".insteadOf "ssh://git@github.com/"
+          git config --global url."https://github.com/".insteadOf "git@github.com:"
+
           # Set version from git tag
           VERSION="${GITHUB_REF_NAME#v}"
 
