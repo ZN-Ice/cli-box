@@ -170,18 +170,32 @@ jobs:
         run: |
           echo "//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}" > ~/.npmrc
 
-          # Configure git to use HTTPS instead of SSH (avoids permission denied errors in CI)
-          git config --global url."https://github.com/".insteadOf "ssh://git@github.com/"
-          git config --global url."https://github.com/".insteadOf "git@github.com:"
-
           # Set version from git tag
           VERSION="${GITHUB_REF_NAME#v}"
-          sed -i '' "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" packages/cli-box-darwin-arm64/package.json
-          sed -i '' "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" packages/cli-box-electron-darwin-arm64/package.json
-          sed -i '' "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" packages/cli-box-skill/package.json
-          sed -i '' "s/\"cli-box-darwin-arm64\": \"[^\"]*\"/\"cli-box-darwin-arm64\": \"$VERSION\"/" packages/cli-box-skill/package.json
-          sed -i '' "s/\"cli-box-electron-darwin-arm64\": \"[^\"]*\"/\"cli-box-electron-darwin-arm64\": \"$VERSION\"/" packages/cli-box-skill/package.json
 
+          # Update package.json versions using node (more reliable than sed)
+          node -e "
+            const fs = require('fs');
+            const version = '$VERSION';
+            const files = [
+              'packages/cli-box-darwin-arm64/package.json',
+              'packages/cli-box-electron-darwin-arm64/package.json',
+              'packages/cli-box-skill/package.json'
+            ];
+            for (const file of files) {
+              const pkg = JSON.parse(fs.readFileSync(file, 'utf8'));
+              pkg.version = version;
+              if (pkg.optionalDependencies) {
+                for (const dep of Object.keys(pkg.optionalDependencies)) {
+                  pkg.optionalDependencies[dep] = version;
+                }
+              }
+              fs.writeFileSync(file, JSON.stringify(pkg, null, 2) + '\n');
+              console.log('Updated', file, 'to version', version);
+            }
+          "
+
+          # Publish platform packages first, then main package
           npm publish packages/cli-box-darwin-arm64 --access public
           npm publish packages/cli-box-electron-darwin-arm64 --access public
           npm publish packages/cli-box-skill --access public
