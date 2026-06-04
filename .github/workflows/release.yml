@@ -143,3 +143,33 @@ jobs:
           files: release/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Package npm platform packages
+        run: |
+          # Copy Rust binaries to platform package
+          mkdir -p packages/cli-box-darwin-arm64/bin
+          cp target/release/cli-box packages/cli-box-darwin-arm64/bin/
+          cp target/release/cli-box-daemon packages/cli-box-darwin-arm64/bin/
+          chmod +x packages/cli-box-darwin-arm64/bin/*
+
+          # Copy Electron .app to platform package
+          mkdir -p packages/cli-box-electron-darwin-arm64/app
+          if [ -d "release/CLI Box.app" ]; then
+            cp -R "release/CLI Box.app" packages/cli-box-electron-darwin-arm64/app/
+          fi
+
+          # Create Electron standalone tarball
+          cd packages/cli-box-electron-darwin-arm64/app && \
+            tar czf ../../../release/CLI-Box-app-macos-arm64.tar.gz "CLI Box.app" && \
+            cd ../../..
+
+      - name: Publish npm packages
+        if: github.event_name == 'release'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          echo "//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}" > ~/.npmrc
+
+          npm publish packages/cli-box-darwin-arm64 --access public
+          npm publish packages/cli-box-electron-darwin-arm64 --access public
+          npm publish packages/cli-box-skill --access public
