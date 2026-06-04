@@ -200,6 +200,6 @@ jobs:
           "
 
           # Publish platform packages first, then main package
-          npm publish packages/cli-box-darwin-arm64 --access public
-          npm publish packages/cli-box-electron-darwin-arm64 --access public
-          npm publish packages/cli-box-skill --access public
+          npm publish packages/cli-box-darwin-arm64 --access public --registry https://registry.npmjs.org
+          npm publish packages/cli-box-electron-darwin-arm64 --access public --registry https://registry.npmjs.org
+          npm publish packages/cli-box-skill --access public --registry https://registry.npmjs.org
