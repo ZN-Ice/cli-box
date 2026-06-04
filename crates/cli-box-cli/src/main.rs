@@ -1544,7 +1544,12 @@ fn find_electron_binary() -> Option<PathBuf> {
 
     // Extract
     let output = std::process::Command::new("tar")
-        .args(["xzf", tarball_path.to_str().unwrap(), "-C", install_dir.to_str().unwrap()])
+        .args([
+            "xzf",
+            tarball_path.to_str().unwrap(),
+            "-C",
+            install_dir.to_str().unwrap(),
+        ])
         .output();
 
     match output {
@@ -1557,7 +1562,10 @@ fn find_electron_binary() -> Option<PathBuf> {
             tracing::warn!("Electron binary not found after extraction");
         }
         Ok(o) => {
-            tracing::warn!("tar extraction failed: {}", String::from_utf8_lossy(&o.stderr));
+            tracing::warn!(
+                "tar extraction failed: {}",
+                String::from_utf8_lossy(&o.stderr)
+            );
         }
         Err(e) => {
             tracing::warn!("Failed to run tar: {}", e);
