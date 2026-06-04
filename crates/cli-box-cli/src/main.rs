@@ -479,7 +479,7 @@ async fn cmd_start_daemon(command: &str, args: &[String]) -> anyhow::Result<()> 
     // If already running, the renderer polls /box/list and will pick up the new sandbox.
     if find_running_electron() {
         tracing::info!("[start] Electron already running, skipping spawn");
-    } else if let Ok(electron_bin) = find_electron_binary() {
+    } else if let Some(electron_bin) = find_electron_binary() {
         tracing::info!("[start] spawning Electron: {}", electron_bin.display());
         let _child = Command::new(&electron_bin)
             .spawn()
@@ -1458,33 +1458,113 @@ fn find_daemon_binary() -> anyhow::Result<PathBuf> {
 }
 
 /// Locate the Electron app binary next to the current executable.
-fn find_electron_binary() -> anyhow::Result<PathBuf> {
-    let exe_path = std::env::current_exe().context("Failed to get current exe path")?;
-    let exe_dir = exe_path.parent().context("No parent dir for exe")?;
+fn find_electron_binary() -> Option<PathBuf> {
+    let exe_path = std::env::current_exe().ok()?;
+    let exe_dir = exe_path.parent()?;
 
     // Check for Electron binary in release directory
     let electron_name = "CLI Box";
     let app_bundle = exe_dir.join(format!("{electron_name}.app"));
     if app_bundle.exists() {
-        return Ok(app_bundle.join("Contents/MacOS/CLI Box"));
+        return Some(app_bundle.join("Contents/MacOS/CLI Box"));
     }
 
     // Dev mode: check dist/electron
     let cwd = std::env::current_dir().unwrap_or_default();
     let dev_bundle = cwd.join("dist/electron/mac-arm64/CLI Box.app");
     if dev_bundle.exists() {
-        return Ok(dev_bundle.join("Contents/MacOS/cli-box"));
+        return Some(dev_bundle.join("Contents/MacOS/cli-box"));
     }
 
     // Also check x64
     let dev_bundle_x64 = cwd.join("dist/electron/mac/CLI Box.app");
     if dev_bundle_x64.exists() {
-        return Ok(dev_bundle_x64.join("Contents/MacOS/cli-box"));
+        return Some(dev_bundle_x64.join("Contents/MacOS/cli-box"));
     }
 
-    anyhow::bail!(
-        "Electron app not found. Build it first: cd electron-app && pnpm build && pnpm pack"
-    )
+    // Auto-download fallback: check ~/.cli-box/bin/CLI Box.app
+    let home_dir = dirs::home_dir().unwrap_or_default();
+    let cached_app = home_dir.join(".cli-box/bin/CLI Box.app");
+    if cached_app.exists() {
+        let electron_bin = cached_app.join("Contents/MacOS/CLI Box");
+        if electron_bin.exists() {
+            tracing::info!("Found cached Electron app at {}", cached_app.display());
+            return Some(electron_bin);
+        }
+    }
+
+    // Download from GitHub Release
+    let version = env!("CARGO_PKG_VERSION");
+    let url = format!(
+        "https://github.com/ZN-Ice/cli-box/releases/download/v{}/CLI-Box-app-macos-arm64.tar.gz",
+        version
+    );
+    tracing::warn!("Electron app not found. Downloading from {}...", url);
+
+    let install_dir = home_dir.join(".cli-box/bin");
+    if let Err(e) = std::fs::create_dir_all(&install_dir) {
+        tracing::warn!("Failed to create install dir: {}", e);
+        return None;
+    }
+
+    let tmp_dir = match tempfile::tempdir() {
+        Ok(d) => d,
+        Err(e) => {
+            tracing::warn!("Failed to create temp dir: {}", e);
+            return None;
+        }
+    };
+    let tarball_path = tmp_dir.path().join("app.tar.gz");
+
+    // Download
+    match reqwest::blocking::get(&url) {
+        Ok(response) => {
+            if !response.status().is_success() {
+                tracing::warn!("Failed to download: HTTP {}", response.status());
+                return None;
+            }
+            match response.bytes() {
+                Ok(bytes) => {
+                    if let Err(e) = std::fs::write(&tarball_path, &bytes) {
+                        tracing::warn!("Failed to write tarball: {}", e);
+                        return None;
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to read response: {}", e);
+                    return None;
+                }
+            }
+        }
+        Err(e) => {
+            tracing::warn!("Failed to download: {}", e);
+            return None;
+        }
+    }
+
+    // Extract
+    let output = std::process::Command::new("tar")
+        .args(["xzf", tarball_path.to_str().unwrap(), "-C", install_dir.to_str().unwrap()])
+        .output();
+
+    match output {
+        Ok(o) if o.status.success() => {
+            let electron_bin = cached_app.join("Contents/MacOS/CLI Box");
+            if electron_bin.exists() {
+                tracing::info!("Electron app installed to {}", cached_app.display());
+                return Some(electron_bin);
+            }
+            tracing::warn!("Electron binary not found after extraction");
+        }
+        Ok(o) => {
+            tracing::warn!("tar extraction failed: {}", String::from_utf8_lossy(&o.stderr));
+        }
+        Err(e) => {
+            tracing::warn!("Failed to run tar: {}", e);
+        }
+    }
+
+    None
 }
 
 /// Check if Electron is already running by reading ~/.cli-box/electron.json
