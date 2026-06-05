@@ -112,6 +112,21 @@ async fn screenshot_nonexistent_returns_404() {
 }
 
 #[tokio::test]
+async fn screenshot_with_frame_nonexistent_returns_404() {
+    let resp = router()
+        .oneshot(
+            Request::builder()
+                .uri("/box/no-such-id/screenshot?with_frame=true")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
 async fn unknown_route_returns_404() {
     let resp = router()
         .oneshot(
