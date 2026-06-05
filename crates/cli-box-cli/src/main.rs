@@ -482,16 +482,57 @@ async fn cmd_start_daemon(command: &str, args: &[String]) -> anyhow::Result<()> 
 
     // Spawn Electron only if not already running.
     // If already running, the renderer polls /box/list and will pick up the new sandbox.
-    if find_running_electron() {
+    let electron_newly_spawned = if find_running_electron() {
         tracing::info!("[start] Electron already running, skipping spawn");
+        false
     } else if let Some(electron_bin) = find_electron_binary() {
         tracing::info!("[start] spawning Electron: {}", electron_bin.display());
         let _child = Command::new(&electron_bin)
             .spawn()
             .context("Failed to launch Electron app")?;
         tracing::info!("[start] Electron launched");
+        true
     } else {
         tracing::warn!("[start] Electron app not found, running in headless daemon mode");
+        false
+    };
+
+    // Wait for renderer WebSocket to connect if Electron was newly spawned.
+    if electron_newly_spawned {
+        print!("正在启动");
+        use std::io::Write;
+        let _ = std::io::stdout().flush();
+
+        let timeout = std::time::Duration::from_secs(60);
+        let start = std::time::Instant::now();
+        let poll_interval = std::time::Duration::from_secs(1);
+        let mut dot_count: u8 = 0;
+
+        loop {
+            if start.elapsed() > timeout {
+                println!();
+                tracing::warn!(
+                    "[start] Renderer WebSocket did not connect within {}s, continuing anyway",
+                    timeout.as_secs()
+                );
+                break;
+            }
+
+            match client::daemon_readiness().await {
+                Ok(resp) if resp.renderer_connected => {
+                    println!(" 完成");
+                    break;
+                }
+                _ => {}
+            }
+
+            dot_count = (dot_count % 3) + 1;
+            print!("\r正在启动{}", ".".repeat(dot_count as usize));
+            print!("{}", " ".repeat(3 - dot_count as usize)); // clear leftover dots
+            let _ = std::io::stdout().flush();
+
+            tokio::time::sleep(poll_interval).await;
+        }
     }
 
     Ok(())
