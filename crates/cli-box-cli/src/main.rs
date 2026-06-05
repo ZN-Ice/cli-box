@@ -109,6 +109,10 @@ enum Commands {
         /// Window ID to capture (overrides auto-detection)
         #[arg(long)]
         window_id: Option<u32>,
+
+        /// Use ScreenCaptureKit to capture the full window frame (requires Screen Recording permission)
+        #[arg(long)]
+        with_frame: bool,
     },
 
     /// List all visible windows on the system
@@ -248,8 +252,9 @@ async fn main() -> anyhow::Result<()> {
             output,
             id,
             window_id: _window_id,
+            with_frame,
         } => {
-            cmd_screenshot_daemon(&output, id.as_deref()).await?;
+            cmd_screenshot_daemon(&output, id.as_deref(), with_frame).await?;
         }
         Commands::Windows => {
             cmd_windows()?;
@@ -638,21 +643,21 @@ async fn cmd_click_daemon(x: f64, y: f64, id: &str, button: &str) -> anyhow::Res
 }
 
 /// Take a screenshot via the daemon API.
-async fn cmd_screenshot_daemon(output: &std::path::Path, id: Option<&str>) -> anyhow::Result<()> {
+async fn cmd_screenshot_daemon(
+    output: &std::path::Path,
+    id: Option<&str>,
+    with_frame: bool,
+) -> anyhow::Result<()> {
     let sandbox_id = id.ok_or_else(|| {
         anyhow::anyhow!(
             "--id is required for screenshots. Use: cli-box screenshot --id <sandbox-id>"
         )
     })?;
 
-    let result = client::daemon_screenshot(sandbox_id).await?;
+    let result = client::daemon_screenshot(sandbox_id, with_frame).await?;
 
     if result.source.as_deref() == Some("screencapturekit") {
-        eprintln!(
-            "Warning: screenshot used ScreenCaptureKit fallback (captured entire window).\n  Reason: {}",
-            result.fallback_reason.as_deref().unwrap_or("unknown")
-        );
-        eprintln!("  For terminal-only screenshots, ensure the Electron app is connected.");
+        eprintln!("Screenshot captured with ScreenCaptureKit (full window frame).");
     }
 
     std::fs::write(output, &result.png_data)
@@ -1193,11 +1198,12 @@ fn mcp_tools() -> serde_json::Value {
             },
             {
                 "name": "screenshot_sandbox",
-                "description": "Take a screenshot of a sandbox (returns base64 PNG)",
+                "description": "Take a screenshot of a sandbox (returns base64 PNG). Default: renderer capture (no permission needed). Use with_frame=true for full window capture (requires Screen Recording permission).",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
-                        "sandbox_id": { "type": "string" }
+                        "sandbox_id": { "type": "string" },
+                        "with_frame": { "type": "boolean", "description": "Use ScreenCaptureKit for full window frame capture (requires Screen Recording permission)", "default": false }
                     },
                     "required": ["sandbox_id"]
                 }
@@ -1318,7 +1324,8 @@ async fn handle_mcp_tool(name: &str, args: &serde_json::Value) -> serde_json::Va
             }
             "screenshot_sandbox" => {
                 let id = args["sandbox_id"].as_str().unwrap_or("");
-                let result = client::daemon_screenshot(id).await?;
+                let with_frame = args["with_frame"].as_bool().unwrap_or(false);
+                let result = client::daemon_screenshot(id, with_frame).await?;
                 let b64 = base64_encode(&result.png_data);
                 let mut response = serde_json::json!({ "sandbox_id": id, "image_base64": b64 });
                 if let Some(ref source) = result.source {

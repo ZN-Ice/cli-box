@@ -428,9 +428,16 @@ async fn close_sandbox_handler(
     Ok(Json(serde_json::json!({"closed": id})))
 }
 
+#[derive(Deserialize)]
+struct ScreenshotQuery {
+    #[serde(default)]
+    with_frame: bool,
+}
+
 async fn screenshot_handler(
     State(state): State<Arc<Mutex<DaemonState>>>,
     Path(id): Path<String>,
+    axum::extract::Query(q): axum::extract::Query<ScreenshotQuery>,
 ) -> Result<Response, AppError> {
     // Verify sandbox exists
     {
@@ -440,7 +447,12 @@ async fn screenshot_handler(
         }
     }
 
-    // Attempt 1: Ask the Electron renderer to capture via WebSocket
+    if q.with_frame {
+        // --with-frame: use ScreenCaptureKit directly, skip renderer
+        return screenshot_with_frame(state, &id).await;
+    }
+
+    // Default: renderer only, no SCK fallback
     match request_renderer_screenshot(state.clone(), &id).await {
         Ok(png_data) => {
             tracing::info!(
@@ -452,11 +464,14 @@ async fn screenshot_handler(
         }
         Err(reason) => {
             tracing::warn!(
-                "[screenshot] renderer capture failed for sandbox {}: {}; falling back to ScreenCaptureKit",
+                "[screenshot] renderer capture failed for sandbox {}: {}",
                 id,
                 reason
             );
-            return screenshot_fallback(state, &id).await;
+            Err(AppError::Screenshot(format!(
+                "Screenshot failed: {}. Use --with-frame to capture via ScreenCaptureKit (requires Screen Recording permission).",
+                reason
+            )))
         }
     }
 }
@@ -483,6 +498,7 @@ fn screenshot_response(png_data: Vec<u8>, source: &str, fallback_reason: Option<
 
 /// Capture a screenshot via ScreenCaptureKit as a fallback, returning headers
 /// that indicate the fallback source and reason.
+#[allow(dead_code)]
 async fn screenshot_fallback(
     state: Arc<Mutex<DaemonState>>,
     id: &str,
@@ -543,6 +559,48 @@ async fn screenshot_fallback(
         "screencapturekit",
         Some("renderer_unavailable"),
     ))
+}
+
+/// Capture a screenshot using ScreenCaptureKit (requires Screen Recording permission).
+async fn screenshot_with_frame(
+    state: Arc<Mutex<DaemonState>>,
+    id: &str,
+) -> Result<Response, AppError> {
+    let window_id = {
+        let s = state.lock().await;
+        s.sandboxes.get(id).and_then(|sb| sb.window_id)
+    };
+
+    let wid = match window_id {
+        Some(wid) => wid,
+        None => {
+            let new_wid =
+                tokio::task::spawn_blocking(|| ScreenCapture::find_window_by_title("CLI Box"))
+                    .await
+                    .map_err(|e| {
+                        AppError::Screenshot(format!("window discovery task failed: {e}"))
+                    })??;
+            let mut s = state.lock().await;
+            if let Some(sb) = s.sandboxes.get_mut(id) {
+                sb.window_id = Some(new_wid);
+            }
+            let registry = InstanceRegistry::default();
+            let _ = registry.update_window_id(id, new_wid);
+            new_wid
+        }
+    };
+
+    let result = tokio::task::spawn_blocking(move || ScreenCapture::capture_window(wid))
+        .await
+        .map_err(|e| AppError::Screenshot(format!("screenshot task failed: {e}")))?;
+
+    match result {
+        Ok(png_data) => Ok(screenshot_response(png_data, "screencapturekit", None)),
+        Err(e) => Err(AppError::Screenshot(format!(
+            "{}. If permission was denied, grant Screen Recording in System Settings → Privacy & Security → Screen Recording.",
+            e
+        ))),
+    }
 }
 
 // ── Screenshot WebSocket ────────────────────────────────────────

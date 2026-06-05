@@ -136,6 +136,8 @@ struct RegionQuery {
 struct ScreenshotQuery {
     #[serde(default)]
     window_id: Option<u32>,
+    #[serde(default)]
+    with_frame: bool,
 }
 
 #[derive(Deserialize)]
@@ -406,6 +408,11 @@ async fn screenshot_handler(
     let window_id = q.window_id.or(state.lock().await.window_id);
     match window_id {
         Some(id) => {
+            if !q.with_frame {
+                return Err(AppError::Screenshot(
+                    "Default screenshot is not supported in legacy mode. Use ?with_frame=true (requires Screen Recording permission).".to_string()
+                ));
+            }
             let png_data = ScreenCapture::capture_window(id)?;
             Ok((StatusCode::OK, [("content-type", "image/png")], png_data).into_response())
         }
