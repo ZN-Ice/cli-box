@@ -1365,10 +1365,7 @@ mod tests {
         assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR);
         let body = axum::body::to_bytes(resp.into_body(), 1024).await.unwrap();
         let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
-        assert!(json["error"]
-            .as_str()
-            .unwrap()
-            .contains("with_frame"));
+        assert!(json["error"].as_str().unwrap().contains("with_frame"));
     }
 
     #[tokio::test]

@@ -521,7 +521,9 @@ async fn screenshot_with_frame(
                     id
                 );
             }
-            Err(AppError::Screenshot(msg)) if msg.contains("permission") || msg.contains("denied") => {
+            Err(AppError::Screenshot(msg))
+                if msg.contains("permission") || msg.contains("denied") =>
+            {
                 return Err(AppError::Screenshot(format!(
                     "{}. Grant Screen Recording in System Settings → Privacy & Security → Screen Recording.",
                     msg

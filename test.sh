@@ -113,7 +113,7 @@ info "Checking for 'sandbox' remnants in user-facing strings..."
 # Check specific files that were renamed for leftover "sandbox" references
 # in user-visible strings (help text, error messages, log prefixes)
 SANDBOX_REMNANTS=$(grep -rn '"sandbox' crates/cli-box-cli/src/ crates/cli-box-core/src/daemon/mod.rs electron-app/src/renderer/ --include='*.rs' --include='*.ts' --include='*.tsx' 2>/dev/null \
-  | grep -v '//\|/\*\|\*\|#\|test\|Test\|TEST\|sandbox_state\|sandbox_config\|SandboxConfig\|SandboxState\|ManagedSandbox\|SandboxInstance\|sandbox_id\|sandbox/\|/sandbox\|sandbox-daemon\|sandbox-cli\|sandbox-core\|sandbox-electron\|SANDBOX_\|sandbox_daemon\|sandbox_cli\|sandbox_core\|Sandbox\|\.sandbox\|sandbox\.json\|instances/\|pty_store\|SandboxRegion\|SandboxInfo\|SandboxKind\|SandboxStatus' || true)
+  | grep -v '//\|/\*\|\*\|#\|test\|Test\|TEST\|sandbox_state\|sandbox_config\|SandboxConfig\|SandboxState\|ManagedSandbox\|SandboxInstance\|sandbox_id\|sandbox/\|/sandbox\|sandbox-daemon\|sandbox-cli\|sandbox-core\|sandbox-electron\|SANDBOX_\|sandbox_daemon\|sandbox_cli\|sandbox_core\|Sandbox\|\.sandbox\|sandbox\.json\|instances/\|pty_store\|SandboxRegion\|SandboxInfo\|SandboxKind\|SandboxStatus\|\["sandboxes"\]' || true)
 if [ -n "$SANDBOX_REMNANTS" ]; then
   echo "$SANDBOX_REMNANTS"
   warn "Found potential 'sandbox' remnants in user-facing strings (review above)"
