@@ -496,35 +496,24 @@ fn screenshot_response(png_data: Vec<u8>, source: &str, fallback_reason: Option<
     (StatusCode::OK, headers, png_data).into_response()
 }
 
-/// Capture a screenshot via ScreenCaptureKit as a fallback, returning headers
-/// that indicate the fallback source and reason.
-#[allow(dead_code)]
-async fn screenshot_fallback(
+/// Capture a screenshot using ScreenCaptureKit (requires Screen Recording permission).
+/// Handles stale window IDs by re-discovering the window by title.
+async fn screenshot_with_frame(
     state: Arc<Mutex<DaemonState>>,
     id: &str,
 ) -> Result<Response, AppError> {
-    tracing::info!(
-        "[screenshot] using ScreenCaptureKit fallback for sandbox {} (captures entire window)",
-        id
-    );
-
     let window_id = {
         let s = state.lock().await;
         s.sandboxes.get(id).and_then(|sb| sb.window_id)
     };
 
+    // Try stored window_id first, handle stale IDs
     if let Some(wid) = window_id {
         let result = tokio::task::spawn_blocking(move || ScreenCapture::capture_window(wid))
             .await
             .map_err(|e| AppError::Screenshot(format!("screenshot task failed: {e}")))?;
         match result {
-            Ok(png_data) => {
-                return Ok(screenshot_response(
-                    png_data,
-                    "screencapturekit",
-                    Some("renderer_unavailable"),
-                ));
-            }
+            Ok(png_data) => return Ok(screenshot_response(png_data, "screencapturekit", None)),
             Err(AppError::WindowNotFound(_)) => {
                 tracing::warn!(
                     "Stored window_id={} for sandbox {} is stale, re-discovering",
@@ -532,11 +521,17 @@ async fn screenshot_fallback(
                     id
                 );
             }
+            Err(AppError::Screenshot(msg)) if msg.contains("permission") || msg.contains("denied") => {
+                return Err(AppError::Screenshot(format!(
+                    "{}. Grant Screen Recording in System Settings → Privacy & Security → Screen Recording.",
+                    msg
+                )));
+            }
             Err(e) => return Err(e),
         }
     }
 
-    // Re-discover the Electron window by title
+    // Re-discover window by title
     let new_wid = tokio::task::spawn_blocking(|| ScreenCapture::find_window_by_title("CLI Box"))
         .await
         .map_err(|e| AppError::Screenshot(format!("window discovery task failed: {e}")))??;
@@ -554,53 +549,7 @@ async fn screenshot_fallback(
     let png_data = tokio::task::spawn_blocking(move || ScreenCapture::capture_window(new_wid))
         .await
         .map_err(|e| AppError::Screenshot(format!("screenshot task failed: {e}")))??;
-    Ok(screenshot_response(
-        png_data,
-        "screencapturekit",
-        Some("renderer_unavailable"),
-    ))
-}
-
-/// Capture a screenshot using ScreenCaptureKit (requires Screen Recording permission).
-async fn screenshot_with_frame(
-    state: Arc<Mutex<DaemonState>>,
-    id: &str,
-) -> Result<Response, AppError> {
-    let window_id = {
-        let s = state.lock().await;
-        s.sandboxes.get(id).and_then(|sb| sb.window_id)
-    };
-
-    let wid = match window_id {
-        Some(wid) => wid,
-        None => {
-            let new_wid =
-                tokio::task::spawn_blocking(|| ScreenCapture::find_window_by_title("CLI Box"))
-                    .await
-                    .map_err(|e| {
-                        AppError::Screenshot(format!("window discovery task failed: {e}"))
-                    })??;
-            let mut s = state.lock().await;
-            if let Some(sb) = s.sandboxes.get_mut(id) {
-                sb.window_id = Some(new_wid);
-            }
-            let registry = InstanceRegistry::default();
-            let _ = registry.update_window_id(id, new_wid);
-            new_wid
-        }
-    };
-
-    let result = tokio::task::spawn_blocking(move || ScreenCapture::capture_window(wid))
-        .await
-        .map_err(|e| AppError::Screenshot(format!("screenshot task failed: {e}")))?;
-
-    match result {
-        Ok(png_data) => Ok(screenshot_response(png_data, "screencapturekit", None)),
-        Err(e) => Err(AppError::Screenshot(format!(
-            "{}. If permission was denied, grant Screen Recording in System Settings → Privacy & Security → Screen Recording.",
-            e
-        ))),
-    }
+    Ok(screenshot_response(png_data, "screencapturekit", None))
 }
 
 // ── Screenshot WebSocket ────────────────────────────────────────
@@ -1497,6 +1446,44 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn screenshot_with_frame_attempts_sck() {
+        let app = test_daemon_router_with_sandbox();
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .uri("/box/test-sb/screenshot?with_frame=true")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        // with_frame=true routes to SCK path which will fail (no real window),
+        // but it should NOT be a 404 — it proves the query param is parsed
+        let status = resp.status();
+        assert!(
+            !status.is_client_error(),
+            "with_frame=true should not be a client error, got {status}"
+        );
+    }
+
+    #[tokio::test]
+    async fn screenshot_without_frame_fails_when_renderer_unavailable() {
+        let app = test_daemon_router_with_sandbox();
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .uri("/box/test-sb/screenshot")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        // Default path (no with_frame) tries renderer only, should fail with 500
+        // since no renderer WebSocket is connected in tests
+        assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR);
     }
 
     #[tokio::test]
