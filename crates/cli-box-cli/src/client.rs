@@ -49,6 +49,7 @@ pub struct DaemonHealthResponse {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 pub struct DaemonReadinessResponse {
     pub status: String,
     pub renderer_connected: bool,

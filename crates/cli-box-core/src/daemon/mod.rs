@@ -290,11 +290,18 @@ async fn health_handler(State(state): State<Arc<Mutex<DaemonState>>>) -> Json<He
     })
 }
 
-async fn readyz_handler(State(state): State<Arc<Mutex<DaemonState>>>) -> Json<DaemonReadinessResponse> {
+async fn readyz_handler(
+    State(state): State<Arc<Mutex<DaemonState>>>,
+) -> Json<DaemonReadinessResponse> {
     let s = state.lock().await;
     let renderer_connected = s.screenshot_ws_tx.is_some();
     Json(DaemonReadinessResponse {
-        status: if renderer_connected { "ready" } else { "not_ready" }.to_string(),
+        status: if renderer_connected {
+            "ready"
+        } else {
+            "not_ready"
+        }
+        .to_string(),
         renderer_connected,
     })
 }
