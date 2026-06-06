@@ -148,6 +148,24 @@ gh pr create --title "<title>" --body "<body>"
 - **不合入主分支** — PR 保持 open 状态
 - 分析 CI 结果，如有失败则修复后重新推送
 
+#### 7.1 PR 描述规范
+
+PR 描述必须包含 **Problem** 和 **Solution** 两部分：
+
+```markdown
+## Problem
+描述这个 PR 解决了什么问题（用户视角或系统视角）
+
+## Solution
+描述解决方案（每个问题对应一个子节，包含关键 commit 引用）
+
+## Test Plan
+- [x] 测试项...
+```
+
+- 使用 `gh pr edit <number> --body "..."` 更新描述
+- 在阶段 6.3 Release 测试完成后更新，确保测试结果反映在描述中
+
 ---
 
 ## 三、Git 规范
