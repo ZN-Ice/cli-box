@@ -894,20 +894,20 @@ async fn cmd_close(id: &str) -> anyhow::Result<()> {
 
 /// Type text into a sandbox (legacy).
 #[allow(dead_code)]
-async fn cmd_type(text: &str, id: &str, pty: bool) -> anyhow::Result<()> {
+async fn cmd_type(text: &str, id: &str) -> anyhow::Result<()> {
     let client = client::SandboxClient::from_instance_id(id)?;
+    let use_pty = matches!(resolve_sandbox_kind(id).await?, cli_box_core::instance::InstanceKind::Cli { .. });
     tracing::info!(
-        "[cli] type: text_len={}, id={}, pty={}",
+        "[cli] type: text_len={}, id={}, use_pty={}",
         text.len(),
         id,
-        pty
+        use_pty
     );
 
-    if pty {
+    if use_pty {
         client.pty_write_auto(text).await?;
         println!("Typed (PTY): {:?} → sandbox {}", text, id);
     } else {
-        tracing::warn!("[cli] type: using CGEvent path (not PTY). This targets the Tauri process, not the CLI child process. Consider using --pty for CLI sandboxes.");
         client.type_text(text).await?;
         println!("Typed (CGEvent): {:?} → sandbox {}", text, id);
     }
@@ -916,17 +916,18 @@ async fn cmd_type(text: &str, id: &str, pty: bool) -> anyhow::Result<()> {
 
 /// Press a key in a sandbox (legacy).
 #[allow(dead_code)]
-async fn cmd_key(key: &str, id: &str, modifiers: &[String], pty: bool) -> anyhow::Result<()> {
+async fn cmd_key(key: &str, id: &str, modifiers: &[String]) -> anyhow::Result<()> {
     let client = client::SandboxClient::from_instance_id(id)?;
+    let use_pty = matches!(resolve_sandbox_kind(id).await?, cli_box_core::instance::InstanceKind::Cli { .. });
     tracing::info!(
-        "[cli] key: key={}, modifiers={:?}, id={}, pty={}",
+        "[cli] key: key={}, modifiers={:?}, id={}, use_pty={}",
         key,
         modifiers,
         id,
-        pty
+        use_pty
     );
 
-    if pty {
+    if use_pty {
         let data = client::key_to_pty_bytes_with_modifiers(key, modifiers);
         if data.is_empty() {
             // Try plain key mapping as fallback
