@@ -42,11 +42,11 @@ cli-box list
 # Take a screenshot of a sandbox
 cli-box screenshot --id <sandbox-id> -o screenshot.png
 
-# Type text into a sandbox (PTY mode for CLI tools)
-cli-box type --id <sandbox-id> --pty "hello world"
+# Type text into a sandbox (auto-detects input mode)
+cli-box type --id <sandbox-id> "hello world"
 
 # Press Enter to send
-cli-box key --id <sandbox-id> --pty Return
+cli-box key --id <sandbox-id> Return
 
 # Close a sandbox
 cli-box close <sandbox-id>
@@ -69,10 +69,10 @@ cli-box close <sandbox-id>
 
 | Command | Description |
 |---------|-------------|
-| `cli-box type --id <id> --pty "text"` | Type text via PTY (recommended for CLI tools) |
-| `cli-box key --id <id> --pty Return` | Press a key via PTY |
-| `cli-box key --id <id> --pty ctrl+c` | Send Ctrl+C |
-| `cli-box key --id <id> --pty up` | Arrow keys |
+| `cli-box type --id <id> "text"` | Type text (auto-detects PTY vs CGEvent) |
+| `cli-box key --id <id> Return` | Press a key (auto-detects PTY vs CGEvent) |
+| `cli-box key --id <id> ctrl+c` | Send Ctrl+C |
+| `cli-box key --id <id> up` | Arrow keys |
 | `cli-box click --id <id> 100 200` | Mouse click at coordinates (CGEvent) |
 
 ### Screenshots
@@ -113,8 +113,8 @@ sleep 10
 cli-box screenshot --id abc123 -o state.png
 
 # 4. Interact
-cli-box type --id abc123 --pty "Write a hello world function"
-cli-box key --id abc123 --pty Return
+cli-box type --id abc123 "Write a hello world function"
+cli-box key --id abc123 Return
 
 # 5. Wait and screenshot again
 sleep 15
@@ -126,7 +126,6 @@ cli-box close abc123
 
 ## Notes
 
-- CLI tools (claude, opencode, zsh) should always use `--pty` mode for input
-- CGEvent mode (no `--pty`) is for GUI app sandboxes only
+- Input mode is auto-detected: CLI tools use PTY, GUI apps use CGEvent
 - Each sandbox gets its own Electron tab and HTTP port
 - The daemon auto-starts on first `cli-box start` and manages all sandboxes

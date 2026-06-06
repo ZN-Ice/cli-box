@@ -107,8 +107,8 @@ cli-box close <id>              # Close sandbox
 
 # Screenshot + input
 cli-box screenshot --id <id> -o shot.png
-cli-box type --id <id> --pty "hello world"
-cli-box key --id <id> --pty Return
+cli-box type --id <id> "hello world"
+cli-box key --id <id> Return
 cli-box click --id <id> 100 200
 
 # MCP config (add to .claude/settings.json)

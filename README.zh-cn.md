@@ -111,8 +111,8 @@ cli-box close <id>              # 关闭沙箱
 
 # 截图 + 输入
 cli-box screenshot --id <id> -o shot.png
-cli-box type --id <id> --pty "你好世界"
-cli-box key --id <id> --pty Return
+cli-box type --id <id> "你好世界"
+cli-box key --id <id> Return
 cli-box click --id <id> 100 200
 
 # MCP 配置（添加到 .claude/settings.json）
