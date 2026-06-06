@@ -7,7 +7,7 @@ use axum::body::Body;
 use axum::http::{self, Request, StatusCode};
 use cli_box_core::daemon::{build_daemon_router, DaemonState, ManagedSandbox};
 use cli_box_core::instance::{InstanceKind, InstanceStatus};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tower::ServiceExt;
@@ -20,6 +20,7 @@ fn empty_state() -> Arc<Mutex<DaemonState>> {
         screenshot_ws_tx: None,
         pending_screenshots: HashMap::new(),
         screenshot_request_counter: 0,
+        terminal_ready_sandboxes: HashSet::new(),
     }))
 }
 
@@ -50,6 +51,7 @@ fn state_with_sandbox() -> Arc<Mutex<DaemonState>> {
         screenshot_ws_tx: None,
         pending_screenshots: HashMap::new(),
         screenshot_request_counter: 0,
+        terminal_ready_sandboxes: HashSet::new(),
     }))
 }
 

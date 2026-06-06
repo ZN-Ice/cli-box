@@ -518,7 +518,10 @@ async fn cmd_start_daemon(command: &str, args: &[String]) -> anyhow::Result<()> 
             }
 
             dot_count = (dot_count % 3) + 1;
-            print!("\rWaiting for renderer{:<3}", ".".repeat(dot_count as usize));
+            print!(
+                "\rWaiting for renderer{:<3}",
+                ".".repeat(dot_count as usize)
+            );
             let _ = std::io::stdout().flush();
 
             tokio::time::sleep(poll_interval).await;
@@ -557,7 +560,10 @@ async fn cmd_start_daemon(command: &str, args: &[String]) -> anyhow::Result<()> 
         }
 
         dot_count = (dot_count % 3) + 1;
-        print!("\rWaiting for terminal{:<3}", ".".repeat(dot_count as usize));
+        print!(
+            "\rWaiting for terminal{:<3}",
+            ".".repeat(dot_count as usize)
+        );
         let _ = std::io::stdout().flush();
 
         tokio::time::sleep(poll_interval).await;
