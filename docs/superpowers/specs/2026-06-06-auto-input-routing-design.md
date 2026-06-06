@@ -14,7 +14,7 @@ Auto-detect the sandbox type by querying the daemon's `/box/list` endpoint, and 
 - `InstanceKind::Cli` → PTY write (direct stdin)
 - `InstanceKind::App` → CGEvent (macOS-level key events)
 
-Keep `--pty` flag as an explicit override for edge cases.
+Remove the `--pty` flag entirely — the routing is deterministic based on sandbox type, no override needed.
 
 ## Design
 
@@ -33,19 +33,13 @@ async fn resolve_sandbox_kind(id: &str) -> anyhow::Result<cli_box_core::instance
 }
 ```
 
-#### 2. Modify `cmd_type_daemon` signature and logic
+#### 2. Modify `cmd_type_daemon`
 
-Change `pty: bool` to `pty: Option<bool>`:
-- `Some(true)` → force PTY (explicit `--pty`)
-- `Some(false)` → force CGEvent (explicit `--no-pty` or similar, if needed)
-- `None` → auto-detect via `resolve_sandbox_kind`
+Remove `pty: bool` parameter. Query sandbox kind and route automatically:
 
 ```rust
-async fn cmd_type_daemon(text: &str, id: &str, pty: Option<bool>) -> anyhow::Result<()> {
-    let use_pty = match pty {
-        Some(explicit) => explicit,
-        None => matches!(resolve_sandbox_kind(id).await?, InstanceKind::Cli { .. }),
-    };
+async fn cmd_type_daemon(text: &str, id: &str) -> anyhow::Result<()> {
+    let use_pty = matches!(resolve_sandbox_kind(id).await?, InstanceKind::Cli { .. });
     if use_pty {
         client::daemon_pty_write(id, text).await?;
         println!("Typed (PTY): {:?} -> sandbox {}", text, id);
@@ -57,21 +51,13 @@ async fn cmd_type_daemon(text: &str, id: &str, pty: Option<bool>) -> anyhow::Res
 }
 ```
 
-#### 3. Modify `cmd_key_daemon` with same pattern
+#### 3. Modify `cmd_key_daemon`
 
-Same `pty: Option<bool>` pattern, auto-detect via `resolve_sandbox_kind`.
+Same pattern — remove `pty: bool`, auto-detect via `resolve_sandbox_kind`.
 
-#### 4. Update CLI argument parsing
+#### 4. Remove `--pty` CLI argument
 
-Change `--pty` from `bool` flag to `Option<bool>`:
-- `--pty` present → `Some(true)`
-- absent → `None` (auto-detect)
-
-```rust
-/// Use PTY write instead of CGEvent (auto-detected if omitted)
-#[arg(long)]
-pty: Option<bool>,
-```
+Remove the `--pty` flag from both `TypeText` and `Key` command definitions.
 
 ### File: `crates/cli-box-cli/src/client.rs`
 
@@ -83,16 +69,14 @@ No changes needed. `/box/list` already returns `ManagedSandbox` with `kind` fiel
 
 ## Behavior Matrix
 
-| Sandbox Kind | `--pty` flag | Result |
-|-------------|-------------|--------|
-| `Cli` | absent | PTY write (auto) |
-| `Cli` | `--pty` | PTY write (explicit) |
-| `App` | absent | CGEvent (auto) |
-| `App` | `--pty` | PTY write (override) |
+| Sandbox Kind | Input Method |
+|-------------|-------------|
+| `Cli` | PTY write (auto) |
+| `App` | CGEvent (auto) |
 
 ## Testing
 
-- `cli-box type --id <cli-sandbox> "hello"` → should use PTY without `--pty` flag
-- `cli-box key --id <cli-sandbox> return` → should use PTY without `--pty` flag
-- `cli-box type --id <app-sandbox> "hello"` → should use CGEvent
-- `cli-box type --id <cli-sandbox> --pty "hello"` → explicit PTY still works
+- `cli-box type --id <cli-sandbox> "hello"` → PTY write (auto-detected)
+- `cli-box key --id <cli-sandbox> return` → PTY write (auto-detected)
+- `cli-box type --id <app-sandbox> "hello"` → CGEvent (auto-detected)
+- `cli-box key --id <app-sandbox> return` → CGEvent (auto-detected)
