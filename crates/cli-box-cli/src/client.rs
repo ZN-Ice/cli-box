@@ -53,6 +53,12 @@ pub struct DaemonHealthResponse {
 pub struct DaemonReadinessResponse {
     pub status: String,
     pub renderer_connected: bool,
+    #[serde(default = "default_true")]
+    pub terminal_ready: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 /// Check daemon readiness (renderer WebSocket connection status).
@@ -61,6 +67,20 @@ pub async fn daemon_readiness() -> Result<DaemonReadinessResponse> {
     let client = reqwest_client();
     let resp = client
         .get(format!("{base}/readyz"))
+        .timeout(std::time::Duration::from_secs(3))
+        .send()
+        .await
+        .with_context(|| "Failed to connect to daemon readyz endpoint")?;
+    let readiness: DaemonReadinessResponse = resp.json().await?;
+    Ok(readiness)
+}
+
+/// Check daemon readiness for a specific sandbox (terminal mounted).
+pub async fn daemon_readiness_for_sandbox(sandbox_id: &str) -> Result<DaemonReadinessResponse> {
+    let base = daemon_base_url()?;
+    let client = reqwest_client();
+    let resp = client
+        .get(format!("{base}/readyz?sandbox_id={sandbox_id}"))
         .timeout(std::time::Duration::from_secs(3))
         .send()
         .await
@@ -1067,18 +1087,29 @@ mod tests {
 
     #[test]
     fn test_deserialize_daemon_readiness_connected() {
-        let json = r#"{"status":"ready","renderer_connected":true}"#;
+        let json = r#"{"status":"ready","renderer_connected":true,"terminal_ready":true}"#;
         let resp: DaemonReadinessResponse = serde_json::from_str(json).unwrap();
         assert_eq!(resp.status, "ready");
         assert!(resp.renderer_connected);
+        assert!(resp.terminal_ready);
     }
 
     #[test]
     fn test_deserialize_daemon_readiness_not_connected() {
-        let json = r#"{"status":"not_ready","renderer_connected":false}"#;
+        let json = r#"{"status":"not_ready","renderer_connected":false,"terminal_ready":false}"#;
         let resp: DaemonReadinessResponse = serde_json::from_str(json).unwrap();
         assert_eq!(resp.status, "not_ready");
         assert!(!resp.renderer_connected);
+        assert!(!resp.terminal_ready);
+    }
+
+    #[test]
+    fn test_deserialize_daemon_readiness_without_terminal_ready() {
+        let json = r#"{"status":"ready","renderer_connected":true}"#;
+        let resp: DaemonReadinessResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(resp.status, "ready");
+        assert!(resp.renderer_connected);
+        assert!(resp.terminal_ready); // defaults to true
     }
 }
 

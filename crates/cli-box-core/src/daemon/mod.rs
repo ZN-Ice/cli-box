@@ -22,7 +22,7 @@ use axum::Json;
 use axum::Router;
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::net::TcpListener;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -55,6 +55,8 @@ pub struct DaemonState {
     pub pending_screenshots: HashMap<u64, oneshot::Sender<Result<Vec<u8>, String>>>,
     /// Counter for generating unique request IDs.
     pub screenshot_request_counter: u64,
+    /// Sandboxes whose xterm.js terminal has been mounted and is ready.
+    pub terminal_ready_sandboxes: HashSet<String>,
 }
 
 impl DaemonState {
@@ -129,6 +131,8 @@ pub struct DaemonReadinessResponse {
     pub status: String,
     /// Whether the Electron renderer's screenshot WebSocket is connected.
     pub renderer_connected: bool,
+    /// Whether the requested sandbox's terminal is ready (true if no sandbox_id requested).
+    pub terminal_ready: bool,
 }
 
 #[derive(Deserialize)]
@@ -293,19 +297,26 @@ async fn health_handler(State(state): State<Arc<Mutex<DaemonState>>>) -> Json<He
 /// Daemon-level readiness: always returns 200 with readiness in JSON body.
 /// Unlike the sandbox-level /readyz (server/mod.rs) which returns 503/200,
 /// this is a polling endpoint — callers check `renderer_connected` in the response.
+/// Optionally accepts `?sandbox_id=<id>` to check per-sandbox terminal readiness.
 async fn readyz_handler(
     State(state): State<Arc<Mutex<DaemonState>>>,
+    axum::extract::Query(params): axum::extract::Query<HashMap<String, String>>,
 ) -> Json<DaemonReadinessResponse> {
     let s = state.lock().await;
     let renderer_connected = s.screenshot_ws_tx.is_some();
+    let terminal_ready = match params.get("sandbox_id") {
+        Some(sandbox_id) => s.terminal_ready_sandboxes.contains(sandbox_id.as_str()),
+        None => true,
+    };
     Json(DaemonReadinessResponse {
-        status: if renderer_connected {
+        status: if renderer_connected && terminal_ready {
             "ready"
         } else {
             "not_ready"
         }
         .to_string(),
         renderer_connected,
+        terminal_ready,
     })
 }
 
@@ -768,6 +779,16 @@ async fn handle_screenshot_ws(state: Arc<Mutex<DaemonState>>, socket: WebSocket)
                                             }
                                         }
                                     }
+                                    Some("terminal_ready") => {
+                                        if let Some(sandbox_id) = msg.get("sandbox_id").and_then(|v| v.as_str()) {
+                                            let mut s = state.lock().await;
+                                            s.terminal_ready_sandboxes.insert(sandbox_id.to_string());
+                                            tracing::info!(
+                                                "[screenshot_ws] terminal ready: {}",
+                                                sandbox_id
+                                            );
+                                        }
+                                    }
                                     _ => {
                                         tracing::warn!(
                                             "[screenshot_ws] unknown message type: {:?}",
@@ -1223,6 +1244,7 @@ pub async fn run_daemon(port: u16) -> Result<(), Box<dyn std::error::Error>> {
         screenshot_ws_tx: None,
         pending_screenshots: HashMap::new(),
         screenshot_request_counter: 0,
+        terminal_ready_sandboxes: HashSet::new(),
     }));
 
     let router = build_daemon_router(state.clone());
@@ -1421,6 +1443,7 @@ mod tests {
             screenshot_ws_tx: None,
             pending_screenshots: HashMap::new(),
             screenshot_request_counter: 0,
+            terminal_ready_sandboxes: HashSet::new(),
         }))
     }
 
@@ -1447,6 +1470,7 @@ mod tests {
             screenshot_ws_tx: None,
             pending_screenshots: HashMap::new(),
             screenshot_request_counter: 0,
+            terminal_ready_sandboxes: HashSet::new(),
         }))
     }
 

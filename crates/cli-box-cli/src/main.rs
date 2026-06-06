@@ -484,10 +484,11 @@ async fn cmd_start_daemon(command: &str, args: &[String]) -> anyhow::Result<()> 
         false
     };
 
-    // Wait for renderer WebSocket to connect if Electron was newly spawned.
+    use std::io::Write;
+
+    // Phase 1: Wait for renderer WebSocket (only if Electron was newly spawned)
     if electron_newly_spawned {
-        print!("正在启动");
-        use std::io::Write;
+        print!("Waiting for renderer");
         let _ = std::io::stdout().flush();
 
         let timeout = std::time::Duration::from_secs(60);
@@ -507,7 +508,7 @@ async fn cmd_start_daemon(command: &str, args: &[String]) -> anyhow::Result<()> 
 
             match client::daemon_readiness().await {
                 Ok(resp) if resp.renderer_connected => {
-                    println!(" 完成");
+                    println!(" done");
                     break;
                 }
                 Err(e) => {
@@ -517,11 +518,49 @@ async fn cmd_start_daemon(command: &str, args: &[String]) -> anyhow::Result<()> 
             }
 
             dot_count = (dot_count % 3) + 1;
-            print!("\r正在启动{:<3}", ".".repeat(dot_count as usize));
+            print!("\rWaiting for renderer{:<3}", ".".repeat(dot_count as usize));
             let _ = std::io::stdout().flush();
 
             tokio::time::sleep(poll_interval).await;
         }
+    }
+
+    // Phase 2: Wait for terminal readiness (xterm.js mounted)
+    print!("Waiting for terminal");
+    let _ = std::io::stdout().flush();
+
+    let timeout = std::time::Duration::from_secs(60);
+    let start = std::time::Instant::now();
+    let poll_interval = std::time::Duration::from_millis(500);
+    let mut dot_count: u8 = 0;
+
+    loop {
+        if start.elapsed() > timeout {
+            println!();
+            tracing::warn!(
+                "[start] Terminal not ready within {}s for sandbox {}, continuing anyway",
+                timeout.as_secs(),
+                result.sandbox_id
+            );
+            break;
+        }
+
+        match client::daemon_readiness_for_sandbox(&result.sandbox_id).await {
+            Ok(resp) if resp.terminal_ready => {
+                println!(" done");
+                break;
+            }
+            Err(e) => {
+                tracing::trace!("[start] terminal readyz check failed (will retry): {e}");
+            }
+            _ => {}
+        }
+
+        dot_count = (dot_count % 3) + 1;
+        print!("\rWaiting for terminal{:<3}", ".".repeat(dot_count as usize));
+        let _ = std::io::stdout().flush();
+
+        tokio::time::sleep(poll_interval).await;
     }
 
     Ok(())
