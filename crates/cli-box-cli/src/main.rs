@@ -55,7 +55,6 @@ enum Commands {
         /// Sandbox instance ID
         #[arg(long)]
         id: String,
-
     },
 
     /// Press a key in a sandbox
@@ -230,11 +229,7 @@ async fn main() -> anyhow::Result<()> {
         Commands::TypeText { text, id } => {
             cmd_type_daemon(&text, &id).await?;
         }
-        Commands::Key {
-            key,
-            id,
-            modifiers,
-        } => {
+        Commands::Key { key, id, modifiers } => {
             cmd_key_daemon(&key, &id, &modifiers).await?;
         }
         Commands::Click { x, y, id, button } => {
@@ -610,7 +605,10 @@ async fn resolve_sandbox_kind(id: &str) -> anyhow::Result<cli_box_core::instance
 
 /// Type text in a sandbox via the daemon API.
 async fn cmd_type_daemon(text: &str, id: &str) -> anyhow::Result<()> {
-    let use_pty = matches!(resolve_sandbox_kind(id).await?, cli_box_core::instance::InstanceKind::Cli { .. });
+    let use_pty = matches!(
+        resolve_sandbox_kind(id).await?,
+        cli_box_core::instance::InstanceKind::Cli { .. }
+    );
     tracing::info!(
         "[cli] type: text_len={}, id={}, use_pty={}",
         text.len(),
@@ -628,12 +626,11 @@ async fn cmd_type_daemon(text: &str, id: &str) -> anyhow::Result<()> {
 }
 
 /// Press a key in a sandbox via the daemon API.
-async fn cmd_key_daemon(
-    key: &str,
-    id: &str,
-    modifiers: &[String],
-) -> anyhow::Result<()> {
-    let use_pty = matches!(resolve_sandbox_kind(id).await?, cli_box_core::instance::InstanceKind::Cli { .. });
+async fn cmd_key_daemon(key: &str, id: &str, modifiers: &[String]) -> anyhow::Result<()> {
+    let use_pty = matches!(
+        resolve_sandbox_kind(id).await?,
+        cli_box_core::instance::InstanceKind::Cli { .. }
+    );
     tracing::info!(
         "[cli] key: key={}, modifiers={:?}, id={}, use_pty={}",
         key,
@@ -648,7 +645,8 @@ async fn cmd_key_daemon(
             if plain.is_empty() {
                 anyhow::bail!(
                     "Key '{}' with modifiers {:?} cannot be mapped to PTY bytes.",
-                    key, modifiers
+                    key,
+                    modifiers
                 );
             }
             client::daemon_pty_write(id, &plain).await?;
@@ -896,7 +894,10 @@ async fn cmd_close(id: &str) -> anyhow::Result<()> {
 #[allow(dead_code)]
 async fn cmd_type(text: &str, id: &str) -> anyhow::Result<()> {
     let client = client::SandboxClient::from_instance_id(id)?;
-    let use_pty = matches!(resolve_sandbox_kind(id).await?, cli_box_core::instance::InstanceKind::Cli { .. });
+    let use_pty = matches!(
+        resolve_sandbox_kind(id).await?,
+        cli_box_core::instance::InstanceKind::Cli { .. }
+    );
     tracing::info!(
         "[cli] type: text_len={}, id={}, use_pty={}",
         text.len(),
@@ -918,7 +919,10 @@ async fn cmd_type(text: &str, id: &str) -> anyhow::Result<()> {
 #[allow(dead_code)]
 async fn cmd_key(key: &str, id: &str, modifiers: &[String]) -> anyhow::Result<()> {
     let client = client::SandboxClient::from_instance_id(id)?;
-    let use_pty = matches!(resolve_sandbox_kind(id).await?, cli_box_core::instance::InstanceKind::Cli { .. });
+    let use_pty = matches!(
+        resolve_sandbox_kind(id).await?,
+        cli_box_core::instance::InstanceKind::Cli { .. }
+    );
     tracing::info!(
         "[cli] key: key={}, modifiers={:?}, id={}, use_pty={}",
         key,
@@ -1392,7 +1396,10 @@ async fn handle_mcp_tool(name: &str, args: &serde_json::Value) -> serde_json::Va
             "type_text" => {
                 let id = args["sandbox_id"].as_str().unwrap_or("");
                 let text = args["text"].as_str().unwrap_or("");
-                let use_pty = matches!(resolve_sandbox_kind(id).await?, cli_box_core::instance::InstanceKind::Cli { .. });
+                let use_pty = matches!(
+                    resolve_sandbox_kind(id).await?,
+                    cli_box_core::instance::InstanceKind::Cli { .. }
+                );
                 if use_pty {
                     client::daemon_pty_write(id, text).await?;
                 } else {
@@ -1411,7 +1418,10 @@ async fn handle_mcp_tool(name: &str, args: &serde_json::Value) -> serde_json::Va
                             .collect()
                     })
                     .unwrap_or_default();
-                let use_pty = matches!(resolve_sandbox_kind(id).await?, cli_box_core::instance::InstanceKind::Cli { .. });
+                let use_pty = matches!(
+                    resolve_sandbox_kind(id).await?,
+                    cli_box_core::instance::InstanceKind::Cli { .. }
+                );
                 if use_pty {
                     let data = client::key_to_pty_bytes_with_modifiers(key, &mods);
                     if data.is_empty() {
