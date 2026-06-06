@@ -1,365 +1,264 @@
-# cli-box — macOS 桌面自动化沙箱
+# cli-box — 开发工作流指南
 
-> **核心理念**：一个可复用的 macOS 桌面自动化沙箱，支持多实例管理——通过 CLI 命令启动独立沙箱窗口，在其中运行任意 CLI 或 macOS 应用，并通过模拟鼠标/键盘操作与截图反馈进行自动化控制。
+> **使用方式**：用户发送需求后，Claude 读取本文档，按照预设工作流自动执行完整开发周期。
 >
-> 对目标应用**零侵入**，所有操作在 OS 层面完成（CGEvent + AXUIElement + ScreenCaptureKit）。
->
-> **Daemon + Electron 架构**：一个长驻 Rust daemon 管理所有沙箱实例（PTY 进程 + macOS 应用），通过单一 HTTP API 对外服务。Electron 应用作为 GUI 前端，提供 tab 管理、xterm.js 终端和截图预览。CLI 直接与 daemon 通信。
-
-## 一、架构总览
-
-```
-┌──────────────────────────────────────────────────────────────┐
-│                  Agent / 用户 (CLI / MCP / HTTP)              │
-│  cli-box start / list / screenshot / click / type / key      │
-└───────────────────────────────┬───────────────────────────────┘
-                                │ HTTP (localhost:15801)
-                                ▼
-┌──────────────────────────────────────────────────────────────┐
-│              cli-box-daemon (Rust, 单实例)                     │
-│  PTY Manager + App Manager + Automation Engine                │
-│  Instance Registry (~/.cli-box/instances/)                    │
-└───────────────────────────────┬───────────────────────────────┘
-                                │ WebSocket (PTY 流)
-                                ▼
-┌──────────────────────────────────────────────────────────────┐
-│              Electron App (单实例, Chromium)                   │
-│  Tab 管理 + xterm.js + 控制面板 + 截图预览                     │
-└──────────────────────────────────────────────────────────────┘
-```
-
-**设计原则**：
-1. **零侵入**：目标应用不需要任何适配，所有操作在 OS 层面完成
-2. **单 daemon 多沙箱**：一个 daemon 进程管理所有沙箱实例，通过 CLI 管理生命周期
-3. **窗口级截图**：ScreenCaptureKit 按窗口 ID 截图，不需要窗口在前台
-4. **双协议**：MCP (Agent CLI 原生) + HTTP (通用调用)
-5. **文件系统注册中心**：沙箱实例通过 `~/.cli-box/instances/<id>.json` 注册和发现
-
-**PTY Reader Thread**: Each PTY session spawns a dedicated background thread that continuously reads output into a shared buffer. The HTTP `/pty/output/:pid` endpoint drains from this buffer non-blocking. This replaces the earlier take/read/put-back pattern that blocked on idle TUI apps (opencode, vim, etc.).
-
-## 二、技术栈
-
-| 项目属性 | 规范值 |
-|---------|--------|
-| 核心库 | Rust (Edition 2021, >=1.88), `cli-box-core` library crate |
-| CLI | Rust, `cli-box-cli` binary crate |
-| 桌面框架 | Electron (Chromium) |
-| 桌面前端 | React 18 + TS + Vite + xterm.js |
-| 异步运行时 | tokio |
-| macOS API | CoreGraphics (CGEvent), ApplicationServices (AXUIElement), ScreenCaptureKit |
-| 包管理 | Cargo Workspace + pnpm |
-| 测试 | cargo test (Rust) + vitest (TS) |
-| 目标平台 | macOS (Apple Silicon 优先) |
-| License | Apache 2.0 |
-
-## 三、目录结构
-
-```
-cli-box/
-├── Cargo.toml                    # Workspace 根
-├── crates/
-│   ├── cli-box-core/             # 🔑 自动化核心 (library)
-│   │   └── src/
-│   │       ├── lib.rs, error.rs
-│   │       ├── automation/       # CGEvent 输入模拟 + AXUIElement UI 检查
-│   │       │   ├── cg_event.rs
-│   │       │   └── ax_ui.rs
-│   │       ├── capture/          # ScreenCaptureKit 截图引擎
-│   │       │   └── mod.rs
-│   │       ├── process/          # PTY + NSWorkspace 进程管理
-│   │       │   └── mod.rs
-│   │       ├── sandbox/          # 沙箱窗口管理 (含多实例支持)
-│   │       │   └── mod.rs
-│   │       ├── instance/         # NEW: 沙箱实例注册中心
-│   │       │   └── mod.rs
-│   │       └── server/           # NEW: HTTP API 服务器 (library)
-│   │           └── mod.rs
-│   └── cli-box-cli/              # 🖥️ CLI (binary)
-│       └── src/
-│           ├── main.rs           # start/list/close + 所有子命令
-│           ├── client.rs         # NEW: HTTP 客户端 (与沙箱实例通信)
-│           └── mcp_server.rs     # MCP stdio 服务器
-├── electron-app/                 # 🌐 沙箱窗口前端 (xterm.js + React)
-│   └── src/
-│       ├── main.tsx, api.ts
-│       └── components/           # Terminal, ControlPanel, StatusBar, RecordControls
-├── src-tauri/                    # 🖥️ macOS 宿主应用 (Tauri)
-│   └── src/main.rs              # 多实例支持：CLI 参数解析 + 内嵌 HTTP API
-├── docs/
-│   ├── design/                   # 设计文档
-│   └── task/                     # 任务管理 (README.md + phase-*.md + task_records.json)
-├── tests/
-│   └── fixtures/                 # 集成测试场景 (YAML/JSON)
-└── config.example.json
-```
-
-## 四、核心接口
-
-### CLI 命令 (cli-box-cli)
-
-```bash
-# 多实例管理
-cli-box start                                # 启动沙箱，打开 zsh 终端（默认）
-cli-box start claude                         # 启动沙箱，直接运行 Claude Code
-cli-box start --shell                        # 等同于 cli-box start（快捷方式）
-cli-box start /path/to/App.app               # 启动沙箱，运行 macOS 应用
-cli-box list                                 # 列出所有活跃沙箱及其状态
-cli-box close <sandbox-id>                   # 关闭指定沙箱
-cli-box inspect <sandbox-id>                 # 查看沙箱详情
-
-# 沙箱作用域操作 (通过 --id 指定目标沙箱)
-cli-box screenshot --id <id>                 # 截取沙箱截图
-cli-box screenshot --id <id> -o result.png   # 截图并指定输出路径
-cli-box click --id <id> 100 200              # 在沙箱内模拟点击
-cli-box type --id <id> "hello world"         # 在沙箱内模拟输入
-cli-box key --id <id> Return --modifiers cmd # 在沙箱内模拟按键
-
-# 进程管理 (沙箱内)
-cli-box windows --id <id>                    # 列出沙箱内窗口
-cli-box processes --id <id>                  # 列出沙箱内进程
-
-# 独立模式 (无多实例，向后兼容)
-cli-box serve --port 5801                    # 启动独立 HTTP + MCP 服务器
-cli-box mcp-serve                            # MCP stdio 模式
-```
-
-### 实例注册中心 (文件系统)
-
-```
-~/.cli-box/instances/
-├── abc123.json    # {id, port, pid, kind, title, status, created_at, window_id}
-├── def456.json
-└── ...
-```
-
-### MCP Tools (Agent 调用)
-
-```yaml
-# 沙箱实例管理 (NEW)
-list_sandboxes:       # 列出所有活跃沙箱
-start_sandbox:        # 启动新沙箱 (--cli/--app)
-close_sandbox:        # 关闭指定沙箱
-
-# 窗口管理
-list_windows:         # 列出沙箱内所有窗口
-find_window:          # 按 app 名/标题查找
-focus_window:         # 聚焦指定窗口
-
-# 进程管理
-spawn_app:            # 启动 .app (如 Hi Boss.app)
-spawn_cli:            # 启动 CLI 进程 (如 hiboss)
-kill_process:         # 终止进程
-list_processes:       # 列出沙箱内进程
-
-# 输入模拟
-click:                # 鼠标点击 (x, y, button)
-double_click:         # 双击
-type_text:            # 输入文本
-press_key:            # 按键 (Return, Tab, etc.)
-scroll:               # 滚动
-drag:                 # 拖拽
-
-# 截图 (核心)
-screenshot:           # 截取沙箱窗口 (base64 PNG)
-screenshot_window:    # 截取沙箱内指定子窗口
-screenshot_region:    # 截取沙箱内指定区域
-
-# UI 检查 (高级)
-inspect_ui:           # 读取 AX 树
-find_element:         # 按 role/title 查找 UI 元素
-```
-
-### HTTP API (每实例独立端口 `:5801`/`:15802`/etc.)
-
-```
-GET  /health                     健康检查
-GET  /sandbox/info               沙箱信息 (id, mode, running process)
-POST /shutdown                   关闭沙箱
-GET  /windows                    列出窗口
-GET  /processes                  列出进程
-POST /app/spawn                  启动 .app
-POST /cli/spawn                  启动 CLI
-POST /input/click                鼠标点击
-POST /input/type                 键盘输入
-POST /input/key                  按键
-POST /input/scroll               滚动
-POST /input/drag                 拖拽
-GET  /screenshot                 截取沙箱窗口 (PNG)
-GET  /screenshot/:window_id      截取指定窗口
-GET  /screenshot/region          截取指定区域
-GET  /ui/inspect/:window_id      读取 UI 树
-POST /ui/find                    查找 UI 元素
-POST /record/start               开始录制
-POST /record/stop                停止录制
-POST /playback/actions           回放操作
-POST /scenario/run               运行测试场景
-POST /diff                       截图差异对比
-WS   /pty/ws/{pid}               PTY WebSocket (文本=输入, JSON=resize)
-```
-
-### Rust API (cli-box-core)
-
-```rust
-// 实例管理
-use cli_box_core::instance::{InstanceRegistry, SandboxInstance, generate_instance_id};
-let registry = InstanceRegistry::default();
-let instance = SandboxInstance::new(id, port, kind);
-registry.register(&instance)?;
-let all_instances = registry.list()?;
-registry.unregister("abc123")?;
-
-// 输入模拟
-use cli_box_core::automation::cg_event::InputSimulator;
-InputSimulator::click(100.0, 200.0, MouseButton::Left)?;
-InputSimulator::type_text("Hello")?;
-InputSimulator::press_key("Return", &["cmd"])?;
-
-// 截图
-use cli_box_core::capture::ScreenCapture;
-let png_bytes = ScreenCapture::capture_window(window_id)?;
-
-// UI 检查
-use cli_box_core::automation::ax_ui::UiInspector;
-let tree = UiInspector::inspect_window(window_id)?;
-
-// 进程管理
-use cli_box_core::process::ProcessManager;
-ProcessManager::spawn_app("/path/to/App.app")?;
-ProcessManager::spawn_cli("claude", &["--help".into()])?;
-
-// 沙箱管理 (多实例)
-use cli_box_core::sandbox::{Sandbox, SandboxConfig};
-let config = SandboxConfig {
-    id: Some("abc123".into()),
-    port: Some(15801),
-    mode: Some("cli".into()),
-    command: Some("claude".into()),
-    ..SandboxConfig::default()
-};
-let mut sandbox = Sandbox::new(config);
-sandbox.init(window_id)?;
-let screenshot = sandbox.screenshot()?;
-```
-
-## 五、macOS 权限要求
-
-| 权限 | 用途 | 授予方式 |
-|------|------|---------|
-| **Accessibility** | CGEvent 输入模拟、AXUIElement 读取 | 系统设置 → 隐私与安全 → 辅助功能 |
-| **Screen Recording** | ScreenCaptureKit 截图 | 系统设置 → 隐私与安全 → 屏幕录制 |
-
-**注意**：这两个权限必须用户手动授予，无法通过代码自动获取。建议不经过 App Store，直接分发 .dmg。
-
-## 六、Git 规范
-
-```
-格式：<type>(<scope>): <description>
-
-scope: sandbox | automation | capture | process | server | cli | ui
-
-示例：
-feat(sandbox): 实现沙箱窗口管理
-feat(automation): CGEvent 鼠标点击模拟
-feat(capture): ScreenCaptureKit 窗口截图
-fix(server): 修复 HTTP API 端口冲突
-```
-
-## 七、核心工作流程
-
-### 7.1 任务执行流程
-
-```
-[1]创建任务记录(待执行) → [2]创建特性分支 → [3]编写设计文档（写到docs/design）
-   → [4]编写测试(RED) → [5]编码实现(GREEN) → [6]重构优化(REFACTOR)
-   → [7]本地检查(fmt+clippy+check+typecheck) → [8]验证测试覆盖率
-   → [9]更新任务状态(已完成,必须在push前) → [10]git commit → [11]git push
-   → [12]创建 PR → [13]等待 CI 门禁通过
-```
-
-### 7.2 沙箱使用流程
-
-```bash
-# 1. 启动沙箱（默认打开 zsh 终端）
-cli-box start
-# → 自动打开沙箱窗口，xterm.js 中运行 zsh
-# → 可在终端中输入 claude、opencode 等命令
-
-# 2. 启动沙箱（直接运行指定命令）
-cli-box start claude
-# → 自动打开沙箱窗口，直接运行 claude
-
-# 3. 启动沙箱（运行 macOS 应用）
-cli-box start /Applications/cc-switch.app
-# → 打开沙箱窗口，启动 cc-switch，关联其窗口
-
-# 4. 查看所有沙箱
-cli-box list
-# → ID      TITLE              KIND  STATUS   PORT   CREATED
-# → abc123  "claude"           CLI   Running  15801  2026-05-16 10:30
-# → def456  "cc-switch"        APP   Running  15802  2026-05-16 10:31
-
-# 5. 操作指定沙箱
-cli-box screenshot --id abc123 -o sandbox.png  # 截图
-cli-box click --id abc123 100 200               # 点击
-cli-box type --id abc123 --pty "帮我写一个函数"  # PTY 输入
-cli-box key --id abc123 --pty Return            # PTY 按键
-
-# 6. 关闭沙箱
-cli-box close abc123
-# → 关闭沙箱窗口，清理注册信息，终止关联进程
-```
-
-### 7.3 命令序列
-
-```bash
-# 本地检查
-cargo fmt --all -- --check && cargo clippy --all-targets \
-  && cargo check --all-targets && cargo test --all \
-  && pnpm typecheck && pnpm format:check && pnpm test:unit
-
-# 构建 Tauri 应用
-cd electron-app && pnpm install && pnpm build && cd ..
-cargo build --release -p cli-box-cli
-
-# 使用 CLI 启动沙箱（默认 zsh）
-cargo run -p cli-box-cli -- start
-
-# 通过 HTTP 直接调用 (已知端口)
-curl http://127.0.0.1:5801/screenshot -o screenshot.png
-curl -X POST http://127.0.0.1:5801/input/click \
-  -H "Content-Type: application/json" \
-  -d '{"x": 100, "y": 200, "button": "left"}'
-
-# Agent 通过 MCP 调用 (Claude Code 配置)
-# .claude/settings.json 中添加 MCP server 配置
-```
-
-## 八、安全约束
-
-- ✅ 沙箱窗口是独立 NSWindow，截图范围可控
-- ✅ ScreenCaptureKit 按窗口 ID 截图，不截全屏
-- ✅ 目标应用不需要任何适配
-- ✅ Accessibility 和 Screen Recording 权限需用户手动授权
-- ✅ 每实例 HTTP API 仅监听 `127.0.0.1`，不暴露外部网络
-- ✅ 实例注册中心仅存储在本地文件系统 `~/.cli-box/instances/`
-- ✅ 沙箱关闭时自动清理注册信息并终止关联进程
-
-## 目录速查
-
-| 内容 | 路径 |
-|------|------|
-| 核心库 | `/crates/cli-box-core/src/` |
-| 实例管理 | `/crates/cli-box-core/src/instance/` |
-| HTTP 服务器 | `/crates/cli-box-core/src/server/` |
-| CLI 入口 | `/crates/cli-box-cli/src/main.rs` |
-| HTTP 客户端 | `/crates/cli-box-cli/src/client.rs` |
-| Tauri 宿主 | `/src-tauri/src/main.rs` |
-| 沙箱前端 | `/electron-app/src/` |
-| 前端 API 层 | `/electron-app/src/api.ts` |
-| 设计文档 | `/docs/design/` |
-| 任务管理 | `/docs/task/` |
-| 本文件 | `/CLAUDE.md` |
+> **核心原则**：Superpowers 驱动 · 测试先行 · 代码检视 · 不自动合入主分支
 
 ---
 
-**版本**：v0.2.0 | **创建**：2026-05-13 | **更新**：2026-05-16 | **维护者**：cli-box 项目
+## 一、项目概览
+
+**cli-box** 是一个 macOS 桌面自动化沙箱，支持多实例管理。通过 CLI 命令启动独立沙箱窗口，在其中运行任意 CLI 或 macOS 应用，并通过模拟鼠标/键盘操作与截图反馈进行自动化控制。
+
+**架构**：Rust daemon（PTY + 自动化引擎）+ Electron GUI（xterm.js + React）+ CLI 工具
+
+```
+Agent / 用户 (CLI / MCP / HTTP)
+        │ HTTP (localhost:15801)
+        ▼
+cli-box-daemon (Rust, 单实例)
+        │ WebSocket (PTY 流 + 截图)
+        ▼
+Electron App (单实例, Chromium)
+```
+
+**技术栈**：Rust (tokio + axum) · Electron (React + xterm.js) · macOS API (CGEvent + AXUIElement + ScreenCaptureKit)
+
+---
+
+## 二、开发工作流（完整周期）
+
+当用户发送新需求时，按以下阶段顺序执行：
+
+### 阶段 0：分支准备
+
+```bash
+git checkout main && git pull
+git checkout -b feat/<scope>-<short-description>
+```
+
+- 从 main 新切特性分支
+- 分支命名：`feat/`、`fix/`、`test/`、`docs/` 前缀
+
+### 阶段 1：需求分析与方案设计
+
+**使用技能**：`superpowers:brainstorming`
+
+1. **探索项目上下文** — 读取相关代码、文档、最近提交
+2. **需求澄清** — 一次一个问题，与用户对齐目标和约束
+3. **方案探讨** — 提出 2-3 个方案，分析 trade-offs，给出推荐
+4. **设计呈现** — 分段呈现架构、组件、数据流、错误处理、测试策略
+5. **设计文档** — 写入 `docs/superpowers/specs/YYYY-MM-DD-<topic>-design.md`
+6. **自检** — 检查占位符、内部一致性、范围、歧义
+7. **用户确认** — 等用户 review spec 后再进入下一阶段
+
+### 阶段 2：测试设计
+
+在写实现计划之前，先设计测试策略：
+
+| 测试层级 | 工具 | 覆盖范围 |
+|---------|------|---------|
+| **UT (单元测试)** | `cargo test` (Rust) · `vitest` (TS) | 单个函数/模块，mock 外部依赖 |
+| **IT (集成测试)** | `cargo test --test daemon_integration` | Daemon HTTP API 端点，tower::ServiceExt::oneshot |
+| **E2E (端到端)** | `test.sh` · `tests/e2e-*.sh` | 完整用户场景，CLI 命令驱动 |
+
+测试设计原则：
+- **TDD**：先写失败测试 → 实现 → 通过 → 重构
+- **场景覆盖**：正常路径 + 边界条件 + 错误处理
+- **回归看护**：发现 bug 时，先补充能复现问题的测试，再修复
+
+### 阶段 3：实现计划
+
+**使用技能**：`superpowers:writing-plans`
+
+- 写入 `docs/superpowers/plans/YYYY-MM-DD-<feature-name>.md`
+- 每个 Task 包含：Files（精确路径）、Steps（完整代码）、Verification（命令 + 预期输出）、Commit
+- 遵循 DRY · YAGNI · TDD · 频繁提交
+
+### 阶段 4：计划执行
+
+**使用技能**：`superpowers:subagent-driven-development`
+
+每个 Task：
+1. 派发实现子代理（提供完整上下文，不共享会话历史）
+2. 实现 → 测试 → 提交
+3. **Spec 合规检视** — 实现是否匹配 spec
+4. **代码质量检视** — Rust 惯用法、一致性、测试质量
+5. 修复检视问题 → 重新检视 → 通过后进入下一 Task
+
+### 阶段 5：代码检视
+
+**使用技能**：`superpowers:requesting-code-review`
+
+完成所有 Task 后，派发最终代码检视：
+- Base SHA → HEAD SHA 完整 diff
+- 关注：架构一致性、测试覆盖、安全问题、命名规范
+- Critical 立即修复，Important 合入前修复，Minor 记录
+
+### 阶段 6：测试执行与回归
+
+#### 6.1 本地质量门禁
+
+```bash
+sh test.sh
+```
+
+执行内容：
+- `cargo test -p cli-box-core -p cli-box-cli` — Rust 测试
+- `cargo clippy --all-targets -- -D warnings` — 静态分析
+- `cargo fmt --all -- --check` — 格式检查
+- `pnpm typecheck` — TypeScript 类型检查
+- `pnpm vitest run` — 前端单元测试
+- Playwright E2E 测试
+- E2E skill 安装测试
+- "sandbox" 残留检查
+
+**如果失败**：使用 `superpowers:systematic-debugging` 分析根因，修复后回归。
+
+#### 6.2 Release 构建
+
+```bash
+sh release.sh
+```
+
+产出：`release/cli-box` + `release/cli-box-daemon` + `release/CLI Box.app`
+
+#### 6.3 Release 测试
+
+按照 `tests/release_test.md` 执行手动场景测试：
+- 只使用 CLI 命令测试，不直接调用 REST API
+- 每步操作都截图保存到 `release_test/YYYY-MM-DD-HH-MM-SS/`
+- 检查截图是否符合预期
+- 生成 markdown 测试报告
+
+**如果测试出问题**：
+1. 分析错误根因
+2. 判断能否通过 UT/IT/E2E 复现
+3. 如果可以，补充测试用例覆盖问题场景
+4. 修复问题后回归全部测试
+
+### 阶段 7：提交与 CI
+
+```bash
+git push -u origin <branch-name>
+gh pr create --title "<title>" --body "<body>"
+```
+
+- **提交远端**，等待 CI 执行结果
+- **不合入主分支** — PR 保持 open 状态
+- 分析 CI 结果，如有失败则修复后重新推送
+
+---
+
+## 三、Git 规范
+
+### Commit 格式
+
+```
+<type>(<scope>): <description>
+
+[optional body]
+[optional footer]
+```
+
+| type | 用途 |
+|------|------|
+| `feat` | 新功能 |
+| `fix` | Bug 修复 |
+| `test` | 测试相关 |
+| `docs` | 文档更新 |
+| `refactor` | 重构（不改变行为） |
+| `chore` | 构建/工具链变更 |
+
+### Scope
+
+`sandbox` · `automation` · `capture` · `process` · `server` · `cli` · `ui` · `daemon` · `client` · `electron`
+
+### 提交策略
+
+- 小粒度提交，每个提交可独立编译通过
+- 实现和测试在同一个或相邻提交中
+- `cargo fmt` 和 `clippy` 问题在提交前修复
+
+---
+
+## 四、目录速查
+
+| 内容 | 路径 |
+|------|------|
+| 核心库 | `crates/cli-box-core/src/` |
+| Daemon | `crates/cli-box-core/src/daemon/mod.rs` |
+| 实例管理 | `crates/cli-box-core/src/instance/` |
+| HTTP 服务器 | `crates/cli-box-core/src/server/` |
+| CLI 入口 | `crates/cli-box-cli/src/main.rs` |
+| HTTP 客户端 | `crates/cli-box-cli/src/client.rs` |
+| Electron 前端 | `electron-app/src/` |
+| 前端 API 层 | `electron-app/src/api.ts` |
+| 设计文档 | `docs/superpowers/specs/` |
+| 实现计划 | `docs/superpowers/plans/` |
+| Release 测试脚本 | `test.sh` · `release.sh` |
+| Release 测试场景 | `tests/release_test.md` |
+| Release 测试报告 | `release_test/YYYY-MM-DD-HH-MM-SS/` |
+| 本文件 | `CLAUDE.md` |
+
+---
+
+## 五、测试层级说明
+
+### UT (单元测试)
+
+- **Rust**：`#[cfg(test)] mod tests` 在每个文件内，`cargo test` 运行
+- **TypeScript**：`*.test.ts` 文件，`vitest` 运行
+- 测试单个函数/模块，mock 外部依赖（HTTP、文件系统、macOS API）
+
+### IT (集成测试)
+
+- **位置**：`crates/cli-box-core/tests/daemon_integration.rs`
+- **方式**：`tower::ServiceExt::oneshot` 测试 daemon 路由，不绑定真实 TCP 端口
+- **覆盖**：每个 HTTP 端点的正常/错误路径
+
+### E2E (端到端测试)
+
+- **脚本**：`test.sh` 编排所有测试，`tests/e2e-*.sh` 执行具体场景
+- **场景**：CLI 命令 → daemon 响应 → 验证结果
+- **覆盖**：sandbox 生命周期、截图、输入模拟、skill 安装
+
+### Release 测试
+
+- **触发**：`sh release.sh` 构建后手动执行
+- **场景**：按照 `tests/release_test.md` 中的完整用户流程
+- **产出**：截图 + markdown 测试报告
+
+---
+
+## 六、Superpowers 技能使用
+
+| 阶段 | 技能 | 触发时机 |
+|------|------|---------|
+| 需求分析 | `superpowers:brainstorming` | 新需求开始时 |
+| 计划编写 | `superpowers:writing-plans` | 设计确认后 |
+| 计划执行 | `superpowers:subagent-driven-development` | 实现阶段 |
+| 代码检视 | `superpowers:requesting-code-review` | 每个 Task 完成后 + 最终检视 |
+| Bug 调试 | `superpowers:systematic-debugging` | 测试失败或异常行为时 |
+| 分支收尾 | `superpowers:finishing-a-development-branch` | 所有任务完成时 |
+
+**调试原则**（systematic-debugging）：
+- **NO FIXES WITHOUT ROOT CAUSE INVESTIGATION FIRST**
+- Phase 1: 根因调查 → Phase 2: 模式分析 → Phase 3: 假设验证 → Phase 4: 修复实现
+- 3 次修复失败 → 质疑架构，与用户讨论
+
+---
+
+## 七、关键约束
+
+- **语言**：用户使用中文交流，代码和注释使用英文
+- **不自动合入**：PR 创建后保持 open，不执行 merge
+- **测试驱动**：先写测试，再写实现
+- **CLI 优先**：Release 测试只使用 CLI 命令，不直接调用 REST API
+- **截图验证**：Release 测试每步操作都截图，检查图片是否符合预期
+- **Superpowers 驱动**：使用 Superpowers 技能完成各阶段工作，不跳过
+- **零侵入**：目标应用不需要任何适配，所有操作在 OS 层面完成
+
+---
+
+**版本**：v0.2.0 | **创建**：2026-05-13 | **更新**：2026-06-06 | **维护者**：cli-box 项目
