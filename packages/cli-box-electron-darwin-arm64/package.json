@@ -1,6 +1,6 @@
 {
   "name": "cli-box-electron-darwin-arm64",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "cli-box Electron app for macOS arm64",
   "os": ["darwin"],
   "cpu": ["arm64"],
