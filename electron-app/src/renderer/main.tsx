@@ -143,6 +143,20 @@ function App() {
             }));
           }
         }
+        // Periodically notify daemon about ready terminals (handles newly created tabs)
+        const readyInterval = setInterval(() => {
+          if (ws?.readyState !== WebSocket.OPEN) return;
+          for (const tab of tabsRef.current) {
+            const ref = terminalRefs.current.get(tab.id);
+            if (ref?.current) {
+              ws.send(JSON.stringify({
+                type: "terminal_ready",
+                sandbox_id: tab.id,
+              }));
+            }
+          }
+        }, 2000);
+        (ws as any)._readyInterval = readyInterval;
       };
 
       ws.onmessage = async (event) => {
@@ -200,6 +214,7 @@ function App() {
 
       ws.onclose = () => {
         console.log("[screenshot-ws] disconnected");
+        if ((ws as any)._readyInterval) clearInterval((ws as any)._readyInterval);
         if (!unmounted) {
           console.log(`[screenshot-ws] reconnecting in ${reconnectDelay}ms...`);
           reconnectTimeout = setTimeout(() => {
@@ -219,6 +234,7 @@ function App() {
     return () => {
       unmounted = true;
       screenshotWsRef.current = null;
+      if ((ws as any)._readyInterval) clearInterval((ws as any)._readyInterval);
       if (reconnectTimeout) clearTimeout(reconnectTimeout);
       if (ws) ws.close();
     };
@@ -358,8 +374,9 @@ function App() {
                   sandboxId={tab.id}
                   ptyPid={tab.sandbox.pty_pid!}
                   onReady={() => {
-                    if (screenshotWsRef.current?.readyState === WebSocket.OPEN) {
-                      screenshotWsRef.current.send(JSON.stringify({
+                    const ws = screenshotWsRef.current;
+                    if (ws?.readyState === WebSocket.OPEN) {
+                      ws.send(JSON.stringify({
                         type: "terminal_ready",
                         sandbox_id: tab.id,
                       }));
