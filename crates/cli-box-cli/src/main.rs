@@ -983,7 +983,7 @@ async fn cmd_key(key: &str, id: &str, modifiers: &[String]) -> anyhow::Result<()
             let plain = client::key_to_pty_bytes(key);
             if plain.is_empty() {
                 anyhow::bail!(
-                    "Key '{}' with modifiers {:?} cannot be mapped to PTY bytes. Use CGEvent mode (remove --pty).",
+                    "Key '{}' with modifiers {:?} cannot be mapped to PTY bytes. This key is not supported in PTY mode.",
                     key, modifiers
                 );
             }
@@ -1002,7 +1002,7 @@ async fn cmd_key(key: &str, id: &str, modifiers: &[String]) -> anyhow::Result<()
             id
         );
     } else {
-        tracing::warn!("[cli] key: using CGEvent path (not PTY). This targets the Tauri process, not the CLI child process. Consider using --pty for CLI sandboxes.");
+        tracing::warn!("[cli] key: using CGEvent path (not PTY). This targets the Tauri process, not the CLI child process.");
         client.press_key(key, modifiers).await?;
         println!(
             "Pressed (CGEvent): {} {} → sandbox {}",

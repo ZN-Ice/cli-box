@@ -46,10 +46,10 @@ InputSimulator::type_text("你好", Some(tauri_pid))
 CGEvent → Tauri 进程 → xterm.js → 用户看到文字
 ```
 
-同时支持 PTY 直写模式（`--pty` 参数）：
+CLI 沙箱自动使用 PTY 直写模式（根据 `InstanceKind` 自动检测）：
 
 ```
-CLI command: sandbox-cli type --id abc123 --pty "你好"
+CLI command: sandbox-cli type --id abc123 "你好"
     ↓
 SandboxClient.list_processes() → 获取 PTY PID
 SandboxClient.pty_write(pid, "你好")
@@ -93,11 +93,9 @@ sandbox-cli inspect <id>                   # 查看沙箱详情
 sandbox-cli close <id>                     # 关闭沙箱
 
 # 键盘操作
-sandbox-cli type --id <id> "text"          # 输入文本（CGEvent）
-sandbox-cli type --id <id> --pty "text"    # 输入文本（PTY 直写）
+sandbox-cli type --id <id> "text"          # 输入文本（自动路由：CLI→PTY，App→CGEvent）
 sandbox-cli key --id <id> Return           # 按键
 sandbox-cli key --id <id> Return -m cmd    # 按键 + 修饰键
-sandbox-cli key --id <id> --pty Return     # 按键（PTY 直写）
 
 # 鼠标操作
 sandbox-cli click --id <id> 100 200        # 点击
@@ -164,8 +162,8 @@ sandbox-cli start claude
 # 输出: Sandbox started (查看 sandbox-cli list 获取 id)
 
 # 等待 claude 启动完成后操作
-sandbox-cli type --id <id> --pty "你是谁？"
-sandbox-cli key --id <id> --pty Return
+sandbox-cli type --id <id> "你是谁？"
+sandbox-cli key --id <id> Return
 ```
 
 ### 场景二：Zsh 命令执行
@@ -175,6 +173,6 @@ sandbox-cli key --id <id> --pty Return
 sandbox-cli start zsh
 
 # 输入命令并执行
-sandbox-cli type --id <id> --pty 'echo "hello world"'
-sandbox-cli key --id <id> --pty Return
+sandbox-cli type --id <id> 'echo "hello world"'
+sandbox-cli key --id <id> Return
 ```

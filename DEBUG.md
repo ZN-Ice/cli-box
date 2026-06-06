@@ -186,8 +186,8 @@ SANDBOX_ID=$(./release/cli-box list | grep -o '^\S*' | head -1)
 ./release/cli-box screenshot --id $SANDBOX_ID -o test_screenshot.png
 
 # 4. PTY 交互测试
-./release/cli-box type --id $SANDBOX_ID --pty "测试文本"
-./release/cli-box key --id $SANDBOX_ID --pty Return
+./release/cli-box type --id $SANDBOX_ID "测试文本"
+./release/cli-box key --id $SANDBOX_ID Return
 
 # 5. 再次截图验证
 sleep 3
@@ -197,16 +197,16 @@ sleep 3
 ./release/cli-box close $SANDBOX_ID
 ```
 
-### 4.2 PTY 输入注意事项
+### 4.2 输入路由说明
 
-CLI 沙箱中输入文字必须使用 `--pty` 标志：
+输入路由根据沙箱类型自动选择：
+- **CLI 沙箱**（Claude Code、zsh 等）：自动使用 PTY 写入
+- **App 沙箱**（GUI 应用）：自动使用 CGEvent 模拟
 
 ```bash
-# ✅ 正确：直接写入 PTY
-./release/cli-box type --id xxx --pty "你好"
-
-# ❌ 错误：使用 CGEvent 模拟（在 CLI 沙箱中不可用）
+# CLI 沙箱中自动走 PTY 路径
 ./release/cli-box type --id xxx "你好"
+./release/cli-box key --id xxx Return
 ```
 
 ## 五、常见问题排查

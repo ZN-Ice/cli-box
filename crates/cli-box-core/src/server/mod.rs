@@ -1731,6 +1731,6 @@ mod tests {
         // The child process (e.g., claude) runs in a PTY with a different PID.
         // CGEvent to tauri_pid ≠ PTY write to child_pid.
         // This is why `sandbox type --id <id> "text"` (CGEvent) doesn't work
-        // but `sandbox type --id <id> --pty "text"` (PTY write) does.
+        // but PTY write (auto-detected for CLI sandboxes) does.
     }
 }

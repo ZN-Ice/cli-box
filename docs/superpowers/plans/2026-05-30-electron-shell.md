@@ -10,7 +10,7 @@
 
 **Spec:** `docs/design/electron-rust-architecture.md` (Section 3.2, 3.3, Phase 2 in Section 9)
 
-**Depends on:** Phase 1 complete (`cli-box-daemon` running with HTTP API on port 15801–15899, CLI `cli-box start/type/key --pty` all working)
+**Depends on:** Phase 1 complete (`cli-box-daemon` running with HTTP API on port 15801–15899, CLI `cli-box start/type/key` all working)
 
 ---
 
