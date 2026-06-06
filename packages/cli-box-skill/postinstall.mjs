@@ -38,7 +38,7 @@ try {
   ok(`Found platform package: ${platformPkgName}`);
 } catch (e) {
   warn(`Platform package ${platformPkgName} not found. Skipping binary setup.`);
-  warn('You can install binaries manually via: bash <(curl -fsSL https://raw.githubusercontent.com/ZN-Ice/cli-box/main/skill/install.sh)');
+  warn('You can install binaries manually via: bash <(curl -fsSL https://raw.githubusercontent.com/Shadow-Azure/cli-box/main/skill/install.sh)');
   process.exit(0);
 }
 
