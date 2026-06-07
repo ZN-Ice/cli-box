@@ -1982,10 +1982,7 @@ mod tests {
         );
 
         let result = kill_stale_electron();
-        assert!(
-            !result,
-            "Should return false when PID is not alive"
-        );
+        assert!(!result, "Should return false when PID is not alive");
 
         if let Some(content) = backup {
             let _ = std::fs::write(&path, content);
