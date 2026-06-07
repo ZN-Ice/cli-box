@@ -115,7 +115,7 @@ function App() {
   // Screenshot WebSocket: connect to daemon for per-tab capture (with reconnection)
   useEffect(() => {
     if (!connected) return;
-    const port = getDaemonPort();
+    let port = getDaemonPort();
     if (!port) return;
 
     let ws: WebSocket | null = null;
@@ -217,7 +217,18 @@ function App() {
         if ((ws as any)._readyInterval) clearInterval((ws as any)._readyInterval);
         if (!unmounted) {
           console.log(`[screenshot-ws] reconnecting in ${reconnectDelay}ms...`);
-          reconnectTimeout = setTimeout(() => {
+          reconnectTimeout = setTimeout(async () => {
+            // Check if daemon port changed (e.g., daemon restarted)
+            try {
+              const newPort = await window.sandbox.getDaemonPort();
+              if (newPort && newPort !== port) {
+                console.log(`[screenshot-ws] daemon port changed: ${port} → ${newPort}`);
+                setDaemonPort(newPort);
+                port = newPort;
+              }
+            } catch {
+              // IPC failed, keep current port
+            }
             reconnectDelay = Math.min(reconnectDelay * 2, MAX_RECONNECT_DELAY);
             connect();
           }, reconnectDelay);
