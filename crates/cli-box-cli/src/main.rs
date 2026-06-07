@@ -486,8 +486,12 @@ async fn cmd_start_daemon(command: &str, args: &[String]) -> anyhow::Result<()> 
 
     use std::io::Write;
 
-    // Phase 1: Wait for renderer WebSocket (only if Electron was newly spawned)
-    if electron_newly_spawned {
+    // Phase 1: Wait for renderer WebSocket
+    // If Electron was already running (not freshly spawned by us), we may need to
+    // kill a stale process and retry if the renderer doesn't connect.
+    let mut retried = false;
+
+    loop {
         print!("Waiting for renderer");
         let _ = std::io::stdout().flush();
 
@@ -496,19 +500,17 @@ async fn cmd_start_daemon(command: &str, args: &[String]) -> anyhow::Result<()> 
         let poll_interval = std::time::Duration::from_secs(1);
         let mut dot_count: u8 = 0;
 
+        let mut connected = false;
         loop {
             if start.elapsed() > timeout {
                 println!();
-                tracing::warn!(
-                    "[start] Renderer WebSocket did not connect within {}s, continuing anyway",
-                    timeout.as_secs()
-                );
                 break;
             }
 
             match client::daemon_readiness().await {
                 Ok(resp) if resp.renderer_connected => {
                     println!(" done");
+                    connected = true;
                     break;
                 }
                 Err(e) => {
@@ -526,6 +528,32 @@ async fn cmd_start_daemon(command: &str, args: &[String]) -> anyhow::Result<()> 
 
             tokio::time::sleep(poll_interval).await;
         }
+
+        if connected {
+            break;
+        }
+
+        // Renderer didn't connect. If Electron was already running (not spawned by us)
+        // and we haven't retried yet, kill the stale Electron and respawn.
+        if !electron_newly_spawned && !retried {
+            retried = true;
+            if kill_stale_electron() {
+                tracing::info!("[start] Stale Electron killed, respawning...");
+                if let Some(electron_bin) = find_electron_binary() {
+                    let _child = Command::new(&electron_bin)
+                        .spawn()
+                        .context("Failed to re-launch Electron app")?;
+                    tracing::info!("[start] Electron re-launched");
+                    continue; // Retry the wait loop
+                }
+            }
+        }
+
+        tracing::warn!(
+            "[start] Renderer WebSocket did not connect within {}s, continuing anyway",
+            timeout.as_secs()
+        );
+        break;
     }
 
     // Phase 2: Wait for terminal readiness (xterm.js mounted)
@@ -1740,6 +1768,65 @@ fn find_running_electron() -> bool {
     false
 }
 
+/// Kill a stale Electron process that is alive but not responding.
+///
+/// Reads `~/.cli-box/electron.json` to get the PID, kills the process,
+/// and cleans up the file. Returns `true` if a stale process was found and killed.
+fn kill_stale_electron() -> bool {
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
+    let path = std::path::PathBuf::from(home)
+        .join(".cli-box")
+        .join("electron.json");
+
+    if !path.exists() {
+        return false;
+    }
+
+    let json = match std::fs::read_to_string(&path) {
+        Ok(j) => j,
+        Err(_) => {
+            let _ = std::fs::remove_file(&path);
+            return false;
+        }
+    };
+
+    let info: serde_json::Value = match serde_json::from_str(&json) {
+        Ok(v) => v,
+        Err(_) => {
+            let _ = std::fs::remove_file(&path);
+            return false;
+        }
+    };
+
+    let pid = match info["pid"].as_u64() {
+        Some(p) => p as i32,
+        None => {
+            let _ = std::fs::remove_file(&path);
+            return false;
+        }
+    };
+
+    // Check if process is alive
+    let alive = std::process::Command::new("kill")
+        .arg("-0")
+        .arg(pid.to_string())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false);
+
+    if alive {
+        tracing::info!("[start] Killing stale Electron process (pid={pid})");
+        let _ = std::process::Command::new("kill")
+            .arg(pid.to_string())
+            .status();
+        // Give it a moment to exit
+        std::thread::sleep(std::time::Duration::from_millis(500));
+    }
+
+    let _ = std::fs::remove_file(&path);
+    alive
+}
+
 fn discover_sandbox_window() -> anyhow::Result<u32> {
     let windows = ScreenCapture::list_windows()
         .context("Failed to list windows. Is Screen Recording permission granted?")?;
@@ -1858,5 +1945,49 @@ mod tests {
 
         assert!(nested.exists(), "File should exist at nested path");
         let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn kill_stale_electron_returns_false_when_no_file() {
+        let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
+        let path = std::path::PathBuf::from(&home)
+            .join(".cli-box")
+            .join("electron.json");
+        let backup = std::fs::read_to_string(&path).ok();
+        let _ = std::fs::remove_file(&path);
+
+        let result = kill_stale_electron();
+        assert!(
+            !result,
+            "Should return false when electron.json doesn't exist"
+        );
+
+        if let Some(content) = backup {
+            let _ = std::fs::write(&path, content);
+        }
+    }
+
+    #[test]
+    fn kill_stale_electron_returns_false_for_dead_pid() {
+        let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
+        let dir = std::path::PathBuf::from(&home).join(".cli-box");
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("electron.json");
+        let backup = std::fs::read_to_string(&path).ok();
+
+        // Write a PID that is very unlikely to exist
+        let _ = std::fs::write(
+            &path,
+            serde_json::json!({"pid": 4000000, "port": 15801}).to_string(),
+        );
+
+        let result = kill_stale_electron();
+        assert!(!result, "Should return false when PID is not alive");
+
+        if let Some(content) = backup {
+            let _ = std::fs::write(&path, content);
+        } else {
+            let _ = std::fs::remove_file(&path);
+        }
     }
 }
