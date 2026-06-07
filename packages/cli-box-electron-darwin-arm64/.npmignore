@@ -1,0 +1,3 @@
+# npm publish includes everything by default
+# This overrides the root .gitignore which excludes app/
+# We need app/ in the published package
