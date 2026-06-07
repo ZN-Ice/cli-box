@@ -1,0 +1,3 @@
+# npm publish includes everything by default
+# This overrides the root .gitignore which excludes bin/
+# We need bin/ in the published package

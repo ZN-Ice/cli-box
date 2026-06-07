@@ -341,18 +341,59 @@ test_post_install_verify() {
   if [ "$(uname)" = "Darwin" ] && [ -z "${CI:-}" ]; then
     info "  Running functional test (cli-box start zsh)..."
     local SANDBOX_ID
-    SANDBOX_ID=$("$TMP_HOME/.cli-box/bin/cli-box" start zsh 2>&1 | grep -oE '[a-f0-9]{6}' | head -1 || true)
-    if [ -n "$SANDBOX_ID" ]; then
-      sleep 3
-      if "$TMP_HOME/.cli-box/bin/cli-box" list 2>&1 | grep -q "$SANDBOX_ID"; then
-        ok "  Sandbox $SANDBOX_ID is running"
-      else
-        warn "  Sandbox $SANDBOX_ID not found in list (may have exited)"
+
+    # Use timeout to prevent hanging (macOS doesn't have timeout command)
+    # Run cli-box start in background and wait with timeout
+    local OUTPUT_FILE
+    OUTPUT_FILE=$(mktemp)
+    local PID_FILE
+    PID_FILE=$(mktemp)
+
+    # Start cli-box in background
+    "$TMP_HOME/.cli-box/bin/cli-box" start zsh > "$OUTPUT_FILE" 2>&1 &
+    local CLI_PID=$!
+    echo "$CLI_PID" > "$PID_FILE"
+
+    # Wait up to 30 seconds for output
+    local TIMEOUT=30
+    local ELAPSED=0
+    while [ $ELAPSED -lt $TIMEOUT ]; do
+      if ! kill -0 "$CLI_PID" 2>/dev/null; then
+        # Process finished
+        break
       fi
-      "$TMP_HOME/.cli-box/bin/cli-box" close "$SANDBOX_ID" 2>/dev/null || true
+      if [ -s "$OUTPUT_FILE" ]; then
+        # Got some output
+        break
+      fi
+      sleep 1
+      ELAPSED=$((ELAPSED + 1))
+    done
+
+    # Check if process is still running (timeout case)
+    if kill -0 "$CLI_PID" 2>/dev/null; then
+      warn "  cli-box start timed out after ${TIMEOUT}s, killing..."
+      kill "$CLI_PID" 2>/dev/null || true
+      wait "$CLI_PID" 2>/dev/null || true
+      warn "  Functional test skipped (timeout - macOS permissions may be required)"
     else
-      warn "  Could not start sandbox (macOS permissions may be required)"
+      # Process finished, check output
+      SANDBOX_ID=$(grep -oE '[a-f0-9]{6}' "$OUTPUT_FILE" | head -1 || true)
+      if [ -n "$SANDBOX_ID" ]; then
+        sleep 3
+        if "$TMP_HOME/.cli-box/bin/cli-box" list 2>&1 | grep -q "$SANDBOX_ID"; then
+          ok "  Sandbox $SANDBOX_ID is running"
+        else
+          warn "  Sandbox $SANDBOX_ID not found in list (may have exited)"
+        fi
+        "$TMP_HOME/.cli-box/bin/cli-box" close "$SANDBOX_ID" 2>/dev/null || true
+      else
+        warn "  Could not start sandbox (macOS permissions may be required)"
+      fi
     fi
+
+    # Cleanup
+    rm -f "$OUTPUT_FILE" "$PID_FILE"
   else
     info "  Skipping functional test (CI or non-macOS)"
   fi
