@@ -1,7 +1,7 @@
 import { app, BrowserWindow, ipcMain } from "electron";
 import { join } from "path";
 import { writeFileSync, unlinkSync, mkdirSync } from "fs";
-import { ensureDaemon, killDaemon } from "./daemon-bridge";
+import { ensureDaemonOnDemand, killDaemon } from "./daemon-bridge";
 
 const ELECTRON_JSON_PATH = join(process.env.HOME || "/tmp", ".cli-box", "electron.json");
 
@@ -32,7 +32,7 @@ if (!gotTheLock) {
 
   app.whenReady().then(async () => {
     try {
-      daemonPort = await ensureDaemon();
+      daemonPort = await ensureDaemonOnDemand();
     } catch (err) {
       console.error("Failed to start daemon:", err);
       app.quit();
