@@ -10,12 +10,14 @@ import {
 } from "./api";
 import { Tab, syncTabs, selectAfterClose } from "./tabState";
 import AppPanel from "./components/AppPanel";
+import { ErrorModal } from "./components/ErrorModal";
 import "./styles.css";
 
 declare global {
   interface Window {
     sandbox: {
-      getDaemonPort: () => Promise<number>;
+      getDaemonPort: () => Promise<number | null>;
+      ensureDaemon: () => Promise<number>;
       createTab: (sandboxId: string, kind: string, title: string) => Promise<void>;
       switchTab: (sandboxId: string) => Promise<void>;
       closeTab: (sandboxId: string) => Promise<void>;
@@ -36,6 +38,7 @@ function App() {
     return (localStorage.getItem("theme") as Theme) || "system";
   });
   const [connected, setConnected] = useState(false);
+  const [daemonError, setDaemonError] = useState<string | null>(null);
   const [showNewDialog, setShowNewDialog] = useState(false);
   const [newSandboxCmd, setNewSandboxCmd] = useState("");
   const [newSandboxMode, setNewSandboxMode] = useState<"cli" | "app">("cli");
@@ -58,13 +61,43 @@ function App() {
     localStorage.setItem("theme", theme);
   }, [theme]);
 
-  // Initialize daemon port and load sandboxes
+  // Poll for daemon port every 1s until daemon is available
   useEffect(() => {
-    window.sandbox.getDaemonPort().then((port) => {
-      setDaemonPort(port);
-      setConnected(true);
-      refreshSandboxes();
-    });
+    let cancelled = false;
+    let pollTimer: ReturnType<typeof setTimeout> | null = null;
+
+    function poll() {
+      if (cancelled) return;
+      window.sandbox
+        .getDaemonPort()
+        .then((port) => {
+          if (cancelled) return;
+          if (port && port > 0) {
+            // Daemon is up
+            if (port !== getDaemonPort()) {
+              setDaemonPort(port);
+              setConnected(true);
+              refreshSandboxes();
+            }
+            // Connected — no need to poll
+          } else {
+            // Daemon not running yet
+            setConnected(false);
+            pollTimer = setTimeout(poll, 1000);
+          }
+        })
+        .catch(() => {
+          if (cancelled) return;
+          setConnected(false);
+          pollTimer = setTimeout(poll, 1000);
+        });
+    }
+
+    poll();
+    return () => {
+      cancelled = true;
+      if (pollTimer) clearTimeout(pollTimer);
+    };
   }, []);
 
   // Listen for tab switch commands from main process
@@ -100,7 +133,8 @@ function App() {
         setActiveTabId(list[0].id);
       }
     } catch {
-      setConnected(false);
+      // Transient fetch failure — don't flip connected (screenshot WS will detect death)
+      console.warn("[sandbox-list] fetch failed, will retry");
     }
   }, [activeTabId]);
 
@@ -216,6 +250,20 @@ function App() {
         console.log("[screenshot-ws] disconnected");
         if ((ws as any)._readyInterval) clearInterval((ws as any)._readyInterval);
         if (!unmounted) {
+          // Check if daemon is still alive; if not, signal disconnect to re-arm main polling
+          window.sandbox
+            .getDaemonPort()
+            .then((p) => {
+              if (p === 0 || p === null) {
+                console.log("[screenshot-ws] daemon is down, signaling disconnect");
+                setConnected(false);
+                setDaemonPort(0);
+              }
+            })
+            .catch(() => {
+              setConnected(false);
+              setDaemonPort(0);
+            });
           console.log(`[screenshot-ws] reconnecting in ${reconnectDelay}ms...`);
           reconnectTimeout = setTimeout(async () => {
             // Check if daemon port changed (e.g., daemon restarted)
@@ -292,6 +340,16 @@ function App() {
       if (prev === "light") return "system";
       return "dark";
     });
+  }, []);
+
+  const triggerEnsureDaemon = useCallback(async () => {
+    setDaemonError(null);
+    try {
+      await window.sandbox.ensureDaemon();
+      // Polling effect will pick up the new port
+    } catch (err: any) {
+      setDaemonError(err?.message ?? String(err));
+    }
   }, []);
 
   const activeTab = tabs.find((t) => t.id === activeTabId);
@@ -452,12 +510,13 @@ function App() {
                 onClick={async () => {
                   if (!newSandboxCmd.trim()) return;
                   try {
+                    await window.sandbox.ensureDaemon();
                     await createSandbox(newSandboxMode, newSandboxCmd);
                     setShowNewDialog(false);
                     setNewSandboxCmd("");
                     refreshSandboxes();
-                  } catch (e) {
-                    console.error("Failed to create sandbox:", e);
+                  } catch (err: any) {
+                    setDaemonError(err?.message ?? String(err));
                   }
                 }}
               >
@@ -532,6 +591,16 @@ function App() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Daemon Error Modal */}
+      {daemonError && (
+        <ErrorModal
+          title="Failed to start daemon"
+          message={daemonError}
+          onRetry={triggerEnsureDaemon}
+          onClose={() => setDaemonError(null)}
+        />
       )}
     </div>
   );

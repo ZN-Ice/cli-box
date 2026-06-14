@@ -3,7 +3,23 @@
  * Connects to cli-box-daemon HTTP/WebSocket API.
  */
 
-let _port = 15801;
+declare global {
+  interface Window {
+    sandbox: {
+      getDaemonPort: () => Promise<number | null>;
+      ensureDaemon: () => Promise<number>;
+      createTab: (sandboxId: string, kind: string, title: string) => Promise<void>;
+      switchTab: (sandboxId: string) => Promise<void>;
+      closeTab: (sandboxId: string) => Promise<void>;
+      listTabs: () => Promise<{ id: string; kind: string; title: string }[]>;
+      onSwitchTab: (callback: (sandboxId: string) => void) => void;
+      onWindowClosing: (callback: () => void) => void;
+      sendCloseResponse: (action: "cancel" | "close-window-only" | "close-all") => Promise<void>;
+    };
+  }
+}
+
+let _port = 0;
 
 export function getDaemonPort(): number {
   return _port;

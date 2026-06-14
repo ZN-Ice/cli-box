@@ -400,7 +400,7 @@ checksum = "c8d4a3bb8b1e0c1050499d1815f5ab16d04f0959b233085fb31653fbfc9d98f9"
 
 [[package]]
 name = "cli-box-cli"
-version = "0.1.0"
+version = "0.2.4"
 dependencies = [
  "anyhow",
  "base64",
@@ -419,7 +419,7 @@ dependencies = [
 
 [[package]]
 name = "cli-box-core"
-version = "0.1.0"
+version = "0.2.4"
 dependencies = [
  "async-trait",
  "axum",
@@ -448,7 +448,7 @@ dependencies = [
 
 [[package]]
 name = "cli-box-daemon"
-version = "0.1.0"
+version = "0.2.4"
 dependencies = [
  "cli-box-core",
  "tokio",

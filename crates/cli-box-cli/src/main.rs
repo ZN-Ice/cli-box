@@ -459,7 +459,13 @@ async fn cmd_start_daemon(command: &str, args: &[String]) -> anyhow::Result<()> 
 
     println!("Creating sandbox: mode={mode}, command={full_cmd}");
 
-    let result = client::daemon_create_sandbox(mode, Some(command), args, None, None).await?;
+    let result = client::daemon_create_sandbox(mode, Some(command), args, None, None)
+        .await
+        .map_err(|e| {
+            eprintln!("Error: Failed to connect to daemon: {e}");
+            eprintln!("Hint: Run 'cli-box start' in another terminal to start the daemon.");
+            e
+        })?;
 
     println!(
         "Sandbox created: id={}, pty_pid={:?}, window_id={:?}",
@@ -661,7 +667,13 @@ async fn cmd_list_daemon() -> anyhow::Result<()> {
 /// Close a sandbox via the daemon API.
 async fn cmd_close_daemon(id: &str) -> anyhow::Result<()> {
     println!("Closing sandbox {id}...");
-    client::daemon_close(id).await?;
+    client::daemon_close(id)
+        .await
+        .map_err(|e| {
+            eprintln!("Error: Failed to connect to daemon: {e}");
+            eprintln!("Hint: Run 'cli-box start' in another terminal to start the daemon.");
+            e
+        })?;
     println!("Sandbox {id} closed.");
     Ok(())
 }
@@ -771,7 +783,13 @@ async fn cmd_screenshot_daemon(
         )
     })?;
 
-    let result = client::daemon_screenshot(sandbox_id, with_frame).await?;
+    let result = client::daemon_screenshot(sandbox_id, with_frame)
+        .await
+        .map_err(|e| {
+            eprintln!("Error: Failed to connect to daemon: {e}");
+            eprintln!("Hint: Run 'cli-box start' in another terminal to start the daemon.");
+            e
+        })?;
 
     if result.source.as_deref() == Some("screencapturekit") {
         eprintln!("Screenshot captured with ScreenCaptureKit (full window frame).");

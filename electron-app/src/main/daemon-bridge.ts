@@ -42,6 +42,28 @@ export function findRunningDaemon(): number | null {
   return null;
 }
 
+/**
+ * Poll for an existing daemon without spawning one.
+ * Returns the port once daemon.json is found, or throws on timeout.
+ *
+ * @param timeoutMs - 0 means poll forever (default), >0 means timeout after N ms
+ * @param pollIntervalMs - polling interval in ms (default 1000ms = 1s)
+ */
+export async function waitForDaemon(
+  timeoutMs: number = 0,
+  pollIntervalMs: number = 1000
+): Promise<number> {
+  const start = Date.now();
+  while (true) {
+    const port = findRunningDaemon();
+    if (port) return port;
+    if (timeoutMs > 0 && Date.now() - start > timeoutMs) {
+      throw new Error(`Daemon not available within ${timeoutMs}ms`);
+    }
+    await new Promise((r) => setTimeout(r, pollIntervalMs));
+  }
+}
+
 function findDaemonBinary(): string {
   // Dev mode: relative to project
   const devPath = join(__dirname, "..", "..", "..", "target", "release", "cli-box-daemon");
@@ -53,7 +75,16 @@ function findDaemonBinary(): string {
   return join(dirname(app.getPath("exe")), "cli-box-daemon");
 }
 
-export async function ensureDaemon(): Promise<number> {
+/**
+ * Spawn daemon subprocess on demand.
+ * Use this when user explicitly requests daemon (e.g., creates sandbox from GUI
+ * while daemon is not running). Do NOT call this on app launch — use
+ * waitForDaemon() instead to poll for existing daemon.
+ *
+ * @returns The daemon port number
+ * @throws If daemon binary not found or fails to start within timeout
+ */
+export async function ensureDaemonOnDemand(): Promise<number> {
   const existingPort = findRunningDaemon();
   if (existingPort) return existingPort;
 
