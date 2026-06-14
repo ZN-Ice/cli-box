@@ -48,15 +48,11 @@ if (!gotTheLock) {
 ipcMain.handle("get-daemon-port", () => daemonPort);
 
 // IPC: renderer asks main to spawn daemon (on-demand, triggered by GUI)
-let daemonStartedByElectron = false;
 ipcMain.handle("ensure-daemon", async () => {
-  if (daemonStartedByElectron && daemonPort) {
-    return daemonPort; // Already started by us, just return
-  }
+  if (daemonPort) return daemonPort; // Daemon already known (running)
   try {
     const port = await ensureDaemonOnDemand();
     daemonPort = port;
-    daemonStartedByElectron = true;
     writeElectronJson(port);
     return port;
   } catch (err: any) {
