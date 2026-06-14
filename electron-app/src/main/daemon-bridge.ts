@@ -75,7 +75,16 @@ function findDaemonBinary(): string {
   return join(dirname(app.getPath("exe")), "cli-box-daemon");
 }
 
-export async function ensureDaemon(): Promise<number> {
+/**
+ * Spawn daemon subprocess on demand.
+ * Use this when user explicitly requests daemon (e.g., creates sandbox from GUI
+ * while daemon is not running). Do NOT call this on app launch — use
+ * waitForDaemon() instead to poll for existing daemon.
+ *
+ * @returns The daemon port number
+ * @throws If daemon binary not found or fails to start within timeout
+ */
+export async function ensureDaemonOnDemand(): Promise<number> {
   const existingPort = findRunningDaemon();
   if (existingPort) return existingPort;
 
