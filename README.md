@@ -115,6 +115,10 @@ cli-box click --id <id> 100 200
 # { "mcpServers": { "cli-box": { "command": "cli-box", "args": ["mcp-serve"] } } }
 ```
 
+## How it works
+
+- **Daemon lifecycle**: The daemon is started by the CLI (`cli-box start`). Electron detects and connects to an existing daemon; it does not auto-spawn. If you launch the Electron app directly without first running `cli-box start`, the app will display a "Waiting for daemon" message and poll every second.
+
 ## macOS Permissions
 
 | Permission | Why | Grant in |
