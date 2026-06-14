@@ -42,6 +42,28 @@ export function findRunningDaemon(): number | null {
   return null;
 }
 
+/**
+ * Poll for an existing daemon without spawning one.
+ * Returns the port once daemon.json is found, or throws on timeout.
+ *
+ * @param timeoutMs - 0 means poll forever (default), >0 means timeout after N ms
+ * @param pollIntervalMs - polling interval in ms (default 1000ms = 1s)
+ */
+export async function waitForDaemon(
+  timeoutMs: number = 0,
+  pollIntervalMs: number = 1000
+): Promise<number> {
+  const start = Date.now();
+  while (true) {
+    const port = findRunningDaemon();
+    if (port) return port;
+    if (timeoutMs > 0 && Date.now() - start > timeoutMs) {
+      throw new Error(`Daemon not available within ${timeoutMs}ms`);
+    }
+    await new Promise((r) => setTimeout(r, pollIntervalMs));
+  }
+}
+
 function findDaemonBinary(): string {
   // Dev mode: relative to project
   const devPath = join(__dirname, "..", "..", "..", "target", "release", "cli-box-daemon");
