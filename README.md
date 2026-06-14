@@ -94,6 +94,7 @@ cli-box start node      # Node.js
 | Multi-instance | Run any CLI in its own sandbox tab | |
 | Screenshot | Window-level capture via ScreenCaptureKit, no foreground needed | |
 | PTY input | Direct terminal input, supports Chinese and all key combos | |
+| UI inspection | Read UI element tree (AX) or terminal text output | |
 | MCP integration | Claude Code / OpenCode call cli-box as an MCP tool | |
 | Zero invasion | Target app needs no adaptation — works at OS level | |
 
@@ -110,6 +111,11 @@ cli-box screenshot --id <id> -o shot.png
 cli-box type --id <id> "hello world"
 cli-box key --id <id> Return
 cli-box click --id <id> 100 200
+
+# UI inspection (App sandboxes: AX tree, CLI sandboxes: terminal text)
+cli-box ui-inspect --id <id>                # Print UI element tree or terminal content
+cli-box ui-find --id <id> --role AXButton   # Find elements by role
+cli-box ui-value --id <id> --element-id 3   # Get element value by index
 
 # MCP config (add to .claude/settings.json)
 # { "mcpServers": { "cli-box": { "command": "cli-box", "args": ["mcp-serve"] } } }

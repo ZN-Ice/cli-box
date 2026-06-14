@@ -27,6 +27,38 @@ use std::net::TcpListener;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
+
+/// Discover the Electron window ID by title, falling back to PID-based lookup.
+/// The Electron app may not always set a window title (e.g., with titleBarStyle: "hiddenInset").
+fn find_electron_window() -> crate::error::Result<u32> {
+    // Try by title first
+    if let Ok(wid) = ScreenCapture::find_window_by_title("CLI Box") {
+        return Ok(wid);
+    }
+    // Fallback: find by PID of the Electron main process
+    let electron_pids: Vec<u32> = {
+        let mut pids = Vec::new();
+        if let Ok(output) = std::process::Command::new("pgrep")
+            .args(["-f", "CLI Box.app/Contents/MacOS/CLI Box"])
+            .output()
+        {
+            for line in String::from_utf8_lossy(&output.stdout).lines() {
+                if let Ok(pid) = line.trim().parse::<u32>() {
+                    pids.push(pid);
+                }
+            }
+        }
+        pids
+    };
+    for pid in electron_pids {
+        if let Ok(wid) = ScreenCapture::find_window_by_pid(pid) {
+            return Ok(wid);
+        }
+    }
+    Err(AppError::WindowNotFound(
+        "Electron window not found by title or PID".into(),
+    ))
+}
 use tokio::sync::{oneshot, Mutex};
 use tokio::time::interval;
 use tower_http::cors::{Any, CorsLayer};
@@ -354,7 +386,7 @@ async fn create_sandbox_handler(
             };
 
             // Best-effort: discover Electron window for screenshots
-            let window_id = ScreenCapture::find_window_by_title("CLI Box").ok();
+            let window_id = find_electron_window().ok();
 
             let managed = ManagedSandbox {
                 id: id.clone(),
@@ -394,8 +426,9 @@ async fn create_sandbox_handler(
                 AppError::BadRequest("app mode requires 'command' (app path)".into())
             })?;
 
+            let sandbox_id = id.clone();
             let (process_info, window_id) = tokio::task::spawn_blocking(move || {
-                ProcessManager::spawn_app_with_window(&app_path)
+                ProcessManager::spawn_app_with_window(&app_path, Some(&sandbox_id))
             })
             .await
             .map_err(|e| AppError::Process(format!("spawn_app panicked: {e}")))??;
@@ -458,6 +491,9 @@ async fn close_sandbox_handler(
     if let Some(pty_pid) = sandbox.pty_pid {
         let _ = tokio::task::spawn_blocking(move || ProcessManager::kill_process(pty_pid)).await;
     }
+
+    // Clean up temporary Chromium user-data-dir if created
+    crate::process::cleanup_chromium_data(&id);
 
     // Unregister from file-system registry
     let registry = InstanceRegistry::default();
@@ -577,8 +613,8 @@ async fn screenshot_with_frame(
         }
     }
 
-    // Re-discover window by title
-    let new_wid = tokio::task::spawn_blocking(|| ScreenCapture::find_window_by_title("CLI Box"))
+    // Re-discover window by title or PID
+    let new_wid = tokio::task::spawn_blocking(find_electron_window)
         .await
         .map_err(|e| AppError::Screenshot(format!("window discovery task failed: {e}")))??;
 
@@ -878,7 +914,7 @@ async fn screenshot_region_handler(
                 // Re-discover window
                 drop(s);
                 let new_wid =
-                    tokio::task::spawn_blocking(|| ScreenCapture::find_window_by_title("CLI Box"))
+                    tokio::task::spawn_blocking(find_electron_window)
                         .await
                         .map_err(|e| {
                             AppError::Screenshot(format!("window discovery task failed: {e}"))
@@ -1019,10 +1055,12 @@ async fn spawn_app_handler(
     }
 
     let app_path = req.path.clone();
-    let (info, window_id) =
-        tokio::task::spawn_blocking(move || ProcessManager::spawn_app_with_window(&app_path))
-            .await
-            .map_err(|e| AppError::Process(format!("spawn_app panicked: {e}")))??;
+    let sandbox_id = id.clone();
+    let (info, window_id) = tokio::task::spawn_blocking(move || {
+        ProcessManager::spawn_app_with_window(&app_path, Some(&sandbox_id))
+    })
+    .await
+    .map_err(|e| AppError::Process(format!("spawn_app panicked: {e}")))??;
 
     // Update sandbox window_id if discovered
     if let Some(wid) = window_id {
@@ -1125,22 +1163,221 @@ async fn ui_inspect_handler(
 async fn ui_inspect_by_id_handler(
     Path(id): Path<String>,
     State(state): State<Arc<Mutex<DaemonState>>>,
-) -> Result<Json<crate::automation::ax_ui::UiElement>, AppError> {
-    let window_id = {
+) -> Result<Json<serde_json::Value>, AppError> {
+    let (kind, pty_pid, window_id) = {
         let s = state.lock().await;
         let sandbox = s
             .sandboxes
             .get(&id)
             .ok_or_else(|| AppError::Instance(format!("Sandbox '{id}' not found")))?;
-        sandbox
-            .window_id
-            .ok_or_else(|| AppError::BadRequest("Sandbox has no window_id".into()))?
+        (sandbox.kind.clone(), sandbox.pty_pid, sandbox.window_id)
     };
 
-    let result = tokio::task::spawn_blocking(move || UiInspector::inspect_window(window_id))
-        .await
-        .map_err(|e| AppError::Accessibility(format!("UI inspect task failed: {e}")))?;
-    Ok(Json(result?))
+    match kind {
+        InstanceKind::Cli { .. } => {
+            // CLI sandbox: return PTY output as markdown
+            let pty_pid = pty_pid
+                .ok_or_else(|| AppError::BadRequest("CLI sandbox has no PTY process".into()))?;
+            let text = ProcessManager::read_output(pty_pid)
+                .map_err(|e| AppError::Process(format!("Failed to read PTY output: {e}")))?
+                .unwrap_or_default();
+            // Strip ANSI escape sequences and TUI artifacts for clean text output
+            let clean = strip_ansi_escapes(&text);
+            let readable = extract_readable_text(&clean);
+            // Format as markdown with line breaks
+            let markdown = format_terminal_markdown(&readable, text.len());
+            Ok(Json(serde_json::json!({
+                "type": "terminal",
+                "content": clean,
+                "readable": readable,
+                "markdown": markdown,
+                "raw_length": text.len(),
+            })))
+        }
+        InstanceKind::App { .. } => {
+            // App sandbox: use AX UI inspection
+            let window_id =
+                window_id.ok_or_else(|| AppError::BadRequest("Sandbox has no window_id".into()))?;
+            let result =
+                tokio::task::spawn_blocking(move || UiInspector::inspect_window(window_id))
+                    .await
+                    .map_err(|e| AppError::Accessibility(format!("UI inspect task failed: {e}")))?;
+            Ok(Json(serde_json::to_value(result?)?))
+        }
+    }
+}
+
+/// Strip ANSI escape sequences from text.
+fn strip_ansi_escapes(text: &str) -> String {
+    let mut result = String::with_capacity(text.len());
+    let mut chars = text.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\x1b' {
+            // Skip escape sequence
+            if chars.peek() == Some(&'[') {
+                chars.next(); // consume '['
+                while let Some(&next) = chars.peek() {
+                    if next.is_ascii_alphabetic() || next == 'm' {
+                        chars.next(); // consume terminator
+                        break;
+                    }
+                    chars.next(); // consume parameter byte
+                }
+            } else if chars.peek() == Some(&']') {
+                // OSC sequence (e.g., title set) — skip until ST or BEL
+                chars.next(); // consume ']'
+                while let Some(next) = chars.next() {
+                    if next == '\x07' {
+                        break;
+                    }
+                    if next == '\x1b' && chars.peek() == Some(&'\\') {
+                        chars.next(); // consume backslash (ST = ESC \)
+                        break;
+                    }
+                }
+            }
+        } else {
+            result.push(c);
+        }
+    }
+    result
+}
+
+/// Extract readable text from terminal output by removing TUI box-drawing
+/// characters and cleaning up whitespace.
+fn extract_readable_text(text: &str) -> String {
+    // Box-drawing and TUI characters to remove
+    let tui_chars: &[char] = &[
+        // Box-drawing characters
+        '┌', '┐', '└', '┘', '─', '│', '├', '┤', '┬', '┴', '┼',
+        '╔', '╗', '╚', '╝', '═', '║', '╠', '╣', '╦', '╩', '╬',
+        '┃', '━', '┏', '┓', '┗', '┛', '┣', '┫', '┳', '┻', '╋',
+        '╸', '╹', '╺', '╻',
+        // Block elements (used for progress bars)
+        '▄', '▀', '▐', '▌', '█', '░', '▒', '▓',
+        '■', '□', '▢', '▣', '▤', '▥', '▦', '▧', '▨', '▩',
+        '⬝', '⬚', '⬒', '⬓', '⬔', '⬕', '⬖', '⬗', '⬘', '⬙',
+        // Braille characters (used for spinners/progress)
+        '⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏',
+        '⠿', '⠾', '⠽', '⠼', '⠻', '⠺', '⠹', '⠸', '⠷', '⠶',
+        '⠵', '⠴', '⠳', '⠲', '⠱', '⠰', '⠯', '⠮', '⠭', '⠬',
+        '⠫', '⠪', '⠩', '⠨', '⠧', '⠦', '⠥', '⠤', '⠣', '⠢',
+        '⠡', '⠠', '⠟', '⠞', '⠝', '⠜', '⠛', '⠚', '⠙', '⠘',
+        '⠗', '⠖', '⠕', '⠔', '⠓', '⠒', '⠑', '⠐', '⠏', '⠎',
+        '⠍', '⠌', '⠋', '⠊', '⠉', '⠈', '⠇', '⠆', '⠅', '⠄',
+        '⠃', '⠂', '⠁', '⠀',
+        // Geometric shapes (used for progress indicators)
+        '◉', '◎', '○', '●', '◐', '◑', '◒', '◓', '◔', '◕',
+        '◖', '◗', '◘', '◙', '◚', '◛', '◜', '◝', '◞', '◟',
+        '◠', '◡', '◢', '◣', '◤', '◥', '◦', '◧', '◨', '◩',
+        '◪', '◫', '◬', '◭', '◮', '◯', '◌', '△', '▽', '▲', '▼',
+        '▴', '▾', '◂', '▸', '◆', '◇', '◈', '◉', '◊', '○',
+    ];
+
+    let lines: Vec<&str> = text.lines().collect();
+    let mut result = Vec::new();
+
+    for line in lines {
+        // Remove TUI box-drawing characters
+        let cleaned: String = line
+            .chars()
+            .filter(|c| !tui_chars.contains(c))
+            .collect();
+
+        // Trim whitespace
+        let trimmed = cleaned.trim();
+
+        // Skip empty lines
+        if trimmed.is_empty() {
+            continue;
+        }
+
+        // Skip lines that are mostly spaces (TUI padding)
+        let non_space_count = trimmed.chars().filter(|c| !c.is_whitespace()).count();
+        if non_space_count < 3 {
+            continue;
+        }
+
+        result.push(trimmed.to_string());
+    }
+
+    result.join("\n")
+}
+
+/// Format terminal output as markdown with proper line breaks and structure.
+fn format_terminal_markdown(readable: &str, raw_length: usize) -> String {
+    let mut md = String::new();
+
+    // Header
+    md.push_str("# Terminal Content\n\n");
+
+    // Split by lines and format each line
+    let lines: Vec<&str> = readable.lines().collect();
+    let non_empty_lines: Vec<&str> = lines
+        .iter()
+        .filter(|l| !l.trim().is_empty())
+        .copied()
+        .collect();
+
+    if non_empty_lines.is_empty() {
+        md.push_str("*No content captured*\n");
+    } else {
+        for line in &non_empty_lines {
+            let trimmed = line.trim();
+
+            // Split long lines at logical points for better readability
+            let formatted = split_long_line(trimmed);
+
+            // Detect prompt lines (ending with $ or %)
+            if trimmed.ends_with('$') || trimmed.ends_with('%') {
+                md.push_str(&format!("```\n{}\n```\n\n", formatted));
+            }
+            // Detect error/warning lines
+            else if trimmed.starts_with("Error:")
+                || trimmed.starts_with("Warning:")
+                || trimmed.starts_with("INFO:")
+                || trimmed.starts_with("DEBUG:")
+            {
+                md.push_str(&format!("> {}\n\n", formatted));
+            }
+            // Regular content
+            else {
+                md.push_str(&format!("{}\n\n", formatted));
+            }
+        }
+    }
+
+    // Footer with stats
+    md.push_str(&format!("---\n*Raw length: {} bytes*\n", raw_length));
+
+    md
+}
+
+/// Split long lines at logical points for better readability.
+/// Looks for patterns like multiple spaces (column separators) or
+/// specific TUI patterns to add line breaks.
+fn split_long_line(line: &str) -> String {
+    // If line is short enough, return as-is
+    if line.len() < 120 {
+        return line.to_string();
+    }
+
+    // Try to split at multiple consecutive spaces (TUI column separators)
+    let parts: Vec<&str> = line.split("   ").collect();
+    if parts.len() > 2 {
+        // Join with newlines, trimming each part
+        let cleaned: Vec<String> = parts
+            .iter()
+            .map(|p| p.trim().to_string())
+            .filter(|p| !p.is_empty())
+            .collect();
+        if cleaned.len() > 1 {
+            return cleaned.join("\n");
+        }
+    }
+
+    // If no good split points, return as-is
+    line.to_string()
 }
 
 /// Find UI elements by role/title in a sandbox window.
@@ -1276,8 +1513,9 @@ pub async fn run_daemon(port: u16) -> Result<(), Box<dyn std::error::Error>> {
     let discovery_state = state.clone();
     tokio::spawn(async move {
         tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-        let result =
-            tokio::task::spawn_blocking(|| ScreenCapture::find_window_by_title("CLI Box")).await;
+
+        let result = tokio::task::spawn_blocking(find_electron_window).await;
+
         match result {
             Ok(Ok(window_id)) => {
                 tracing::info!("Discovered Electron window_id={}", window_id);

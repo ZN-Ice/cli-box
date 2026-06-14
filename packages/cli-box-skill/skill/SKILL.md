@@ -82,6 +82,21 @@ cli-box close <sandbox-id>
 | `cli-box screenshot --id <id>` | Screenshot to stdout (base64) |
 | `cli-box screenshot --id <id> -o file.png` | Screenshot to file |
 
+### UI Inspection
+
+| Command | Description |
+|---------|-------------|
+| `cli-box ui-inspect --id <id>` | Print UI element tree (App) or terminal text (CLI/TUI) |
+| `cli-box ui-find --id <id> --role <role>` | Find elements by AX role (e.g., AXButton, AXTextField) |
+| `cli-box ui-find --id <id> --role <role> --title <title>` | Find elements by role and title |
+| `cli-box ui-value --id <id> --element-id <eid>` | Get value of a UI element by its index |
+
+For **App sandboxes** (macOS .app): returns the AX accessibility element tree with element indices, roles, titles, values, and available actions.
+
+For **CLI sandboxes** (CLI tools): returns the terminal text output from the PTY buffer.
+
+For **TUI sandboxes** (vim, htop, etc.): returns parsed terminal content with ANSI escape sequences stripped.
+
 ### MCP Integration
 
 Add to `.claude/settings.json` or `.opencode/config.json`:

@@ -58,6 +58,65 @@ static SESSIONS: std::sync::LazyLock<Mutex<HashMap<u32, PtySession>>> =
 /// Counter for generating unique tracked PIDs
 static NEXT_ID: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(1000);
 
+/// Known Chromium-based app bundle identifiers.
+/// These apps enforce single-instance and need `open -g -n --args --user-data-dir`
+/// to create isolated processes that don't interfere with the user's existing browser.
+const CHROMIUM_BUNDLE_IDS: &[&str] = &[
+    "com.google.Chrome",
+    "com.google.Chrome.beta",
+    "com.google.Chrome.dev",
+    "com.google.Chrome.canary",
+    "com.microsoft.edgemac",
+    "com.microsoft.edgemac.Dev",
+    "com.microsoft.edgemac.Beta",
+    "com.brave.Browser",
+    "com.brave.Browser.beta",
+    "com.brave.Browser.nightly",
+    "com.vivaldi.Vivaldi",
+    "com.operasoftware.Opera",
+    "com.operasoftware.OperaNext",
+    "company.thebrowser.Browser", // Arc
+];
+
+/// Read `CFBundleIdentifier` from an app bundle's Info.plist.
+fn read_bundle_id(app_path: &str) -> Option<String> {
+    let plist_path = std::path::Path::new(app_path).join("Contents/Info.plist");
+    let data = std::fs::read_to_string(plist_path).ok()?;
+    let marker = "<key>CFBundleIdentifier</key>";
+    let idx = data.find(marker)?;
+    let after = &data[idx + marker.len()..];
+    let start = after.find("<string>")? + 8;
+    let end = after.find("</string>")?;
+    Some(after[start..end].to_string())
+}
+
+/// Check if an app is Chromium-based by its bundle identifier.
+fn is_chromium_app(app_path: &str) -> bool {
+    match read_bundle_id(app_path) {
+        Some(id) => CHROMIUM_BUNDLE_IDS
+            .iter()
+            .any(|known| id == *known || id.starts_with(&format!("{known}."))),
+        None => false,
+    }
+}
+
+/// Unique user-data-dir path for a Chromium sandbox instance.
+fn chromium_user_data_dir(sandbox_id: &str) -> String {
+    format!("/tmp/cli-box-chromium/{sandbox_id}")
+}
+
+/// Clean up temporary Chromium user-data-dir for a sandbox.
+pub fn cleanup_chromium_data(sandbox_id: &str) {
+    let dir = chromium_user_data_dir(sandbox_id);
+    if std::path::Path::new(&dir).exists() {
+        if let Err(e) = std::fs::remove_dir_all(&dir) {
+            warn!("Failed to cleanup Chromium data dir {dir}: {e}");
+        } else {
+            debug!("Cleaned up Chromium data dir: {dir}");
+        }
+    }
+}
+
 /// Process manager for launching and managing apps/CLIs in the sandbox
 pub struct ProcessManager;
 
@@ -68,14 +127,20 @@ impl ProcessManager {
     /// searching for a title containing the app's stem name after a short delay.
     #[cfg(target_os = "macos")]
     pub fn spawn_app(app_path: &str) -> Result<ProcessInfo> {
-        let (info, _window_id) = Self::spawn_app_with_window(app_path)?;
+        let (info, _window_id) = Self::spawn_app_with_window(app_path, None)?;
         Ok(info)
     }
 
     /// Launch a macOS .app and discover its SCWindow ID.
     /// Returns both the process info and the discovered window ID (if found).
+    ///
+    /// `sandbox_id` is used to create isolated user-data-dirs for Chromium apps,
+    /// preventing them from connecting to the user's existing browser process.
     #[cfg(target_os = "macos")]
-    pub fn spawn_app_with_window(app_path: &str) -> Result<(ProcessInfo, Option<u32>)> {
+    pub fn spawn_app_with_window(
+        app_path: &str,
+        sandbox_id: Option<&str>,
+    ) -> Result<(ProcessInfo, Option<u32>)> {
         let path = std::path::Path::new(app_path);
         if !path.exists() {
             return Err(AppError::Process(format!(
@@ -89,37 +154,151 @@ impl ProcessManager {
             .to_string_lossy()
             .to_string();
 
-        let output = std::process::Command::new("open")
-            .arg(app_path)
-            .output()
-            .map_err(|e| AppError::Process(format!("Failed to run `open` command: {e}")))?;
+        // Check if app is already running before launching
+        let pre_existing_pids = Self::find_pids_by_app_name(&app_name);
 
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(AppError::Process(format!(
-                "Failed to launch app: {app_path} ({stderr})"
-            )));
+        // Launch strategy:
+        // - Chromium apps: `open -g -n --args --user-data-dir` for process isolation
+        // - Other apps: `open -g -n` to force a new instance without focus steal
+        let chromium_launch = is_chromium_app(app_path) && sandbox_id.is_some();
+
+        if chromium_launch {
+            let sid = sandbox_id.unwrap();
+            let user_data_dir = chromium_user_data_dir(sid);
+            info!(
+                "Launching Chromium app in isolated mode: app_path={app_path}, user_data_dir={user_data_dir}"
+            );
+            // -n: force new instance (even if app is already running)
+            // --args: pass --user-data-dir to the binary for process isolation
+            // NOTE: We do NOT use -g because CGEvents require the target
+            // app to be the key window. Chrome launched with -g won't receive input.
+            let output = std::process::Command::new("open")
+                .arg("-n")
+                .arg(app_path)
+                .arg("--args")
+                .arg(format!("--user-data-dir={user_data_dir}"))
+                .arg("--no-first-run")
+                .arg("--disable-default-apps")
+                .arg("--disable-extensions")
+                .arg("--new-window")
+                .output()
+                .map_err(|e| AppError::Process(format!("Failed to run `open` command: {e}")))?;
+
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                return Err(AppError::Process(format!(
+                    "Failed to launch Chromium app: {app_path} ({stderr})"
+                )));
+            }
+        } else {
+            let output = std::process::Command::new("open")
+                .arg("-g")
+                .arg("-n")
+                .arg(app_path)
+                .output()
+                .map_err(|e| AppError::Process(format!("Failed to run `open` command: {e}")))?;
+
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                return Err(AppError::Process(format!(
+                    "Failed to launch app: {app_path} ({stderr})"
+                )));
+            }
         }
 
         let id = NEXT_ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+
+        // Wait for the app to start and window to appear.
+        // Chromium apps need longer due to multi-process startup.
+        let initial_wait = if chromium_launch { 2000 } else { 800 };
+        std::thread::sleep(std::time::Duration::from_millis(initial_wait));
+
+        // Retry window discovery — Chromium apps may need up to 5s for window creation
+        let mut window_id: Option<u32> = None;
+        let max_retries = if chromium_launch { 5 } else { 1 };
+
+        for attempt in 0..max_retries {
+            // Try to find window by title first
+            window_id = crate::capture::ScreenCapture::find_window_by_title(&app_name).ok();
+
+            // If window not found by title, try finding by PID
+            if window_id.is_none() {
+                let current_pids = Self::find_pids_by_app_name(&app_name);
+                let new_pids: Vec<u32> = current_pids
+                    .iter()
+                    .filter(|pid| !pre_existing_pids.contains(pid))
+                    .copied()
+                    .collect();
+                let target_pid = new_pids.first().or(current_pids.first()).copied();
+
+                if let Some(pid) = target_pid {
+                    window_id = crate::capture::ScreenCapture::find_window_by_pid(pid).ok();
+                }
+            }
+
+            if window_id.is_some() {
+                info!(
+                    "[window_discovery] Found window on attempt {attempt}: wid={:?}",
+                    window_id
+                );
+                break;
+            }
+
+            if attempt < max_retries - 1 {
+                debug!("[window_discovery] Attempt {attempt}: no window found, retrying...");
+                std::thread::sleep(std::time::Duration::from_secs(1));
+            }
+        }
+
+        if window_id.is_none() {
+            warn!(
+                "[window_discovery] Failed to find window after {max_retries} attempts for {app_name}"
+            );
+        }
+
+        // OS PID is not directly available from `open -g`; the window_id
+        // is the primary handle for app sandboxes.
+        let os_pid: Option<u32> = None;
+
         let info = ProcessInfo {
             pid: id,
-            os_pid: None, // `open` returns immediately; actual PID unknown
+            os_pid,
             name: app_name.clone(),
             path: Some(app_path.to_string()),
             is_running: true,
         };
 
-        // Wait for the app window to appear, then discover its SCWindow ID
-        std::thread::sleep(std::time::Duration::from_millis(800));
-        let window_id = crate::capture::ScreenCapture::find_window_by_title(&app_name).ok();
-
         info!(
-            "Launched app: {} (tracked_id={}, window_id={:?})",
-            app_path, id, window_id
+            "Launched app: {} (tracked_id={}, os_pid={:?}, window_id={:?}, chromium_isolated={})",
+            app_path, id, os_pid, window_id, chromium_launch
         );
 
         Ok((info, window_id))
+    }
+
+    /// Find PIDs for an app by its display name using `pgrep`.
+    #[cfg(target_os = "macos")]
+    fn find_pids_by_app_name(app_name: &str) -> Vec<u32> {
+        let binary_name = app_name.to_lowercase().replace(' ', "-");
+        let mut pids = Vec::new();
+
+        for name in [&binary_name, app_name] {
+            if let Ok(output) = std::process::Command::new("pgrep")
+                .arg("-x")
+                .arg(name)
+                .output()
+            {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                for line in stdout.lines() {
+                    if let Ok(pid) = line.trim().parse::<u32>() {
+                        if !pids.contains(&pid) {
+                            pids.push(pid);
+                        }
+                    }
+                }
+            }
+        }
+        pids
     }
 
     #[cfg(not(target_os = "macos"))]
