@@ -549,3 +549,47 @@ html, body {
   font-size: 12px;
   cursor: pointer;
 }
+
+/* ── Daemon Waiting ──────────────────────────── */
+
+.daemon-waiting {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  width: 100%;
+  background: var(--bg-primary);
+}
+
+.daemon-waiting-content {
+  text-align: center;
+  padding: 40px;
+  max-width: 500px;
+}
+
+.daemon-waiting-content h2 {
+  margin-bottom: 16px;
+  color: var(--text-primary);
+}
+
+.daemon-waiting-content p {
+  color: var(--text-secondary);
+  margin-bottom: 12px;
+}
+
+.daemon-waiting-content code {
+  display: inline-block;
+  background: var(--bg-secondary);
+  padding: 8px 16px;
+  border-radius: 4px;
+  font-family: monospace;
+  font-size: 14px;
+  color: var(--text-primary);
+  margin: 12px 0;
+}
+
+.daemon-waiting-hint {
+  font-size: 12px;
+  margin-top: 16px;
+  color: var(--text-secondary);
+}
