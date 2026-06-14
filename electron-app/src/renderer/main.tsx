@@ -11,12 +11,14 @@ import {
 import { Tab, syncTabs, selectAfterClose } from "./tabState";
 import AppPanel from "./components/AppPanel";
 import { DaemonWaiting } from "./components/DaemonWaiting";
+import { ErrorModal } from "./components/ErrorModal";
 import "./styles.css";
 
 declare global {
   interface Window {
     sandbox: {
       getDaemonPort: () => Promise<number>;
+      ensureDaemon: () => Promise<number>;
       createTab: (sandboxId: string, kind: string, title: string) => Promise<void>;
       switchTab: (sandboxId: string) => Promise<void>;
       closeTab: (sandboxId: string) => Promise<void>;
@@ -37,6 +39,7 @@ function App() {
     return (localStorage.getItem("theme") as Theme) || "system";
   });
   const [connected, setConnected] = useState(false);
+  const [daemonError, setDaemonError] = useState<string | null>(null);
   const [showNewDialog, setShowNewDialog] = useState(false);
   const [newSandboxCmd, setNewSandboxCmd] = useState("");
   const [newSandboxMode, setNewSandboxMode] = useState<"cli" | "app">("cli");
@@ -325,6 +328,16 @@ function App() {
     });
   }, []);
 
+  const triggerEnsureDaemon = useCallback(async () => {
+    setDaemonError(null);
+    try {
+      await window.sandbox.ensureDaemon();
+      // Polling effect will pick up the new port
+    } catch (err: any) {
+      setDaemonError(err?.message ?? String(err));
+    }
+  }, []);
+
   const activeTab = tabs.find((t) => t.id === activeTabId);
 
   if (!connected) {
@@ -487,12 +500,13 @@ function App() {
                 onClick={async () => {
                   if (!newSandboxCmd.trim()) return;
                   try {
+                    await window.sandbox.ensureDaemon();
                     await createSandbox(newSandboxMode, newSandboxCmd);
                     setShowNewDialog(false);
                     setNewSandboxCmd("");
                     refreshSandboxes();
-                  } catch (e) {
-                    console.error("Failed to create sandbox:", e);
+                  } catch (err: any) {
+                    setDaemonError(err?.message ?? String(err));
                   }
                 }}
               >
@@ -567,6 +581,16 @@ function App() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Daemon Error Modal */}
+      {daemonError && (
+        <ErrorModal
+          title="Failed to start daemon"
+          message={daemonError}
+          onRetry={triggerEnsureDaemon}
+          onClose={() => setDaemonError(null)}
+        />
       )}
     </div>
   );

@@ -593,3 +593,83 @@ html, body {
   margin-top: 16px;
   color: var(--text-secondary);
 }
+
+/* ── Error Modal ─────────────────────────────── */
+
+.error-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+}
+
+.error-modal {
+  background: var(--bg-primary);
+  border: 2px solid var(--error);
+  border-radius: 8px;
+  padding: 24px;
+  max-width: 600px;
+  width: 90%;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5);
+}
+
+.error-modal-header {
+  margin-bottom: 16px;
+}
+
+.error-modal-title {
+  color: var(--error);
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.error-modal-body {
+  margin-bottom: 20px;
+}
+
+.error-modal-message {
+  background: var(--bg-secondary);
+  padding: 12px;
+  border-radius: 4px;
+  font-family: monospace;
+  font-size: 13px;
+  color: var(--text-primary);
+  max-height: 200px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0;
+}
+
+.error-modal-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+}
+
+.error-modal-button {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-primary);
+  padding: 8px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.error-modal-button.primary {
+  background: var(--error);
+  color: white;
+  border-color: var(--error);
+}
+
+.error-modal-button:hover {
+  opacity: 0.9;
+}
