@@ -913,12 +913,11 @@ async fn screenshot_region_handler(
             None => {
                 // Re-discover window
                 drop(s);
-                let new_wid =
-                    tokio::task::spawn_blocking(find_electron_window)
-                        .await
-                        .map_err(|e| {
-                            AppError::Screenshot(format!("window discovery task failed: {e}"))
-                        })??;
+                let new_wid = tokio::task::spawn_blocking(find_electron_window)
+                    .await
+                    .map_err(|e| {
+                        AppError::Screenshot(format!("window discovery task failed: {e}"))
+                    })??;
                 let mut s = state.lock().await;
                 if let Some(sb) = s.sandboxes.get_mut(&id) {
                     sb.window_id = Some(new_wid);
@@ -1249,29 +1248,20 @@ fn extract_readable_text(text: &str) -> String {
     // Box-drawing and TUI characters to remove
     let tui_chars: &[char] = &[
         // Box-drawing characters
-        '┌', '┐', '└', '┘', '─', '│', '├', '┤', '┬', '┴', '┼',
-        '╔', '╗', '╚', '╝', '═', '║', '╠', '╣', '╦', '╩', '╬',
-        '┃', '━', '┏', '┓', '┗', '┛', '┣', '┫', '┳', '┻', '╋',
-        '╸', '╹', '╺', '╻',
-        // Block elements (used for progress bars)
-        '▄', '▀', '▐', '▌', '█', '░', '▒', '▓',
-        '■', '□', '▢', '▣', '▤', '▥', '▦', '▧', '▨', '▩',
+        '┌', '┐', '└', '┘', '─', '│', '├', '┤', '┬', '┴', '┼', '╔', '╗', '╚', '╝', '═', '║', '╠',
+        '╣', '╦', '╩', '╬', '┃', '━', '┏', '┓', '┗', '┛', '┣', '┫', '┳', '┻', '╋', '╸', '╹', '╺',
+        '╻', // Block elements (used for progress bars)
+        '▄', '▀', '▐', '▌', '█', '░', '▒', '▓', '■', '□', '▢', '▣', '▤', '▥', '▦', '▧', '▨', '▩',
         '⬝', '⬚', '⬒', '⬓', '⬔', '⬕', '⬖', '⬗', '⬘', '⬙',
         // Braille characters (used for spinners/progress)
-        '⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏',
-        '⠿', '⠾', '⠽', '⠼', '⠻', '⠺', '⠹', '⠸', '⠷', '⠶',
-        '⠵', '⠴', '⠳', '⠲', '⠱', '⠰', '⠯', '⠮', '⠭', '⠬',
-        '⠫', '⠪', '⠩', '⠨', '⠧', '⠦', '⠥', '⠤', '⠣', '⠢',
-        '⠡', '⠠', '⠟', '⠞', '⠝', '⠜', '⠛', '⠚', '⠙', '⠘',
-        '⠗', '⠖', '⠕', '⠔', '⠓', '⠒', '⠑', '⠐', '⠏', '⠎',
-        '⠍', '⠌', '⠋', '⠊', '⠉', '⠈', '⠇', '⠆', '⠅', '⠄',
-        '⠃', '⠂', '⠁', '⠀',
-        // Geometric shapes (used for progress indicators)
-        '◉', '◎', '○', '●', '◐', '◑', '◒', '◓', '◔', '◕',
-        '◖', '◗', '◘', '◙', '◚', '◛', '◜', '◝', '◞', '◟',
-        '◠', '◡', '◢', '◣', '◤', '◥', '◦', '◧', '◨', '◩',
-        '◪', '◫', '◬', '◭', '◮', '◯', '◌', '△', '▽', '▲', '▼',
-        '▴', '▾', '◂', '▸', '◆', '◇', '◈', '◉', '◊', '○',
+        '⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏', '⠿', '⠾', '⠽', '⠼', '⠻', '⠺', '⠹', '⠸',
+        '⠷', '⠶', '⠵', '⠴', '⠳', '⠲', '⠱', '⠰', '⠯', '⠮', '⠭', '⠬', '⠫', '⠪', '⠩', '⠨', '⠧', '⠦',
+        '⠥', '⠤', '⠣', '⠢', '⠡', '⠠', '⠟', '⠞', '⠝', '⠜', '⠛', '⠚', '⠙', '⠘', '⠗', '⠖', '⠕', '⠔',
+        '⠓', '⠒', '⠑', '⠐', '⠏', '⠎', '⠍', '⠌', '⠋', '⠊', '⠉', '⠈', '⠇', '⠆', '⠅', '⠄', '⠃', '⠂',
+        '⠁', '⠀', // Geometric shapes (used for progress indicators)
+        '◉', '◎', '○', '●', '◐', '◑', '◒', '◓', '◔', '◕', '◖', '◗', '◘', '◙', '◚', '◛', '◜', '◝',
+        '◞', '◟', '◠', '◡', '◢', '◣', '◤', '◥', '◦', '◧', '◨', '◩', '◪', '◫', '◬', '◭', '◮', '◯',
+        '◌', '△', '▽', '▲', '▼', '▴', '▾', '◂', '▸', '◆', '◇', '◈', '◉', '◊', '○',
     ];
 
     let lines: Vec<&str> = text.lines().collect();
@@ -1279,10 +1269,7 @@ fn extract_readable_text(text: &str) -> String {
 
     for line in lines {
         // Remove TUI box-drawing characters
-        let cleaned: String = line
-            .chars()
-            .filter(|c| !tui_chars.contains(c))
-            .collect();
+        let cleaned: String = line.chars().filter(|c| !tui_chars.contains(c)).collect();
 
         // Trim whitespace
         let trimmed = cleaned.trim();
