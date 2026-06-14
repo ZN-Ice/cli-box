@@ -10,7 +10,6 @@ import {
 } from "./api";
 import { Tab, syncTabs, selectAfterClose } from "./tabState";
 import AppPanel from "./components/AppPanel";
-import { DaemonWaiting } from "./components/DaemonWaiting";
 import { ErrorModal } from "./components/ErrorModal";
 import "./styles.css";
 
@@ -354,10 +353,6 @@ function App() {
   }, []);
 
   const activeTab = tabs.find((t) => t.id === activeTabId);
-
-  if (!connected) {
-    return <DaemonWaiting />;
-  }
 
   return (
     <div className="main-content">

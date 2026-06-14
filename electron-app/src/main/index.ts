@@ -45,7 +45,17 @@ if (!gotTheLock) {
 }
 
 // IPC: renderer asks for daemon port
-ipcMain.handle("get-daemon-port", () => daemonPort);
+// Re-check daemon on each call — daemon may have started after Electron launched
+ipcMain.handle("get-daemon-port", () => {
+  if (!daemonPort) {
+    const existingPort = findRunningDaemon();
+    if (existingPort) {
+      daemonPort = existingPort;
+      writeElectronJson(daemonPort);
+    }
+  }
+  return daemonPort;
+});
 
 // IPC: renderer asks main to spawn daemon (on-demand, triggered by GUI)
 let ensureInProgress: Promise<number> | null = null;

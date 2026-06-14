@@ -19,7 +19,7 @@ declare global {
   }
 }
 
-let _port = 15801;
+let _port = 0;
 
 export function getDaemonPort(): number {
   return _port;
